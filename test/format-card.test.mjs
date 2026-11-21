@@ -13,7 +13,7 @@ const SOL_OK = {
   holders: { total: 2450, top10Percentage: 24.6, largestHolderPercentage: 5.2 },
   narrative: null,
   project: { website: null, x: null, telegram: null },
-  fullAnalysisUrl: 'https://meme-checker.example/check/solana/FiXtUrE111111111111111111111111111111111111',
+  fullAnalysisUrl: 'https://app.memechecker.io/check/solana/FiXtUrE111111111111111111111111111111111111',
   updatedAt: '2026-11-21T00:00:00Z',
 };
 
@@ -126,4 +126,28 @@ test('XSS characters in token name are escaped', () => {
   const { text } = formatCard(evil);
   assert.ok(!text.includes('<script>'));
   assert.ok(text.includes('&lt;script&gt;'));
+});
+
+test('placeholder .example fullAnalysisUrl is rejected — no View Full Analysis button', () => {
+  const withPlaceholder = { ...SOL_OK, fullAnalysisUrl: 'https://meme-checker.example/check/solana/ADDR' };
+  const flat = formatCard(withPlaceholder).buttons.flat();
+  assert.equal(flat.find(b => b.text.includes('View Full Analysis')), undefined);
+});
+
+test('credentialed fullAnalysisUrl is rejected', () => {
+  const withCreds = { ...SOL_OK, fullAnalysisUrl: 'https://user:pass@legit.com/check/solana/ADDR' };
+  const flat = formatCard(withCreds).buttons.flat();
+  assert.equal(flat.find(b => b.text.includes('View Full Analysis')), undefined);
+});
+
+test('http (non-https) fullAnalysisUrl is rejected', () => {
+  const withHttp = { ...SOL_OK, fullAnalysisUrl: 'http://legit.com/check/solana/ADDR' };
+  const flat = formatCard(withHttp).buttons.flat();
+  assert.equal(flat.find(b => b.text.includes('View Full Analysis')), undefined);
+});
+
+test('valid https fullAnalysisUrl is accepted', () => {
+  const withReal = { ...SOL_OK, fullAnalysisUrl: 'https://app.memechecker.io/check/solana/FiXtUrE111111111111111111111111111111111111' };
+  const flat = formatCard(withReal).buttons.flat();
+  assert.ok(flat.some(b => b.text.includes('View Full Analysis') && b.url.includes('memechecker.io')));
 });

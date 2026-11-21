@@ -11,21 +11,23 @@ async function api() {
   }
 }
 
-test('Solana fixture returns a labeled mock and an exact-token link', async () => {
+test('Solana fixture returns a labeled mock; fullAnalysisUrl is null when TOKEN_PAGE_BASE_URL unset', async () => {
+  delete process.env.TOKEN_PAGE_BASE_URL;
   const {mockScan} = await api();
   const result = await mockScan(sol);
   assert.equal(result.mode, 'mock');
   assert.equal(result.status, 'ok');
   assert.equal(result.token.address, sol.address);
-  assert.equal(result.fullAnalysisUrl, `https://meme-checker.example/check/solana/${sol.address}`);
+  assert.equal(result.fullAnalysisUrl, null);
   assert.equal(result.market.marketCapUsd, 1250000);
 });
 
-test('BNB uses case-insensitive identity; unknown market cap is not replaced by FDV', async () => {
+test('BNB uses case-insensitive identity; unknown market cap is not replaced by FDV; fullAnalysisUrl null when unset', async () => {
+  delete process.env.TOKEN_PAGE_BASE_URL;
   const {mockScan} = await api();
   const result = await mockScan({...bsc, address: '0x' + bsc.address.slice(2).toUpperCase()});
   assert.equal(result.status, 'ok');
-  assert.equal(result.fullAnalysisUrl, `https://meme-checker.example/check/bsc/${bsc.address}`);
+  assert.equal(result.fullAnalysisUrl, null);
   assert.equal(result.market.marketCapUsd, null);
   assert.equal(result.market.fdvUsd, 1500000);
   assert.equal(result.market.volume24hUsd, 0);
