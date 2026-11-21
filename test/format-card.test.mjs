@@ -24,7 +24,7 @@ const BSC_NULL_MCAP = {
   holders: null,
   narrative: null,
   project: null,
-  fullAnalysisUrl: 'https://meme-checker.example/check/bsc/0xabcdef0123456789abcdef0123456789abcdef01',
+  fullAnalysisUrl: null,
   updatedAt: null,
 };
 
@@ -67,14 +67,33 @@ test('holders section shown when present', () => {
   assert.ok(text.includes('24.6%'));
 });
 
-test('holders section omitted when null', () => {
+test('holders section heading always present; unavailable note when null', () => {
   const { text } = formatCard(BSC_NULL_MCAP);
-  assert.ok(!text.includes('HOLDER OVERVIEW'));
+  assert.ok(text.includes('HOLDER OVERVIEW'));
+  assert.ok(text.includes('unavailable'));
 });
 
-test('narrative omitted when null', () => {
+test('narrative section heading always present; unavailable note when null', () => {
   const { text } = formatCard(SOL_OK);
-  assert.ok(!text.includes('NARRATIVE'));
+  assert.ok(text.includes('NARRATIVE'));
+  assert.ok(text.includes('unavailable'));
+});
+
+test('project info section heading always present', () => {
+  const { text } = formatCard(SOL_OK);
+  assert.ok(text.includes('PROJECT INFO'));
+});
+
+test('WANT TO DYOR DEEPER section present with all brief bullets', () => {
+  const { text } = formatCard(SOL_OK);
+  assert.ok(text.includes('WANT TO DYOR DEEPER'));
+  assert.ok(text.includes('Advanced Narrative'));
+  assert.ok(text.includes('Dev Wallet Investigation'));
+  assert.ok(text.includes('Bundle Wallet Analysis'));
+  assert.ok(text.includes('Bubble Map'));
+  assert.ok(text.includes('KOL Call History'));
+  assert.ok(text.includes('Smart Money Insights'));
+  assert.ok(text.includes('FULL TOKEN ANALYSIS'));
 });
 
 test('narrative shown when source is present', () => {
@@ -150,4 +169,93 @@ test('valid https fullAnalysisUrl is accepted', () => {
   const withReal = { ...SOL_OK, fullAnalysisUrl: 'https://app.memechecker.io/check/solana/FiXtUrE111111111111111111111111111111111111' };
   const flat = formatCard(withReal).buttons.flat();
   assert.ok(flat.some(b => b.text.includes('View Full Analysis') && b.url.includes('memechecker.io')));
+});
+
+// ---- §9 button order --------------------------------------------------------
+
+test('§9 Row 1 is Full Analysis when fullAnalysisUrl set', () => {
+  const { buttons } = formatCard(SOL_OK, {
+    websiteBase: 'https://app.memechecker.io',
+    premiumUrl:  'https://app.memechecker.io/pricing',
+    botUsername: 'MemeCheckerBot',
+  });
+  assert.equal(buttons.length, 3);
+  assert.ok(buttons[0][0].text.includes('Full Analysis'));
+});
+
+test('§9 Row 2 has Premium then Explore when both configured', () => {
+  const { buttons } = formatCard(SOL_OK, {
+    websiteBase: 'https://app.memechecker.io',
+    premiumUrl:  'https://app.memechecker.io/pricing',
+  });
+  const row2 = buttons[1];
+  assert.ok(row2[0].text.includes('Premium'));
+  assert.ok(row2[1].text.includes('Explore'));
+});
+
+test('§9 Row 3 is Add Bot to Group when botUsername set', () => {
+  const { buttons } = formatCard(SOL_OK, {
+    websiteBase: 'https://app.memechecker.io',
+    botUsername: 'MemeCheckerBot',
+  });
+  const last = buttons[buttons.length - 1];
+  assert.ok(last[0].text.includes('Add'));
+  assert.ok(last[0].url.includes('t.me/MemeCheckerBot'));
+});
+
+test('§9 Row 3 omitted when no botUsername or addBotUrl', () => {
+  const { buttons } = formatCard(SOL_OK, { websiteBase: 'https://app.memechecker.io' });
+  const flat = buttons.flat();
+  assert.equal(flat.find(b => b.text.includes('Add')), undefined);
+});
+
+test('Premium button uses dedicated premiumUrl, not websiteBase/pricing', () => {
+  const { buttons } = formatCard(SOL_OK, {
+    websiteBase: 'https://app.memechecker.io',
+    premiumUrl:  'https://premium.memechecker.io/vip',
+  });
+  const flat = buttons.flat();
+  const btn = flat.find(b => b.text.includes('Premium'));
+  assert.ok(btn?.url.startsWith('https://premium.memechecker.io/vip'));
+  assert.ok(!btn?.url.includes('/pricing'));
+});
+
+test('Premium button omitted when premiumUrl is empty and websiteBase alone is set', () => {
+  // premiumUrl independent of websiteBase — no auto-derivation
+  const { buttons } = formatCard(SOL_OK, {
+    websiteBase: 'https://app.memechecker.io',
+    premiumUrl:  '',
+  });
+  const flat = buttons.flat();
+  assert.equal(flat.find(b => b.text.includes('Premium')), undefined);
+});
+
+// ---- Emoji theme ------------------------------------------------------------
+
+test('standard emoji used by default (no theme)', () => {
+  const { text } = formatCard(SOL_OK);
+  assert.ok(text.includes('🚀'));
+  assert.ok(!text.includes('tg-emoji'));
+});
+
+test('custom emoji theme wraps standard emoji in tg-emoji tags', async () => {
+  const { buildEmojiTheme } = await import('../src/emoji-theme.mjs');
+  const theme = buildEmojiTheme({ '🚀': '5368324170671202286' });
+  const { text } = formatCard(SOL_OK, { emojiTheme: theme });
+  assert.ok(text.includes('<tg-emoji emoji-id="5368324170671202286">🚀</tg-emoji>'));
+  // Unmapped emoji still renders as standard
+  assert.ok(text.includes('🪙'));
+  assert.ok(!text.match(/tg-emoji emoji-id.*🪙/));
+});
+
+test('invalid emoji theme falls back to standard emoji', async () => {
+  const { buildEmojiTheme } = await import('../src/emoji-theme.mjs');
+  const theme = buildEmojiTheme({ '🚀': 'not-a-number' }); // invalid id
+  assert.equal(theme, (await import('../src/emoji-theme.mjs')).noTheme);
+});
+
+test('emoji theme with no entries falls back to noTheme', async () => {
+  const { buildEmojiTheme, noTheme } = await import('../src/emoji-theme.mjs');
+  assert.equal(buildEmojiTheme({}), noTheme);
+  assert.equal(buildEmojiTheme(null), noTheme);
 });
