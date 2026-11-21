@@ -57,6 +57,13 @@ function chainLabel(chain) {
   return chain ?? 'Unknown';
 }
 
+/** Standard emoji slot for a chain icon. BNB kept as standard 🟡 until custom logo confirmed. */
+function chainIcon(chain) {
+  if (chain === 'solana') return '🟣';
+  if (chain === 'bsc')    return '🟡';
+  return '⛓';
+}
+
 function explorerUrl(chain, address) {
   if (chain === 'solana') return `https://solscan.io/token/${address}`;
   if (chain === 'bsc')    return `https://bscscan.com/token/${address}`;
@@ -124,7 +131,7 @@ export function formatCard(result, {
   lines.push(`${e('🚀')} <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockTag}`);
   lines.push('');
   lines.push(`${e('🪙')} <b>${esc(name)} ($${esc(symbol)})</b>`);
-  lines.push(`${e('⛓')} Chain: ${esc(chainLabel(chain))}`);
+  lines.push(`${e('⛓')} Chain: ${esc(chainLabel(chain))} (${e(chainIcon(chain))})`);
 
   if (explorerLink) {
     lines.push(`${e('📍')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a>`);
@@ -195,9 +202,9 @@ export function formatCard(result, {
   lines.push(DIV);
   lines.push(`${e('🌐')} <b>PROJECT INFO</b>`);
   lines.push('');
-  lines.push(`Website: ${project?.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
-  lines.push(`X: ${project?.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
-  lines.push(`Telegram: ${project?.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
+  lines.push(`${e('🌍')} Website: ${project?.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
+  lines.push(`${e('✖️')} X: ${project?.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
+  lines.push(`${e('✈️')} Telegram: ${project?.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
 
   // ---- WANT TO DYOR DEEPER? (§4.1 / §5.3) --------------------------------
   lines.push('');

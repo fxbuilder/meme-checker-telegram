@@ -13,7 +13,10 @@ import { detectCandidates } from './detect-ca.mjs';
 import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
-import { loadEnvTheme, previewTheme } from './emoji-theme.mjs';
+import {
+  loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
+  extractCustomEmojiIds, detectPackLink, listPackStickers, CARD_EMOJI_SLOTS,
+} from './emoji-theme.mjs';
 
 const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const WEBSITE_BASE = (process.env.TOKEN_PAGE_BASE_URL ?? '').replace(/\/$/, '');
@@ -69,7 +72,7 @@ async function runScan(ctx, chain, address) {
     websiteBase: WEBSITE_BASE,
     premiumUrl:  PREMIUM_URL,
     botUsername: BOT_USERNAME,
-    emojiTheme:  EMOJI_THEME,
+    emojiTheme:  activeEmojiTheme,
   });
 
   const keyboard = buildKeyboard(buttons);
@@ -178,19 +181,30 @@ bot.command('website', async ctx => {
 
 bot.command('upgrade', async ctx => {
   if (ctx.from?.is_bot) return;
-  const url = PREMIUM_URL || (WEBSITE_BASE ? `${WEBSITE_BASE}/pricing?utm_source=telegram&utm_medium=dm&utm_campaign=upgrade` : null);
-  if (url) {
+  // Only use PREMIUM_URL — no auto-derivation from WEBSITE_BASE/pricing.
+  if (PREMIUM_URL) {
     await ctx.reply(
       '⚡ Unlock full intelligence on Meme Checker.',
-      Markup.inlineKeyboard([[Markup.button.url('⚡ Unlock Premium', url)]])
+      Markup.inlineKeyboard([[Markup.button.url('⚡ Unlock Premium', PREMIUM_URL)]])
     );
+  } else if (WEBSITE_BASE) {
+    await ctx.reply('⚡ Premium analysis is available on the Meme Checker website.', {
+      ...Markup.inlineKeyboard([[Markup.button.url('🌐 Explore Meme Checker', `${WEBSITE_BASE}?utm_source=telegram&utm_medium=dm&utm_campaign=upgrade`)]]),
+    });
   } else {
     await ctx.reply('⚡ Premium info coming soon. Visit the website for details.');
   }
 });
 
+bot.command('resettheme', async ctx => {
+  if (ctx.from?.is_bot) return;
+  if (ctx.chat?.type !== 'private') return; // owner DM only
+  pendingTheme = null;
+  activeEmojiTheme = loadEnvTheme(); // revert to env-configured or standard
+  await ctx.reply('↩️ Emoji theme reset to default (standard emoji or EMOJI_THEME env if set).');
+});
+
 bot.command('check', async ctx => {
-  // Guard: ignore other bots
   if (ctx.from?.is_bot) return;
 
   const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
@@ -217,14 +231,127 @@ bot.command('check', async ctx => {
 
 // ---- Auto-detect in messages -----------------------------------------------
 
+// Pending emoji theme: set while awaiting owner approval of a preview.
+// { map: {std: id, ...}, approvalChatId: number }
+let pendingTheme = null;
+// Runtime-mutable active theme (starts from env, can be updated by owner DM).
+let activeEmojiTheme = EMOJI_THEME;
+
+/** Send a preview card and ask the owner to approve. Only works in private DMs. */
+async function sendEmojiPreview(ctx, map) {
+  const theme = buildEmojiTheme(map);
+  if (theme === (await import('./emoji-theme.mjs')).noTheme) {
+    await ctx.reply('⚠️ None of those emoji IDs could be mapped — no valid numeric IDs found. Try sending individual custom emoji or a pack link.');
+    return;
+  }
+
+  pendingTheme = { map, approvalChatId: ctx.chat.id };
+
+  const previewText = previewTheme(theme);
+  const mappedCount = Object.keys(map).length;
+  const totalSlots = CARD_EMOJI_SLOTS.length;
+
+  await ctx.reply(
+    `🎨 <b>Emoji Theme Preview</b>\n\n` +
+    `Mapped ${mappedCount} of ${totalSlots} card emoji slots:\n\n` +
+    `<code>${previewText}</code>\n\n` +
+    `<b>Note:</b> Custom emoji render only when the bot owner has Telegram Premium. Standard emoji always shows as fallback.\n\n` +
+    `Apply this theme? Reply <b>✅ yes</b> or <b>❌ no</b>.`,
+    { parse_mode: 'HTML' }
+  );
+}
+
 bot.on('message', async ctx => {
   // Skip other bots (loop guard)
   if (ctx.from?.is_bot) return;
 
-  const text = ctx.message?.text ?? ctx.message?.caption ?? '';
-  if (!text) return;
+  const msg = ctx.message;
+  const msgText = msg?.text ?? msg?.caption ?? '';
+  const isPrivate = ctx.chat?.type === 'private';
 
-  const candidates = detectCandidates(text);
+  // ---- Owner emoji-selection flow (private DM only) -----------------------
+  if (isPrivate) {
+    // Approval response for a pending preview
+    if (pendingTheme && pendingTheme.approvalChatId === ctx.chat.id) {
+      const reply = msgText.trim().toLowerCase();
+      if (/^(yes|✅|y|ok|apply)/.test(reply)) {
+        activeEmojiTheme = buildEmojiTheme(pendingTheme.map);
+        pendingTheme = null;
+        await ctx.reply('✅ Theme applied. New scans will use the custom emoji. Send <b>❌ no</b> or /resettheme to revert.', { parse_mode: 'HTML' });
+        return;
+      }
+      if (/^(no|❌|n|cancel|reject)/.test(reply)) {
+        pendingTheme = null;
+        await ctx.reply('❌ Theme discarded. Standard emoji will be used.');
+        return;
+      }
+    }
+
+    // Pack link detection (t.me/addemoji/PACKNAME)
+    const packName = detectPackLink(msgText);
+    if (packName) {
+      await ctx.reply(`🔍 Fetching emoji pack <code>${packName}</code>…`, { parse_mode: 'HTML' });
+      try {
+        const stickerSet = await ctx.telegram.getStickerSet(packName);
+        const stickers = stickerSet?.stickers ?? [];
+        const customStickers = stickers.filter(s => s.custom_emoji_id);
+        if (!customStickers.length) {
+          await ctx.reply(`⚠️ Pack <code>${packName}</code> has no custom emoji stickers.`, { parse_mode: 'HTML' });
+          return;
+        }
+        // List by index — alt-emoji in packs like CryptoIcons are unreliable labels.
+        const listing = listPackStickers(stickers);
+        const listLines = listing.slice(0, 50).map(s => `[${s.index}] ${s.emoji} → <code>${s.custom_emoji_id}</code>`);
+        await ctx.reply(
+          `📦 <b>${packName}</b> — ${listing.length} custom emoji.\n\n` +
+          `Alt-emoji labels may be misleading. Identify logos by index:\n\n` +
+          listLines.join('\n') +
+          (listing.length > 50 ? `\n… and ${listing.length - 50} more.` : '') +
+          `\n\n<b>To apply:</b> Send a JSON map of card-slot emoji → ID:\n` +
+          `<code>{"🟣":"ID_FOR_SOLANA","🌍":"ID_FOR_WEBSITE","✖️":"ID_FOR_X","✈️":"ID_FOR_TELEGRAM"}</code>`,
+          { parse_mode: 'HTML' }
+        );
+      } catch (err) {
+        await ctx.reply(`⚠️ Could not fetch pack <code>${packName}</code>: ${err?.message ?? 'unknown error'}.`, { parse_mode: 'HTML' });
+      }
+      return;
+    }
+
+    // Direct JSON map input: {"🟣":"5291923604487808793", ...}
+    if (msgText.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(msgText.trim());
+        const map = buildDirectMap(parsed);
+        if (!Object.keys(map).length) {
+          await ctx.reply('⚠️ No valid emoji ID entries found. IDs must be numeric strings.\nExample: <code>{"🟣":"5291923604487808793"}</code>', { parse_mode: 'HTML' });
+          return;
+        }
+        await sendEmojiPreview(ctx, map);
+        return;
+      } catch {
+        // Not valid JSON — fall through to normal CA detection
+      }
+    }
+
+    // Individual custom_emoji entity detection
+    const entities = msg?.entities ?? msg?.caption_entities ?? [];
+    const customIds = extractCustomEmojiIds(entities);
+    if (customIds.length) {
+      try {
+        const stickers = await ctx.telegram.getCustomEmojiStickers(customIds);
+        const map = buildPendingMap(stickers);
+        await sendEmojiPreview(ctx, map);
+      } catch (err) {
+        await ctx.reply(`⚠️ Could not resolve custom emoji: ${err?.message ?? 'unknown error'}.`);
+      }
+      return;
+    }
+  }
+
+  // ---- CA auto-detection (groups and DMs) ---------------------------------
+  if (!msgText) return;
+
+  const candidates = detectCandidates(msgText);
   if (!candidates.length) return;
 
   // Process first detected candidate only (brief: one reply per message)
