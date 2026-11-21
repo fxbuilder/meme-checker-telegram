@@ -24,3 +24,7 @@ desktop.ini
 tmp/
 temp/
 .worktrees/
+
+# Local emoji theme proposal/config (not committed)
+emoji-theme.proposed.json
+emoji-theme.json
