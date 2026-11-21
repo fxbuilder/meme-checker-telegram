@@ -233,10 +233,17 @@ bot.catch((err, ctx) => {
 // ---- Launch ----------------------------------------------------------------
 
 console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
-bot.launch().then(() => console.log('[bot] Bot is running.')).catch(err => {
-  console.error('[bot] Failed to start:', err?.message ?? err);
-  process.exit(1);
-});
+// Telegraf v4: launch() resolves on stop, so confirm startup via getMe (best-effort).
+Promise.resolve(bot.telegram?.getMe?.())
+  .then(me => {
+    const who = me?.username ? `@${me.username}` : 'Telegram';
+    console.log(`[bot] Connected as ${who}. Polling for updates. (Ctrl+C to stop)`);
+    return bot.launch();
+  })
+  .catch(err => {
+    console.error('[bot] Failed to start:', err?.message ?? err);
+    process.exit(1);
+  });
 
 process.once('SIGINT',  () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
