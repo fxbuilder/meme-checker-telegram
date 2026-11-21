@@ -14,8 +14,8 @@ import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
 import {
-  loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap,
-  extractCustomEmojiIds, detectPackLink, CARD_EMOJI_SLOTS,
+  loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
+  extractCustomEmojiIds, detectPackLink, listPackStickers, CARD_EMOJI_SLOTS,
 } from './emoji-theme.mjs';
 
 const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN ?? '';
@@ -296,15 +296,41 @@ bot.on('message', async ctx => {
         const stickers = stickerSet?.stickers ?? [];
         const customStickers = stickers.filter(s => s.custom_emoji_id);
         if (!customStickers.length) {
-          await ctx.reply(`⚠️ Pack <code>${packName}</code> has no custom emoji stickers. Try a different pack.`, { parse_mode: 'HTML' });
+          await ctx.reply(`⚠️ Pack <code>${packName}</code> has no custom emoji stickers.`, { parse_mode: 'HTML' });
           return;
         }
-        const map = buildPendingMap(customStickers);
-        await sendEmojiPreview(ctx, map);
+        // List by index — alt-emoji in packs like CryptoIcons are unreliable labels.
+        const listing = listPackStickers(stickers);
+        const listLines = listing.slice(0, 50).map(s => `[${s.index}] ${s.emoji} → <code>${s.custom_emoji_id}</code>`);
+        await ctx.reply(
+          `📦 <b>${packName}</b> — ${listing.length} custom emoji.\n\n` +
+          `Alt-emoji labels may be misleading. Identify logos by index:\n\n` +
+          listLines.join('\n') +
+          (listing.length > 50 ? `\n… and ${listing.length - 50} more.` : '') +
+          `\n\n<b>To apply:</b> Send a JSON map of card-slot emoji → ID:\n` +
+          `<code>{"🟣":"ID_FOR_SOLANA","🌍":"ID_FOR_WEBSITE","✖️":"ID_FOR_X","✈️":"ID_FOR_TELEGRAM"}</code>`,
+          { parse_mode: 'HTML' }
+        );
       } catch (err) {
-        await ctx.reply(`⚠️ Could not fetch pack <code>${packName}</code>: ${err?.message ?? 'unknown error'}. Make sure the pack exists and is public.`, { parse_mode: 'HTML' });
+        await ctx.reply(`⚠️ Could not fetch pack <code>${packName}</code>: ${err?.message ?? 'unknown error'}.`, { parse_mode: 'HTML' });
       }
       return;
+    }
+
+    // Direct JSON map input: {"🟣":"5291923604487808793", ...}
+    if (msgText.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(msgText.trim());
+        const map = buildDirectMap(parsed);
+        if (!Object.keys(map).length) {
+          await ctx.reply('⚠️ No valid emoji ID entries found. IDs must be numeric strings.\nExample: <code>{"🟣":"5291923604487808793"}</code>', { parse_mode: 'HTML' });
+          return;
+        }
+        await sendEmojiPreview(ctx, map);
+        return;
+      } catch {
+        // Not valid JSON — fall through to normal CA detection
+      }
     }
 
     // Individual custom_emoji entity detection

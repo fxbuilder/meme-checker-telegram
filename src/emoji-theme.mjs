@@ -108,9 +108,12 @@ export function detectPackLink(text) {
 }
 
 /**
- * Build a pending theme map assigning resolved IDs to card slots in order.
+ * Build a pending theme map assigning resolved IDs to card slots by alt-emoji.
  * stickers: array of objects with .emoji (standard) and .custom_emoji_id.
  * Returns a {standard: id} map for the slots that matched.
+ *
+ * NOTE: pack alt-emoji are unreliable labels (CryptoIcons has Solana tagged 🧬).
+ * For packs with misleading alt-emoji, use buildIndexedMap instead.
  */
 export function buildPendingMap(stickers) {
   if (!Array.isArray(stickers) || !stickers.length) return {};
@@ -118,6 +121,35 @@ export function buildPendingMap(stickers) {
   for (const s of stickers) {
     if (s?.custom_emoji_id && typeof s.emoji === 'string') {
       map[s.emoji] = s.custom_emoji_id;
+    }
+  }
+  return map;
+}
+
+/**
+ * List pack stickers with their index, alt-emoji, and custom_emoji_id.
+ * Returns an array of { index, emoji, custom_emoji_id } for all stickers that have an ID.
+ * Use this to identify logos by visual position when alt-emoji are unreliable.
+ */
+export function listPackStickers(stickers) {
+  if (!Array.isArray(stickers)) return [];
+  return stickers
+    .map((s, i) => ({ index: i, emoji: s?.emoji ?? '', custom_emoji_id: s?.custom_emoji_id ?? null }))
+    .filter(s => s.custom_emoji_id);
+}
+
+/**
+ * Build a theme map directly from a slot→id object provided by the owner.
+ * slotMap: { 'standard_emoji': 'custom_emoji_id', ... }
+ * This is the preferred path when IDs are already known (e.g. pre-resolved by @mc-lead).
+ * Validates IDs are numeric strings; silently drops invalid entries.
+ */
+export function buildDirectMap(slotMap) {
+  if (!slotMap || typeof slotMap !== 'object') return {};
+  const map = {};
+  for (const [std, id] of Object.entries(slotMap)) {
+    if (typeof id === 'string' && /^\d+$/.test(id.trim())) {
+      map[std] = id.trim();
     }
   }
   return map;
