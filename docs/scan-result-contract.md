@@ -19,6 +19,14 @@ This is the internal interface for `scan({ chain, address })` → `formatCard(re
 
 A confirmed token with no market pair is still `ok` if required identity is available; unavailable market fields are `null`. Measured `0` is preserved. FDV never fills a missing market cap.
 
+## Full card layout and link configuration
+
+Sections 4.1 and 9 of the brief do not require new normalized scan fields. Keep the Holder Overview, Narrative and Project Info headings even when data is absent. Use concise English availability copy for null fields; a missing narrative means no summary (e.g. “No verified narrative available”), and absent project URLs show “Not Available” without links. The DYOR teaser, CTA text and emoji theme are presentation, not backend evidence. Mark unlaunched features “Coming Soon” rather than suggesting they are available.
+
+- **Full Analysis** uses only `fullAnalysisUrl` from the scanner, for the matched chain/address. Keep the section visible without a working CTA by showing an availability note when the URL is `null`.
+- **Premium** is a separate, optional bot-level HTTPS destination, not a per-token scan field. Pass an explicit destination into the formatter and `/upgrade`; never derive `/pricing` from the token-page origin. If the destination is absent, malformed, credentialed, non-HTTPS, or a placeholder, omit the Premium button. This must not affect Website or Add Bot to Group. The configured destination is not considered verified until the website flow is checked.
+- When all destinations are present, preserve the §9 order: Full Analysis; Premium then Website; Add Bot to Group. Omit unavailable buttons and empty rows, without changing the relative order of those that remain.
+
 ## Failure result
 
 `{ mode, status }`, with no token data or CTA. Current renderer status vocabulary: `not-found` (confirmed token miss in live mode, fixture miss in mock mode), `invalid-response` (unexpected payload or identity mismatch), `api-error` (access/config/transport/upstream failure), `rate-limited` (confirmed throttle). The adapter must not map an undocumented HTTP/business error to `not-found`, including an otherwise unexplained `404`. New user-facing statuses, if needed after Core confirmation, require coordination before being emitted. Mock failures stay labeled mock; no live failure can fall back to mock.
