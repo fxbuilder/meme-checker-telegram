@@ -15,7 +15,7 @@ This is the internal interface for `scan({ chain, address })` → `formatCard(re
 | `narrative` | `null` or `{ summary, source }`, both non-empty strings. The adapter, not the renderer, gates this on reliable provenance for the same token. |
 | `project` | `{ website, x, telegram }`; verified HTTPS URLs or `null`. The adapter must reject untrusted URL schemes and credentials; renderer still escapes HTML attributes. |
 | `updatedAt` | Backend observation timestamp as an ISO 8601 string with timezone, or `null`; never synthesize freshness. |
-| `fullAnalysisUrl` | Adapter-supplied HTTPS URL or `null`. Build only from confirmed website route rules for the matched token; preserve required address casing. The renderer uses it unchanged or omits the CTA. `.example` fixture URLs are mock-only. |
+| `fullAnalysisUrl` | Adapter-supplied absolute HTTPS URL for the exact chain/address, or `null`. Live requires a confirmed token route, not just a configured origin. Mock mode defaults to `null` and may link only to an explicitly configured demo destination using the mock route convention. Placeholder hosts (including `.example`), malformed URLs and URLs with userinfo are never CTA links in either mode. The renderer uses an accepted URL unchanged; it never invents a route. |
 
 A confirmed token with no market pair is still `ok` if required identity is available; unavailable market fields are `null`. Measured `0` is preserved. FDV never fills a missing market cap.
 
