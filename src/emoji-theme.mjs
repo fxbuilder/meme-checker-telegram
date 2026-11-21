@@ -75,3 +75,50 @@ export function previewTheme(e) {
   const rows = CARD_EMOJI.map(std => `${std} → ${e(std)}`);
   return rows.join('\n');
 }
+
+/** The standard emoji slots used in cards, in order. */
+export const CARD_EMOJI_SLOTS = ['🚀','🪙','⛓','📍','💰','📊','🧠','🌐','🔎','👉','🔒','⚡','⚠️','⏳'];
+
+/**
+ * Extract all custom_emoji_id values from a Telegram message entity array.
+ * Returns a deduplicated array of ID strings.
+ */
+export function extractCustomEmojiIds(entities) {
+  if (!Array.isArray(entities)) return [];
+  const ids = [];
+  const seen = new Set();
+  for (const ent of entities) {
+    if (ent.type === 'custom_emoji' && ent.custom_emoji_id && !seen.has(ent.custom_emoji_id)) {
+      seen.add(ent.custom_emoji_id);
+      ids.push(ent.custom_emoji_id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Detect a Telegram emoji-pack link from message text.
+ * Accepts both https://t.me/addemoji/PACK and t.me/addemoji/PACK formats.
+ * Returns the pack name string, or null if not found.
+ */
+export function detectPackLink(text) {
+  if (typeof text !== 'string') return null;
+  const m = text.match(/(?:https?:\/\/)?t\.me\/addemoji\/([A-Za-z0-9_]+)/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Build a pending theme map assigning resolved IDs to card slots in order.
+ * stickers: array of objects with .emoji (standard) and .custom_emoji_id.
+ * Returns a {standard: id} map for the slots that matched.
+ */
+export function buildPendingMap(stickers) {
+  if (!Array.isArray(stickers) || !stickers.length) return {};
+  const map = {};
+  for (const s of stickers) {
+    if (s?.custom_emoji_id && typeof s.emoji === 'string') {
+      map[s.emoji] = s.custom_emoji_id;
+    }
+  }
+  return map;
+}
