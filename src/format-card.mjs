@@ -56,14 +56,15 @@ export function formatCard(result, { mockLabel = false, websiteBase = '' } = {})
 
   // ---- Error cards --------------------------------------------------------
   if (status !== 'ok') {
+    const mockSuffix = (mockLabel || mode === 'mock') ? ' <i>[mock]</i>' : '';
     const msgs = {
-      'not-found':        '⚠️ <b>Token Not Found</b>\n\nNo data for this address. It may not have a trading pair yet.',
-      'invalid-response': '⚠️ <b>Scan Error</b>\n\nThe backend returned an unexpected response. Please try again.',
-      'api-error':        '⚠️ <b>Unable to fetch data</b>\n\nThe data provider returned an error. Please try again later.',
-      'rate-limited':     '⏳ <b>Rate Limited</b>\n\nToo many requests. Please wait a moment and try again.',
+      'not-found':        `⚠️ <b>Token Not Found</b>${mockSuffix}\n\nNo data for this address. It may not have a trading pair yet.`,
+      'invalid-response': `⚠️ <b>Scan Error</b>${mockSuffix}\n\nThe backend returned an unexpected response. Please try again.`,
+      'api-error':        `⚠️ <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. Please try again later.`,
+      'rate-limited':     `⏳ <b>Rate Limited</b>${mockSuffix}\n\nToo many requests. Please wait a moment and try again.`,
     };
     return {
-      text: msgs[status] ?? '⚠️ <b>Scan failed.</b> Please try again.',
+      text: msgs[status] ?? `⚠️ <b>Scan failed.</b>${mockSuffix} Please try again.`,
       buttons: [],
     };
   }
@@ -184,8 +185,9 @@ export function formatCard(result, { mockLabel = false, websiteBase = '' } = {})
   lines.push('⚡ <i>Powered by MEME CHECKER</i>');
 
   // ---- Inline keyboard ----------------------------------------------------
-  const analysisUrl = fullAnalysisUrl
-    ?? (websiteBase && address ? `${websiteBase}/check/${chain}/${encodeURIComponent(address)}?utm_source=telegram&utm_medium=group_bot&utm_campaign=token_check` : null);
+  // Only use fullAnalysisUrl when the adapter explicitly provided it.
+  // Never synthesize a token URL from websiteBase — the route is not confirmed.
+  const analysisUrl = fullAnalysisUrl ?? null;
 
   const premiumUrl = websiteBase ? `${websiteBase}/pricing?utm_source=telegram&utm_medium=group_bot&utm_campaign=premium` : null;
   const websiteUrl = websiteBase ? `${websiteBase}?utm_source=telegram&utm_medium=group_bot&utm_campaign=explore` : null;

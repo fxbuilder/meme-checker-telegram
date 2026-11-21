@@ -85,6 +85,7 @@ async function runScan(ctx, chain, address) {
 // ---- Commands --------------------------------------------------------------
 
 bot.start(async ctx => {
+  if (ctx.from?.is_bot) return;
   const text = [
     '👋 <b>Welcome to MEME CHECKER</b>',
     '',
@@ -113,6 +114,7 @@ bot.start(async ctx => {
 });
 
 bot.help(async ctx => {
+  if (ctx.from?.is_bot) return;
   const text = [
     '📖 <b>MEME CHECKER — Help</b>',
     '',
@@ -135,6 +137,7 @@ bot.help(async ctx => {
 });
 
 bot.command('about', async ctx => {
+  if (ctx.from?.is_bot) return;
   const text = [
     '🚀 <b>MEME CHECKER</b>',
     '',
@@ -153,6 +156,7 @@ bot.command('about', async ctx => {
 });
 
 bot.command('website', async ctx => {
+  if (ctx.from?.is_bot) return;
   if (WEBSITE_BASE) {
     await ctx.reply(
       `🌐 Open Meme Checker: ${WEBSITE_BASE}`,
@@ -164,6 +168,7 @@ bot.command('website', async ctx => {
 });
 
 bot.command('upgrade', async ctx => {
+  if (ctx.from?.is_bot) return;
   const url = WEBSITE_BASE ? `${WEBSITE_BASE}/pricing?utm_source=telegram&utm_medium=dm&utm_campaign=upgrade` : null;
   if (url) {
     await ctx.reply(

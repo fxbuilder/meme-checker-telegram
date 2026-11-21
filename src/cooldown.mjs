@@ -15,7 +15,8 @@ const userLastScan  = new Map();
 const dedupCache    = new Map();
 
 function userKey(userId, chatId)   { return `u:${userId}:c:${chatId}`; }
-function dedupKey(chatId, address) { return `d:${chatId}:${address.toLowerCase()}`; }
+// Do NOT lowercase here: detect-ca.mjs already lowercases EVM; Solana is case-sensitive.
+function dedupKey(chatId, address) { return `d:${chatId}:${address}`; }
 
 function pruneMap(map, windowMs) {
   const cutoff = Date.now() - windowMs;

@@ -93,19 +93,11 @@ test('Full Analysis button is built from fullAnalysisUrl', () => {
   assert.ok(flat.some(b => b.text.includes('Full Analysis') && b.url.includes('solana')));
 });
 
-test('Full Analysis button built from websiteBase when fullAnalysisUrl absent', () => {
+test('Full Analysis button is omitted when fullAnalysisUrl is null (no synthesized link)', () => {
   const noUrl = { ...SOL_OK, fullAnalysisUrl: null };
   const { buttons } = formatCard(noUrl, { websiteBase: 'https://test.example' });
   const flat = buttons.flat();
-  assert.ok(flat.some(b => b.text.includes('Full Analysis') && b.url.includes('test.example')));
-});
-
-test('UTM params appended when websiteBase present', () => {
-  const noUrl = { ...SOL_OK, fullAnalysisUrl: null };
-  const { buttons } = formatCard(noUrl, { websiteBase: 'https://test.example' });
-  const flat = buttons.flat();
-  const btn = flat.find(b => b.text.includes('Full Analysis'));
-  assert.ok(btn?.url.includes('utm_source=telegram'));
+  assert.equal(flat.find(b => b.text.includes('Full Analysis')), undefined);
 });
 
 test('error card for not-found status', () => {
@@ -117,6 +109,16 @@ test('error card for not-found status', () => {
 test('error card for api-error status', () => {
   const { text } = formatCard({ mode: 'mock', status: 'api-error' });
   assert.ok(text.includes('Unable to fetch data'));
+});
+
+test('[mock] label shown on not-found error card when mockLabel=true', () => {
+  const { text } = formatCard({ mode: 'mock', status: 'not-found' }, { mockLabel: true });
+  assert.ok(text.includes('[mock]'));
+});
+
+test('[mock] label shown on invalid-response error card when mockLabel=true', () => {
+  const { text } = formatCard({ mode: 'mock', status: 'invalid-response' }, { mockLabel: true });
+  assert.ok(text.includes('[mock]'));
 });
 
 test('XSS characters in token name are escaped', () => {
