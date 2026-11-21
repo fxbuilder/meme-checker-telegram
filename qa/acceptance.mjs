@@ -12,7 +12,14 @@ process.env.TOKEN_PAGE_BASE_URL=origin;
 const {mockScan,normalizeMock}=await load(i,'mock-scan');
 const sol='FiXtUrE111111111111111111111111111111111111', bnb='0xabcdef0123456789abcdef0123456789abcdef01';
 for(const [chain,address,input] of [['solana',sol,sol],['bsc',bnb,bnb.toUpperCase()]])test(chain+' candidate → fixture → exact CTA',async()=>{
- const [req]=detectCandidates(`Please check (${input})`);assert.deepEqual(req,{chain,address});const r=await mockScan(req);const {text,buttons}=formatCard(r);assert.match(text,/\[mock\]/);assert.match(text,new RegExp(r.token.name));const url=new URL(buttons[0][0].url);assert.equal(url.origin,origin);assert.equal(url.pathname,`/check/${chain}/${address}`);assert.doesNotMatch(text,/NARRATIVE/);
+ const [req]=detectCandidates(`Please check (${input})`);assert.deepEqual(req,{chain,address});const r=await mockScan(req);const {text,buttons}=formatCard(r);assert.match(text,/\[mock\]/);assert.match(text,new RegExp(r.token.name));const url=new URL(buttons[0][0].url);assert.equal(url.origin,origin);assert.equal(url.pathname,`/check/${chain}/${address}`);const plain=text.replace(/<[^>]+>/g,'').replaceAll('&amp;','&');
+ const markers=['🚀 MEME CHECKER | TOKEN ANALYSIS',`🪙 ${r.token.name}`,'⛓ Chain:','📍 CA:', '💰 MARKET DATA','📊 HOLDER OVERVIEW','🧠 NARRATIVE','🌐 PROJECT INFO','🔎 WANT TO DYOR DEEPER?','• Advanced Narrative','• Dev Wallet Investigation','• Bundle Wallet Analysis','• Bubble Map & Wallet Clusters','• KOL Call History','• Smart Money Insights','👉 FULL TOKEN ANALYSIS:', '⚡ Powered by MEME CHECKER'];
+ let last=-1; for(const marker of markers){const index=plain.indexOf(marker);assert.ok(index>last,`missing or out of order: ${marker}`);last=index;}
+ assert.equal(plain.split('🧠 NARRATIVE')[1].split('🌐 PROJECT INFO')[0].replace(/[━\s]+/g,' ').trim(),'Narrative unavailable');
+ assert.doesNotMatch(text,/<tg-emoji/i);
+ const rows=formatCard(r,{websiteBase:origin,premiumUrl:origin+'/vip',botUsername:'OfflineQaBot'}).buttons;
+ assert.deepEqual(rows.map(row=>row.map(b=>b.text)),[['🔍 View Full Analysis'],['⚡ Unlock Premium','🌐 Explore'],['➕ Add Meme Checker to Your Group']]);
+ assert.equal(new URL(rows[1][0].url).pathname,'/vip');assert.equal(rows[2][0].url,'https://t.me/OfflineQaBot?startgroup=true');
  if(chain==='bsc'){assert.match(text,/Volume 24H: \$0/);assert.doesNotMatch(text,/Market Cap:/);assert.match(text,/FDV:/);}
 });
 const req={chain:'solana',address:sol},data={...req,token:{name:'Example',symbol:'EX'}};
