@@ -13,10 +13,16 @@ import { detectCandidates } from './detect-ca.mjs';
 import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
+import { loadEnvTheme, previewTheme } from './emoji-theme.mjs';
 
-const BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN ?? '';
+const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const WEBSITE_BASE = (process.env.TOKEN_PAGE_BASE_URL ?? '').replace(/\/$/, '');
-const SCAN_MODE   = process.env.SCAN_MODE ?? 'mock';
+const PREMIUM_URL  = (process.env.PREMIUM_URL ?? '').trim();
+const SCAN_MODE    = process.env.SCAN_MODE ?? 'mock';
+const EMOJI_THEME  = loadEnvTheme();
+
+// Bot username populated after launch via getMe
+let BOT_USERNAME = '';
 
 if (!BOT_TOKEN) {
   console.error('[bot] TELEGRAM_BOT_TOKEN is not set. Exiting.');
@@ -59,8 +65,11 @@ async function runScan(ctx, chain, address) {
 
   const result = await scan({ chain, address });
   const { text, buttons } = formatCard(result, {
-    mockLabel: SCAN_MODE === 'mock',
+    mockLabel:   SCAN_MODE === 'mock',
     websiteBase: WEBSITE_BASE,
+    premiumUrl:  PREMIUM_URL,
+    botUsername: BOT_USERNAME,
+    emojiTheme:  EMOJI_THEME,
   });
 
   const keyboard = buildKeyboard(buttons);
@@ -169,7 +178,7 @@ bot.command('website', async ctx => {
 
 bot.command('upgrade', async ctx => {
   if (ctx.from?.is_bot) return;
-  const url = WEBSITE_BASE ? `${WEBSITE_BASE}/pricing?utm_source=telegram&utm_medium=dm&utm_campaign=upgrade` : null;
+  const url = PREMIUM_URL || (WEBSITE_BASE ? `${WEBSITE_BASE}/pricing?utm_source=telegram&utm_medium=dm&utm_campaign=upgrade` : null);
   if (url) {
     await ctx.reply(
       '⚡ Unlock full intelligence on Meme Checker.',
@@ -233,7 +242,15 @@ bot.catch((err, ctx) => {
 // ---- Launch ----------------------------------------------------------------
 
 console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
-bot.launch().then(() => console.log('[bot] Bot is running.')).catch(err => {
+bot.launch().then(async () => {
+  try {
+    const me = await bot.telegram.getMe();
+    BOT_USERNAME = me.username ?? '';
+    console.log(`[bot] Connected as @${BOT_USERNAME}. Polling for updates. (Ctrl+C to stop)`);
+  } catch {
+    console.log('[bot] Bot is running (could not resolve username).');
+  }
+}).catch(err => {
   console.error('[bot] Failed to start:', err?.message ?? err);
   process.exit(1);
 });

@@ -1,8 +1,21 @@
 /**
  * src/format-card.mjs
  * Build the Telegram HTML result card and inline keyboard from a normalized scan result.
- * Uses HTML parse mode to escape characters safely.
+ *
+ * Layout follows §4.1 of the product brief:
+ *   Header → Market Data → Holder Overview → Narrative → Project Info →
+ *   WANT TO DYOR DEEPER? (feature list + FULL TOKEN ANALYSIS CTA line) →
+ *   Powered by MEME CHECKER
+ *
+ * Button order follows §9:
+ *   Row 1: 🔍 Full Analysis
+ *   Row 2: ⚡ Premium   🌐 Website
+ *   Row 3: ➕ Add Bot to Group
+ *
+ * Accepts an optional `emojiTheme` function (from emoji-theme.mjs) for custom emoji.
+ * Standard emoji is the default and automatic fallback.
  */
+import { noTheme } from './emoji-theme.mjs';
 
 function esc(v) {
   if (v == null) return '';
@@ -54,7 +67,7 @@ function explorerUrl(chain, address) {
  * Returns true only for absolute HTTPS URLs with no credentials and no placeholder host.
  * Mirrors the scan-result-contract §fullAnalysisUrl rule.
  */
-function isAcceptableUrl(url) {
+export function isAcceptableUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
     const u = new URL(url);
@@ -67,129 +80,140 @@ function isAcceptableUrl(url) {
   }
 }
 
+const DIV = '━━━━━━━━━━━━━━━━━━';
+
 /** Build the HTML card text and inline keyboard buttons. */
-export function formatCard(result, { mockLabel = false, websiteBase = '' } = {}) {
+export function formatCard(result, {
+  mockLabel    = false,
+  websiteBase  = '',
+  premiumUrl   = '',
+  addBotUrl    = '',
+  botUsername  = '',
+  emojiTheme   = noTheme,
+} = {}) {
   const { token, market, holders, narrative, project, fullAnalysisUrl, updatedAt, status, mode } = result;
+  const e = typeof emojiTheme === 'function' ? emojiTheme : noTheme;
 
   // ---- Error cards --------------------------------------------------------
   if (status !== 'ok') {
     const mockSuffix = (mockLabel || mode === 'mock') ? ' <i>[mock]</i>' : '';
     const msgs = {
-      'not-found':        `⚠️ <b>Token Not Found</b>${mockSuffix}\n\nNo data for this address. It may not have a trading pair yet.`,
-      'invalid-response': `⚠️ <b>Scan Error</b>${mockSuffix}\n\nThe backend returned an unexpected response. Please try again.`,
-      'api-error':        `⚠️ <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. Please try again later.`,
-      'rate-limited':     `⏳ <b>Rate Limited</b>${mockSuffix}\n\nToo many requests. Please wait a moment and try again.`,
+      'not-found':        `${e('⚠️')} <b>Token Not Found</b>${mockSuffix}\n\nNo data for this address. It may not have a trading pair yet.`,
+      'invalid-response': `${e('⚠️')} <b>Scan Error</b>${mockSuffix}\n\nThe backend returned an unexpected response. Please try again.`,
+      'api-error':        `${e('⚠️')} <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. Please try again later.`,
+      'rate-limited':     `${e('⏳')} <b>Rate Limited</b>${mockSuffix}\n\nToo many requests. Please wait a moment and try again.`,
     };
     return {
-      text: msgs[status] ?? `⚠️ <b>Scan failed.</b>${mockSuffix} Please try again.`,
+      text: msgs[status] ?? `${e('⚠️')} <b>Scan failed.</b>${mockSuffix} Please try again.`,
       buttons: [],
     };
   }
 
-  // ---- Identity -----------------------------------------------------------
-  const chain   = token?.chain  ?? 'unknown';
+  const chain   = token?.chain   ?? 'unknown';
   const address = token?.address ?? '';
-  const name    = token?.name   ?? 'Unknown';
-  const symbol  = token?.symbol ?? '?';
+  const name    = token?.name    ?? 'Unknown';
+  const symbol  = token?.symbol  ?? '?';
 
   const explorerLink = explorerUrl(chain, address);
   const addrDisplay  = esc(shortAddr(address, chain));
   const addrFull     = esc(address);
 
-  let lines = [];
+  const lines = [];
 
-  lines.push(`🚀 <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockLabel || mode === 'mock' ? ' <i>[mock]</i>' : ''}`);
+  const mockTag = (mockLabel || mode === 'mock') ? ' <i>[mock]</i>' : '';
+  lines.push(`${e('🚀')} <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockTag}`);
   lines.push('');
-  lines.push(`🪙 <b>${esc(name)} ($${esc(symbol)})</b>`);
-  lines.push(`⛓ Chain: ${esc(chainLabel(chain))}`);
+  lines.push(`${e('🪙')} <b>${esc(name)} ($${esc(symbol)})</b>`);
+  lines.push(`${e('⛓')} Chain: ${esc(chainLabel(chain))}`);
 
   if (explorerLink) {
-    lines.push(`📍 CA: <a href="${esc(explorerLink)}">${addrDisplay}</a>`);
+    lines.push(`${e('📍')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a>`);
   } else {
-    lines.push(`📍 CA: <code>${addrFull}</code>`);
+    lines.push(`${e('📍')} CA: <code>${addrFull}</code>`);
   }
 
-  // ---- Market data --------------------------------------------------------
-  const price    = fmt(market?.priceUsd, 8);
-  const mcap     = fmt(market?.marketCapUsd);
-  const fdv      = fmt(market?.fdvUsd);
-  const liq      = fmt(market?.liquidityUsd);
-  const vol24h   = fmt(market?.volume24hUsd);
-  const ch24h    = fmtPct(market?.priceChange24h);
+  // ---- Market Data --------------------------------------------------------
+  lines.push('');
+  lines.push(DIV);
+  lines.push(`${e('💰')} <b>MARKET DATA</b>`);
+  lines.push('');
 
-  const hasMarket = price || mcap || liq || vol24h;
-  if (hasMarket) {
-    lines.push('');
-    lines.push('━━━━━━━━━━━━━━━━━━');
-    lines.push('💰 <b>MARKET DATA</b>');
-    lines.push('');
-    if (price)  lines.push(`Price: ${price}`);
-    if (mcap)   lines.push(`Market Cap: ${mcap}`);
-    // FDV shown only when explicitly present AND distinct from mcap
-    if (fdv && fdv !== mcap) lines.push(`FDV: ${fdv}`);
-    if (liq)    lines.push(`Liquidity: ${liq}`);
-    if (vol24h) lines.push(`Volume 24H: ${vol24h}`);
-    if (ch24h)  lines.push(`Price Change 24H: ${ch24h}`);
-    if (!price && !mcap) lines.push('<i>Market data unavailable</i>');
-  } else {
-    lines.push('');
-    lines.push('━━━━━━━━━━━━━━━━━━');
-    lines.push('💰 <b>MARKET DATA</b>');
-    lines.push('');
-    lines.push('<i>Market data unavailable</i>');
-  }
+  const price  = fmt(market?.priceUsd, 8);
+  const mcap   = fmt(market?.marketCapUsd);
+  const fdv    = fmt(market?.fdvUsd);
+  const liq    = fmt(market?.liquidityUsd);
+  const vol24h = fmt(market?.volume24hUsd);
+  const ch1h   = fmtPct(market?.priceChange1h);
+  const ch24h  = fmtPct(market?.priceChange24h);
+  const pairAge = market?.pairAge != null ? esc(String(market.pairAge)) : null;
 
-  // ---- Holders ------------------------------------------------------------
-  const totalH = fmtNum(holders?.total);
-  const top10  = holders?.top10Percentage != null && Number.isFinite(holders.top10Percentage)
+  if (price)   lines.push(`Price: ${price}`);
+  if (mcap)    lines.push(`Market Cap: ${mcap}`);
+  if (fdv && fdv !== mcap) lines.push(`FDV: ${fdv}`);
+  if (liq)     lines.push(`Liquidity: ${liq}`);
+  if (market?.volume24hUsd === 0) lines.push(`Volume 24H: $0`);
+  else if (vol24h) lines.push(`Volume 24H: ${vol24h}`);
+  if (ch1h)    lines.push(`Price Change 1H: ${ch1h}`);
+  if (ch24h)   lines.push(`Price Change 24H: ${ch24h}`);
+  if (pairAge) lines.push(`Pair Age: ${pairAge}`);
+
+  const hasAnyMarket = price || mcap || liq || market?.volume24hUsd === 0 || vol24h || ch1h || ch24h;
+  if (!hasAnyMarket) lines.push('<i>Market data unavailable</i>');
+
+  // ---- Holder Overview ----------------------------------------------------
+  lines.push('');
+  lines.push(DIV);
+  lines.push(`${e('📊')} <b>HOLDER OVERVIEW</b>`);
+  lines.push('');
+
+  const totalH  = fmtNum(holders?.total);
+  const top10   = holders?.top10Percentage != null && Number.isFinite(holders.top10Percentage)
     ? `${holders.top10Percentage.toFixed(1)}%` : null;
   const largest = holders?.largestHolderPercentage != null && Number.isFinite(holders.largestHolderPercentage)
     ? `${holders.largestHolderPercentage.toFixed(1)}%` : null;
 
-  if (totalH || top10 || largest) {
-    lines.push('');
-    lines.push('━━━━━━━━━━━━━━━━━━');
-    lines.push('📊 <b>HOLDER OVERVIEW</b>');
-    lines.push('');
-    if (totalH)  lines.push(`Total Holders: ${totalH}`);
-    if (top10)   lines.push(`Top 10 Holders: ${top10}`);
-    if (largest) lines.push(`Largest Holder: ${largest}`);
-  }
+  if (totalH)  lines.push(`Total Holders: ${totalH}`);
+  if (top10)   lines.push(`Top 10 Holders: ${top10}`);
+  if (largest) lines.push(`Largest Holder: ${largest}`);
+  if (!totalH && !top10 && !largest) lines.push('<i>Holder data unavailable</i>');
 
-  // ---- Narrative (only when a verified source is present) -----------------
+  // ---- Narrative ----------------------------------------------------------
+  lines.push('');
+  lines.push(DIV);
+  lines.push(`${e('🧠')} <b>NARRATIVE</b>`);
+  lines.push('');
+
   if (narrative?.summary && narrative?.source) {
-    lines.push('');
-    lines.push('━━━━━━━━━━━━━━━━━━');
-    lines.push('🧠 <b>NARRATIVE</b>');
-    lines.push('');
     lines.push(esc(narrative.summary));
     lines.push(`<i>Source: ${esc(narrative.source)}</i>`);
+  } else {
+    lines.push('<i>Narrative unavailable</i>');
   }
 
-  // ---- Project info -------------------------------------------------------
-  const hasProject = project?.website || project?.x || project?.telegram;
-  if (hasProject) {
-    lines.push('');
-    lines.push('━━━━━━━━━━━━━━━━━━');
-    lines.push('🌐 <b>PROJECT INFO</b>');
-    lines.push('');
-    lines.push(`Website: ${project.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
-    lines.push(`X: ${project.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
-    lines.push(`Telegram: ${project.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
-  }
+  // ---- Project Info -------------------------------------------------------
+  lines.push('');
+  lines.push(DIV);
+  lines.push(`${e('🌐')} <b>PROJECT INFO</b>`);
+  lines.push('');
+  lines.push(`Website: ${project?.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
+  lines.push(`X: ${project?.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
+  lines.push(`Telegram: ${project?.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
 
-  // ---- Premium teaser -----------------------------------------------------
+  // ---- WANT TO DYOR DEEPER? (§4.1 / §5.3) --------------------------------
   lines.push('');
-  lines.push('━━━━━━━━━━━━━━━━━━');
-  lines.push('🔒 <b>MORE INTELLIGENCE AVAILABLE</b>');
+  lines.push(DIV);
+  lines.push(`${e('🔎')} <b>WANT TO DYOR DEEPER?</b>`);
   lines.push('');
-  lines.push('Want to know more about this token?');
+  lines.push('Discover more about this token:');
   lines.push('');
-  lines.push('• Are wallets connected to the Dev?');
-  lines.push('• Is the supply concentrated in related wallets?');
-  lines.push('• Which KOLs have mentioned this token?');
-  lines.push('• What does the Bubble Map reveal?');
-  lines.push('• Are large wallets buying or selling?');
+  lines.push('• Advanced Narrative');
+  lines.push('• Dev Wallet Investigation');
+  lines.push('• Bundle Wallet Analysis');
+  lines.push('• Bubble Map &amp; Wallet Clusters');
+  lines.push('• KOL Call History');
+  lines.push('• Smart Money Insights');
+  lines.push('');
+  lines.push(`${e('👉')} <b>FULL TOKEN ANALYSIS:</b>`);
 
   // ---- Updated at ---------------------------------------------------------
   if (updatedAt) {
@@ -199,24 +223,31 @@ export function formatCard(result, { mockLabel = false, websiteBase = '' } = {})
   }
 
   lines.push('');
-  lines.push('⚡ <i>Powered by MEME CHECKER</i>');
+  lines.push(`${e('⚡')} <i>Powered by MEME CHECKER</i>`);
 
-  // ---- Inline keyboard ----------------------------------------------------
-  // Only use fullAnalysisUrl when the adapter explicitly provided it.
-  // Never synthesize a token URL from websiteBase — the route is not confirmed.
-  // Additionally reject placeholder hosts and credentialed URLs per the scan-result contract.
+  // ---- Inline keyboard (§9 order) -----------------------------------------
+  // Row 1: Full Analysis — from adapter-supplied URL only, never synthesized.
   const analysisUrl = isAcceptableUrl(fullAnalysisUrl) ? fullAnalysisUrl : null;
 
-  const premiumUrl = websiteBase ? `${websiteBase}/pricing?utm_source=telegram&utm_medium=group_bot&utm_campaign=premium` : null;
-  const websiteUrl = websiteBase ? `${websiteBase}?utm_source=telegram&utm_medium=group_bot&utm_campaign=explore` : null;
+  // Row 2: Premium (independent setting) + Website
+  // premiumUrl is a separate env — NOT auto-derived from websiteBase.
+  const resolvedPremiumUrl = isAcceptableUrl(premiumUrl) ? premiumUrl : null;
+  const resolvedWebsiteUrl = isAcceptableUrl(websiteBase)
+    ? `${websiteBase}?utm_source=telegram&utm_medium=group_bot&utm_campaign=explore` : null;
+
+  // Row 3: Add Bot to Group
+  const resolvedAddBotUrl = isAcceptableUrl(addBotUrl) ? addBotUrl
+    : (botUsername ? `https://t.me/${encodeURIComponent(botUsername)}?startgroup=true` : null);
 
   const buttons = [];
-  if (analysisUrl) buttons.push([{ text: '🔍 View Full Analysis', url: analysisUrl }]);
+  if (analysisUrl)        buttons.push([{ text: '🔍 View Full Analysis', url: analysisUrl }]);
 
   const row2 = [];
-  if (premiumUrl) row2.push({ text: '⚡ Unlock Premium', url: premiumUrl });
-  if (websiteUrl) row2.push({ text: '🌐 Explore', url: websiteUrl });
-  if (row2.length) buttons.push(row2);
+  if (resolvedPremiumUrl) row2.push({ text: '⚡ Unlock Premium', url: resolvedPremiumUrl });
+  if (resolvedWebsiteUrl) row2.push({ text: '🌐 Explore', url: resolvedWebsiteUrl });
+  if (row2.length)        buttons.push(row2);
+
+  if (resolvedAddBotUrl)  buttons.push([{ text: '➕ Add Meme Checker to Your Group', url: resolvedAddBotUrl }]);
 
   return { text: lines.join('\n'), buttons };
 }
