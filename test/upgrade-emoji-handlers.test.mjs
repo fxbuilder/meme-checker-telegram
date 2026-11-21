@@ -83,17 +83,34 @@ test('/upgrade with empty PREMIUM_URL sends no Unlock Premium button', async () 
   }
 });
 
-// ---- custom_emoji DM yields a preview reply --------------------------------
+// ---- custom_emoji DM yields a preview reply with mock card ------------------
 
-test('DM with custom_emoji entity returns a preview reply', async () => {
-  const entities = [{ type: 'custom_emoji', custom_emoji_id: '1234567890123456789' }];
-  const out = await dispatch('message', { text: '🚀', entities, chatType: 'private' });
-  assert.ok(out.length > 0, 'should reply with a preview');
-  const previewMsg = out.find(m => m.text?.includes('Emoji Theme Preview') || m.text?.includes('preview'));
-  assert.ok(previewMsg, 'preview message not found');
+test('DM with custom_emoji entity returns a preview reply and a mock card with the theme applied', async () => {
+  const id = '5291923604487808793';
+  const entities = [{ type: 'custom_emoji', custom_emoji_id: id }];
+  const out = await dispatch('message', { text: '🚀', entities, chatType: 'private', chatId: 60 });
+  assert.ok(out.length >= 2, `expected at least 2 replies (prompt + card), got ${out.length}`);
+  const previewMsg = out.find(m => m.text?.includes('Emoji Theme Preview'));
+  assert.ok(previewMsg, 'preview prompt not found');
+  // The card reply must contain the custom_emoji_id as a tg-emoji tag
+  const cardMsg = out.find(m => m.text?.includes('MEME CHECKER'));
+  assert.ok(cardMsg, 'mock card not found in preview');
+  assert.ok(cardMsg.text.includes(id), `custom_emoji_id ${id} not found in card preview`);
 });
 
 // ---- custom_emoji DM then approval -----------------------------------------
+
+test('ordinary scans use standard emoji while approval is pending', async () => {
+  // Set up a pending theme in chat 70
+  const entities = [{ type: 'custom_emoji', custom_emoji_id: '7777777777777777777' }];
+  await dispatch('message', { text: '🚀', entities, chatType: 'private', chatId: 70 });
+  // Now post a CA in a different (group) chat — should use standard emoji, not the pending theme
+  const address = '0xabcdef0123456789abcdef0123456789abcdef01';
+  const out = await dispatch('message', { text: address, chatType: 'group', chatId: 300 });
+  const card = out.find(m => m.text?.includes('MEME CHECKER'));
+  assert.ok(card, 'card not found');
+  assert.ok(!card.text.includes('tg-emoji'), 'pending theme must not leak into scans before approval');
+});
 
 test('DM approval ✅ yes applies the theme', async () => {
   // First send the emoji to build a pending theme

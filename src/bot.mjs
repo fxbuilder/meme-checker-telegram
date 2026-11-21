@@ -247,18 +247,30 @@ async function sendEmojiPreview(ctx, map) {
 
   pendingTheme = { map, approvalChatId: ctx.chat.id };
 
-  const previewText = previewTheme(theme);
   const mappedCount = Object.keys(map).length;
   const totalSlots = CARD_EMOJI_SLOTS.length;
 
+  // ---- Render a labeled mock Solana card with the theme applied ----
+  // This lets the owner see exactly what the custom icons look like before approving.
+  const { mockScan } = await import('./mock-scan.mjs');
+  const previewResult = await mockScan({ chain: 'solana', address: 'FiXtUrE111111111111111111111111111111111111' });
+  const { text: cardText } = formatCard(previewResult, {
+    mockLabel:   true,
+    websiteBase: WEBSITE_BASE,
+    premiumUrl:  PREMIUM_URL,
+    botUsername: BOT_USERNAME,
+    emojiTheme:  theme,
+  });
+
   await ctx.reply(
-    `🎨 <b>Emoji Theme Preview</b>\n\n` +
-    `Mapped ${mappedCount} of ${totalSlots} card emoji slots:\n\n` +
-    `<code>${previewText}</code>\n\n` +
+    `🎨 <b>Emoji Theme Preview</b> — ${mappedCount} of ${totalSlots} card slots themed\n\n` +
     `<b>Note:</b> Custom emoji render only when the bot owner has Telegram Premium. Standard emoji always shows as fallback.\n\n` +
-    `Apply this theme? Reply <b>✅ yes</b> or <b>❌ no</b>.`,
+    `Approve this theme? Reply <b>✅ yes</b> or <b>❌ no</b>.`,
     { parse_mode: 'HTML' }
   );
+
+  // Send the actual mock card so the owner sees themed icons in context
+  await ctx.reply(cardText, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
 bot.on('message', async ctx => {
