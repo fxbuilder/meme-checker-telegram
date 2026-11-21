@@ -31,6 +31,24 @@ function addressKey(chain, address) {
 const metric = value => Number.isFinite(value) ? value : null;
 const outcome = status => ({mode: 'mock', status});
 
+/**
+ * Build fullAnalysisUrl from TOKEN_PAGE_BASE_URL env.
+ * Returns null when unset — never emits a placeholder .example URL.
+ */
+function buildMockAnalysisUrl(chain, address) {
+  const base = (process.env.TOKEN_PAGE_BASE_URL ?? '').replace(/\/$/, '').trim();
+  if (!base) return null;
+  try {
+    const url = new URL(`/check/${chain}/${encodeURIComponent(address)}?utm_source=telegram&utm_medium=group_bot&utm_campaign=token_check`, base);
+    // Reject placeholder hosts and credentials (per scan-result-contract §fullAnalysisUrl)
+    if (url.hostname.endsWith('.example') || url.hostname === 'example' ||
+        url.hostname === 'localhost' || url.username || url.password) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function normalizeMock(request, payload) {
   const chain = request?.chain;
   const address = addressKey(chain, request?.address);
@@ -60,7 +78,7 @@ export function normalizeMock(request, payload) {
     narrative: null,
     project: {website: null, x: null, telegram: null},
     updatedAt: typeof data.updated_at === 'string' && Number.isFinite(Date.parse(data.updated_at)) ? data.updated_at : null,
-    fullAnalysisUrl: `https://meme-checker.example/check/${chain}/${encodeURIComponent(address)}`,
+    fullAnalysisUrl: buildMockAnalysisUrl(chain, address),
   };
 }
 

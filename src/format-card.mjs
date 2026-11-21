@@ -50,6 +50,23 @@ function explorerUrl(chain, address) {
   return null;
 }
 
+/**
+ * Returns true only for absolute HTTPS URLs with no credentials and no placeholder host.
+ * Mirrors the scan-result-contract §fullAnalysisUrl rule.
+ */
+function isAcceptableUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    if (u.username || u.password) return false;
+    if (u.hostname.endsWith('.example') || u.hostname === 'example' || u.hostname === 'localhost') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the HTML card text and inline keyboard buttons. */
 export function formatCard(result, { mockLabel = false, websiteBase = '' } = {}) {
   const { token, market, holders, narrative, project, fullAnalysisUrl, updatedAt, status, mode } = result;
@@ -187,7 +204,8 @@ export function formatCard(result, { mockLabel = false, websiteBase = '' } = {})
   // ---- Inline keyboard ----------------------------------------------------
   // Only use fullAnalysisUrl when the adapter explicitly provided it.
   // Never synthesize a token URL from websiteBase — the route is not confirmed.
-  const analysisUrl = fullAnalysisUrl ?? null;
+  // Additionally reject placeholder hosts and credentialed URLs per the scan-result contract.
+  const analysisUrl = isAcceptableUrl(fullAnalysisUrl) ? fullAnalysisUrl : null;
 
   const premiumUrl = websiteBase ? `${websiteBase}/pricing?utm_source=telegram&utm_medium=group_bot&utm_campaign=premium` : null;
   const websiteUrl = websiteBase ? `${websiteBase}?utm_source=telegram&utm_medium=group_bot&utm_campaign=explore` : null;
