@@ -44,7 +44,7 @@ process.env.PREMIUM_URL = '';
 process.env.EMOJI_THEME = '';
 globalThis.uh = {};
 
-await import(pathToFileURL(resolve('../telegram', 'src/bot.mjs')));
+await import(pathToFileURL(resolve(import.meta.dirname, '../src/bot.mjs')));
 
 /** Dispatch a handler key with a synthetic context. */
 async function dispatch(key, opts = {}) {
