@@ -4,12 +4,15 @@ import test from 'node:test';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const load=(root,file)=>import(pathToFileURL(resolve(root,'src',file+'.mjs')));
-const t=process.env.QA_TELEGRAM || '../telegram', i=process.env.QA_INTEGRATION || '../integration';
+const t=process.env.QA_TELEGRAM || '../telegram', i=process.env.QA_INTEGRATION || t;
 const {detectCandidates}=await load(t,'detect-ca'), {formatCard}=await load(t,'format-card'), {checkCooldown}=await load(t,'cooldown');
+// Test-only origin: no requests are made.
+const origin='https://qa.memechecker.test';
+process.env.TOKEN_PAGE_BASE_URL=origin;
 const {mockScan,normalizeMock}=await load(i,'mock-scan');
 const sol='FiXtUrE111111111111111111111111111111111111', bnb='0xabcdef0123456789abcdef0123456789abcdef01';
 for(const [chain,address,input] of [['solana',sol,sol],['bsc',bnb,bnb.toUpperCase()]])test(chain+' candidate → fixture → exact CTA',async()=>{
- const [req]=detectCandidates(`Please check (${input})`);assert.deepEqual(req,{chain,address});const r=await mockScan(req);const {text,buttons}=formatCard(r);assert.match(text,/\[mock\]/);assert.match(text,new RegExp(r.token.name));assert.equal(new URL(buttons[0][0].url).pathname,`/check/${chain}/${address}`);assert.doesNotMatch(text,/NARRATIVE/);
+ const [req]=detectCandidates(`Please check (${input})`);assert.deepEqual(req,{chain,address});const r=await mockScan(req);const {text,buttons}=formatCard(r);assert.match(text,/\[mock\]/);assert.match(text,new RegExp(r.token.name));const url=new URL(buttons[0][0].url);assert.equal(url.origin,origin);assert.equal(url.pathname,`/check/${chain}/${address}`);assert.doesNotMatch(text,/NARRATIVE/);
  if(chain==='bsc'){assert.match(text,/Volume 24H: \$0/);assert.doesNotMatch(text,/Market Cap:/);assert.match(text,/FDV:/);}
 });
 const req={chain:'solana',address:sol},data={...req,token:{name:'Example',symbol:'EX'}};
