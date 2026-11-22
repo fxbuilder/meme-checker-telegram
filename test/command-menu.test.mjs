@@ -49,46 +49,35 @@ export const Markup = { button: { url: (t,u) => ({text:t,url:u}) }, inlineKeyboa
 }
 
 // Unit test: verify the command list shape directly
-test('command list includes all 5 required public commands', () => {
+test('command list always includes 6 commands including /upgrade (handler always enabled)', () => {
   const commands = [
     { command: 'start',   description: 'Welcome and introduction' },
     { command: 'help',    description: 'Show all commands' },
     { command: 'check',   description: 'Check a token: /check <address>' },
     { command: 'about',   description: 'About Meme Checker' },
     { command: 'website', description: 'Open the Meme Checker website' },
+    { command: 'upgrade', description: 'Unlock Premium analysis' },
   ];
-  for (const name of REQUIRED_COMMANDS) {
+  for (const name of [...REQUIRED_COMMANDS, 'upgrade']) {
     assert.ok(commands.some(c => c.command === name), `missing command: ${name}`);
   }
-  assert.equal(commands.length, 5);
-});
-
-test('command list adds /upgrade when PREMIUM_URL is set', () => {
-  const premiumUrl = 'https://app.memechecker.io/pricing';
-  const commands = [
-    { command: 'start',   description: 'Welcome and introduction' },
-    { command: 'help',    description: 'Show all commands' },
-    { command: 'check',   description: 'Check a token: /check <address>' },
-    { command: 'about',   description: 'About Meme Checker' },
-    { command: 'website', description: 'Open the Meme Checker website' },
-  ];
-  if (premiumUrl) commands.push({ command: 'upgrade', description: 'Unlock Premium analysis' });
   assert.equal(commands.length, 6);
-  assert.ok(commands.some(c => c.command === 'upgrade'));
 });
 
-test('/upgrade omitted from command list when PREMIUM_URL is empty', () => {
-  const premiumUrl = '';
-  const commands = [
-    { command: 'start',   description: 'Welcome and introduction' },
-    { command: 'help',    description: 'Show all commands' },
-    { command: 'check',   description: 'Check a token: /check <address>' },
-    { command: 'about',   description: 'About Meme Checker' },
-    { command: 'website', description: 'Open the Meme Checker website' },
-  ];
-  if (premiumUrl) commands.push({ command: 'upgrade', description: 'Unlock Premium analysis' });
-  assert.equal(commands.length, 5);
-  assert.ok(!commands.some(c => c.command === 'upgrade'));
+test('/upgrade always in menu regardless of PREMIUM_URL (handler is always present)', () => {
+  // PREMIUM_URL controls the card button, not the command registration
+  for (const premiumUrl of ['', 'https://app.memechecker.io/pricing']) {
+    const commands = [
+      { command: 'start',   description: 'Welcome and introduction' },
+      { command: 'help',    description: 'Show all commands' },
+      { command: 'check',   description: 'Check a token: /check <address>' },
+      { command: 'about',   description: 'About Meme Checker' },
+      { command: 'website', description: 'Open the Meme Checker website' },
+      { command: 'upgrade', description: 'Unlock Premium analysis' },
+    ];
+    assert.equal(commands.length, 6, `expected 6 for premiumUrl="${premiumUrl}"`);
+    assert.ok(commands.some(c => c.command === 'upgrade'), 'upgrade must always be registered');
+  }
 });
 
 test('all command descriptions are non-empty strings', () => {
