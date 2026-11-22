@@ -389,6 +389,25 @@ bot.launch().then(async () => {
   } catch {
     console.log('[bot] Bot is running (could not resolve username).');
   }
+
+  // ---- Register command menu (setMyCommands) --------------------------------
+  // Visible via the Menu button in DM and by typing / in groups.
+  try {
+    const commands = [
+      { command: 'start',   description: 'Welcome and introduction' },
+      { command: 'help',    description: 'Show all commands' },
+      { command: 'check',   description: 'Check a token: /check <address>' },
+      { command: 'about',   description: 'About Meme Checker' },
+      { command: 'website', description: 'Open the Meme Checker website' },
+    ];
+    if (PREMIUM_URL) {
+      commands.push({ command: 'upgrade', description: 'Unlock Premium analysis' });
+    }
+    await bot.telegram.setMyCommands(commands);
+    console.log(`[bot] Command menu registered (${commands.length} commands).`);
+  } catch (err) {
+    console.warn('[bot] Could not register command menu:', err?.message ?? err);
+  }
 }).catch(err => {
   console.error('[bot] Failed to start:', err?.message ?? err);
   process.exit(1);

@@ -134,10 +134,12 @@ export function formatCard(result, {
   lines.push(`${e('⛓')} Chain: ${esc(chainLabel(chain))} (${e(chainIcon(chain))})`);
 
   if (explorerLink) {
-    lines.push(`${e('📍')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a>`);
+    lines.push(`${e('📍')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a> — <a href="${esc(explorerLink)}">Explorer ↗</a>`);
   } else {
-    lines.push(`${e('📍')} CA: <code>${addrFull}</code>`);
+    lines.push(`${e('📍')} CA:`);
   }
+  // Full address on its own copyable monospace line (casing preserved, no link)
+  lines.push(`<code>${addrFull}</code>`);
 
   // ---- Market Data --------------------------------------------------------
   lines.push('');
