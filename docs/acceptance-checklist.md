@@ -31,11 +31,11 @@
 
 1. **Mobile rendering (#15)** — your test was on Desktop. Need Solana + BNB cards viewed on a phone (iOS/Android) confirming sections, wrapping, and tappable buttons.
 2. **In-group auto-detect (#2)** — paste a plain address (no `/check`) in the group with Group Privacy OFF (or bot as admin); confirm the card still fires.
-3. **Duplicate suppression live (#13)** — paste the same address twice within 60s in one chat; confirm no second card. (Wait ≥15s between *different* addresses so cooldown doesn't mask the second.)
-4. **Live Full Analysis button (#10)** — set `TOKEN_PAGE_BASE_URL`, confirm the button appears and opens the exact token page signed-out. ⛔ needs confirmed website route.
+3. **Duplicate suppression live (#13)** — in the private group, post the Solana fixture as plain text; once its `[mock]` card appears, wait **20s**, then post the same address again. Expect **one result card total**. (The 20s wait clears the 15s user cooldown so it tests the 60s duplicate window, not the cooldown.)
+4. **Live Full Analysis button (#10)** — set `TOKEN_PAGE_BASE_URL`, confirm the button appears and, **tapping it while signed out**, compare the destination page's **chain and full contract address** against the submitted address. A button appearing or a matching ticker is NOT sufficient. ⛔ needs confirmed website route.
 5. **Premium button (#11)** — set `PREMIUM_URL`, confirm button → VIP destination. ⛔ needs VIP URL.
 6. **Live backend (#4)** — replace mock with staging Core API. ⛔ needs API contract + credentials.
-7. **Error paths live (#12)** — try a malformed address and a not-found-shaped address in chat; confirm the correct error cards.
+7. **Error paths live (#12)** — send `/check invalid` → expect **Invalid Contract Address**; then `/check 0xabcdef0123456789abcdef0123456789abcdef02` → expect **[mock] Token Not Found**. Plain malformed text is intentionally ignored (no reply). Neither result is evidence of a live API failure.
 
 ## KPI targets (§11) — not yet measured live
 CA detection accuracy ≥99%, check success ≥95%, P95 ≤7s, Website CTA 100%, duplicates ~0, critical errors 0. Measurable only against the live backend + a test-address set.
