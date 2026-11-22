@@ -45,12 +45,6 @@ function fmtNum(v) {
   return v.toLocaleString('en-US');
 }
 
-function shortAddr(addr, chain) {
-  if (!addr) return '';
-  if (chain === 'solana') return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
 function chainLabel(chain) {
   if (chain === 'solana') return 'Solana';
   if (chain === 'bsc')    return 'BNB Chain';
@@ -62,12 +56,6 @@ function chainIcon(chain) {
   if (chain === 'solana') return '🟣';
   if (chain === 'bsc')    return '🟡';
   return '⛓';
-}
-
-function explorerUrl(chain, address) {
-  if (chain === 'solana') return `https://solscan.io/token/${address}`;
-  if (chain === 'bsc')    return `https://bscscan.com/token/${address}`;
-  return null;
 }
 
 /**
@@ -121,8 +109,6 @@ export function formatCard(result, {
   const name    = token?.name    ?? 'Unknown';
   const symbol  = token?.symbol  ?? '?';
 
-  const explorerLink = explorerUrl(chain, address);
-  const addrDisplay  = esc(shortAddr(address, chain));
   const addrFull     = esc(address);
 
   const lines = [];
@@ -133,12 +119,9 @@ export function formatCard(result, {
   lines.push(`${e('🪙')} <b>${esc(name)} ($${esc(symbol)})</b>`);
   lines.push(`${e('⛓️')} Chain: ${esc(chainLabel(chain))} (${e(chainIcon(chain))})`);
 
-  if (explorerLink) {
-    lines.push(`${e('📌')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a> — <a href="${esc(explorerLink)}">Explorer ↗</a>`);
-  } else {
-    lines.push(`${e('📌')} CA:`);
-  }
-  // Full address on its own copyable monospace line (casing preserved, no link)
+  // Full contract address shown once, on its own copyable monospace line.
+  // No shortened address and no explorer link (casing preserved).
+  lines.push(`${e('📌')} CA:`);
   lines.push(`<code>${addrFull}</code>`);
 
   // ---- Market Data --------------------------------------------------------

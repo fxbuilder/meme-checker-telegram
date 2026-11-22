@@ -37,21 +37,18 @@ test('Solana address is case-preserved (not lowercased)', () => {
   assert.ok(text.includes('FiXtUrE'), 'Solana address case not preserved');
 });
 
-test('Explorer link is separate from the <code> line', () => {
+test('No explorer link on the card (removed per spec)', () => {
   const { text } = formatCard(makeResult('solana', SOL_ADDR));
-  // The explorer link must exist as a separate <a> tag
-  assert.ok(text.includes('solscan.io'), 'Solscan explorer link missing');
-  // The <code> tag must not be inside an <a> href context
-  const codeIdx = text.indexOf(`<code>${SOL_ADDR}</code>`);
-  const explorerIdx = text.indexOf('solscan.io');
-  assert.ok(codeIdx > 0, '<code> line not found');
-  // They should be separate lines (code line comes after the CA label line)
-  assert.ok(codeIdx !== explorerIdx, 'code and explorer link should be separate');
+  assert.ok(!text.includes('solscan.io'), 'Solscan explorer link should be removed');
+  assert.ok(!text.includes('Explorer'), 'Explorer link text should be removed');
 });
 
-test('BNB explorer link points to bscscan', () => {
-  const { text } = formatCard(makeResult('bsc', BSC_ADDR));
-  assert.ok(text.includes('bscscan.com'), 'BSCscan explorer link missing');
+test('No shortened address on the card (full CA only)', () => {
+  const { text } = formatCard(makeResult('solana', SOL_ADDR));
+  assert.ok(!text.includes('FiXt...'), 'shortened Solana address should be removed');
+  const bsc = formatCard(makeResult('bsc', BSC_ADDR)).text;
+  assert.ok(!bsc.includes('bscscan.com'), 'BSCscan explorer link should be removed');
+  assert.ok(!bsc.includes('0xabcd...'), 'shortened BNB address should be removed');
 });
 
 test('<code> tag appears on its own line (preceded by newline)', () => {
