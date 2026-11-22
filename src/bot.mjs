@@ -250,17 +250,16 @@ async function sendEmojiPreview(ctx, map) {
   const mappedCount = Object.keys(map).length;
   const totalSlots = CARD_EMOJI_SLOTS.length;
 
-  // ---- Render a labeled mock Solana card with the theme applied ----
-  // This lets the owner see exactly what the custom icons look like before approving.
+  // ---- Render labeled mock cards (Solana + BNB) with the theme applied ----
+  // Both chains shown so the owner can verify chain-specific icons before approving.
   const { mockScan } = await import('./mock-scan.mjs');
-  const previewResult = await mockScan({ chain: 'solana', address: 'FiXtUrE111111111111111111111111111111111111' });
-  const { text: cardText } = formatCard(previewResult, {
-    mockLabel:   true,
-    websiteBase: WEBSITE_BASE,
-    premiumUrl:  PREMIUM_URL,
-    botUsername: BOT_USERNAME,
-    emojiTheme:  theme,
-  });
+  const [solResult, bnbResult] = await Promise.all([
+    mockScan({ chain: 'solana', address: 'FiXtUrE111111111111111111111111111111111111' }),
+    mockScan({ chain: 'bsc',    address: '0xabcdef0123456789abcdef0123456789abcdef01' }),
+  ]);
+  const cardOpts = { mockLabel: true, websiteBase: WEBSITE_BASE, premiumUrl: PREMIUM_URL, botUsername: BOT_USERNAME, emojiTheme: theme };
+  const { text: solCardText } = formatCard(solResult, cardOpts);
+  const { text: bnbCardText } = formatCard(bnbResult, cardOpts);
 
   await ctx.reply(
     `🎨 <b>Emoji Theme Preview</b> — ${mappedCount} of ${totalSlots} card slots themed\n\n` +
@@ -269,8 +268,9 @@ async function sendEmojiPreview(ctx, map) {
     { parse_mode: 'HTML' }
   );
 
-  // Send the actual mock card so the owner sees themed icons in context
-  await ctx.reply(cardText, { parse_mode: 'HTML', disable_web_page_preview: true });
+  // Send both chain cards so the owner sees all themed icons in context
+  await ctx.reply(solCardText, { parse_mode: 'HTML', disable_web_page_preview: true });
+  await ctx.reply(bnbCardText, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
 bot.on('message', async ctx => {
@@ -381,13 +381,30 @@ bot.catch((err, ctx) => {
 // ---- Launch ----------------------------------------------------------------
 
 console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
-// Telegraf v4: launch() resolves on stop. Resolve the bot username via getMe
-// BEFORE launch so the Add-to-Group button has it on the very first card.
+// Startup order (all before polling begins):
+//  1) getMe → set BOT_USERNAME so the Add-to-Group button is populated on the first card
+//  2) setMyCommands → command menu live from the first update (not after polling stops)
+//  3) launch() → Telegraf v4 launch() resolves on stop, so it stays last
+// /upgrade is always registered; PREMIUM_URL only controls the card button, not the command.
 Promise.resolve(bot.telegram?.getMe?.())
-  .then(me => {
+  .then(async me => {
     BOT_USERNAME = me?.username ?? '';
     const who = BOT_USERNAME ? `@${BOT_USERNAME}` : 'Telegram';
-    console.log(`[bot] Connected as ${who}. Polling for updates. (Ctrl+C to stop)`);
+    console.log(`[bot] Connected as ${who}.`);
+    try {
+      await bot.telegram.setMyCommands([
+        { command: 'start',   description: 'Welcome and introduction' },
+        { command: 'help',    description: 'Show all commands' },
+        { command: 'check',   description: 'Check a token: /check <address>' },
+        { command: 'about',   description: 'About Meme Checker' },
+        { command: 'website', description: 'Open the Meme Checker website' },
+        { command: 'upgrade', description: 'Unlock Premium analysis' },
+      ]);
+      console.log('[bot] Command menu registered.');
+    } catch (err) {
+      console.warn('[bot] Could not register command menu:', err?.message ?? err);
+    }
+    console.log('[bot] Polling for updates. (Ctrl+C to stop)');
     return bot.launch();
   })
   .catch(err => {

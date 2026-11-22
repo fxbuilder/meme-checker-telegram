@@ -24,6 +24,24 @@
 export function noTheme(standard) { return standard; }
 
 /**
+ * Pre-resolved CryptoIcons (t.me/addemoji/CryptoIcons) expanded theme map.
+ * Identified by sticker index (not unreliable alt-emoji).
+ * Uncovered slots (📊 🧠 🔎 👉 🔒 ⚠️ ⏳ 🪙 ⛓ 📍) keep standard emoji fallback.
+ * Apply via EMOJI_THEME env or the DM approval flow.
+ */
+export const CRYPTO_ICONS_MAP = {
+  '🚀': '5292284235711784694',  // Rocket header           (CryptoIcons i194)
+  '🟣': '5291923604487808793',  // Solana logo             (CryptoIcons i34)
+  '🟡': '5291751363414336197',  // BNB gold diamond        (CryptoIcons i23)
+  '💰': '5292031163353801552',  // Bar chart / Market Data (CryptoIcons i195)
+  '🌐': '5402068075153476626',  // Globe / Project header  (CryptoIcons i92)
+  '🌍': '5402068075153476626',  // Globe / Website link    (CryptoIcons i92, reused)
+  '✖️': '5195042564062865767',  // X logo                  (CryptoIcons i138)
+  '✈️': '5291812201626084541',  // Telegram paper plane    (CryptoIcons i130)
+  '⚡': '5291824180289872393',  // Lightning / Footer      (CryptoIcons i152)
+};
+
+/**
  * Build an emoji resolver from a {standard: custom_emoji_id} map.
  * Returns noTheme when the map is empty or invalid.
  * Each resolved emoji becomes <tg-emoji emoji-id="ID">standard</tg-emoji>.

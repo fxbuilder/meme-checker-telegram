@@ -89,13 +89,16 @@ test('DM with custom_emoji entity returns a preview reply and a mock card with t
   const id = '5291923604487808793';
   const entities = [{ type: 'custom_emoji', custom_emoji_id: id }];
   const out = await dispatch('message', { text: '🚀', entities, chatType: 'private', chatId: 60 });
-  assert.ok(out.length >= 2, `expected at least 2 replies (prompt + card), got ${out.length}`);
+  assert.ok(out.length >= 3, `expected at least 3 replies (prompt + Solana card + BNB card), got ${out.length}`);
   const previewMsg = out.find(m => m.text?.includes('Emoji Theme Preview'));
   assert.ok(previewMsg, 'preview prompt not found');
-  // The card reply must contain the custom_emoji_id as a tg-emoji tag
-  const cardMsg = out.find(m => m.text?.includes('MEME CHECKER'));
-  assert.ok(cardMsg, 'mock card not found in preview');
-  assert.ok(cardMsg.text.includes(id), `custom_emoji_id ${id} not found in card preview`);
+  // Both chain cards must contain the custom_emoji_id as a tg-emoji tag
+  const cardMsgs = out.filter(m => m.text?.includes('MEME CHECKER'));
+  assert.equal(cardMsgs.length, 2, `expected 2 chain cards in preview, got ${cardMsgs.length}`);
+  assert.ok(cardMsgs.some(m => m.text.includes(id)), `custom_emoji_id ${id} not found in any preview card`);
+  // Solana card should mention Solana, BNB card should mention BNB
+  assert.ok(cardMsgs.some(m => m.text.includes('Solana')), 'Solana card missing from preview');
+  assert.ok(cardMsgs.some(m => m.text.includes('BNB')), 'BNB card missing from preview');
 });
 
 // ---- custom_emoji DM then approval -----------------------------------------
