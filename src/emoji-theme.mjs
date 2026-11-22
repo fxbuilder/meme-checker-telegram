@@ -33,7 +33,7 @@ export const CRYPTO_ICONS_MAP = {
   '🚀': '5292284235711784694',  // Rocket header           (CryptoIcons i194)
   '🟣': '5291923604487808793',  // Solana logo             (CryptoIcons i34)
   '🟡': '5291751363414336197',  // BNB gold diamond        (CryptoIcons i23)
-  '💰': '5292031163353801552',  // Bar chart / Market Data (CryptoIcons i195)
+  // 💰 (bar-chart) removed — user override: Market Data now uses 📊 from RestrictedEmoji
   '🌐': '5402068075153476626',  // Globe / Project header  (CryptoIcons i92)
   '🌍': '5402068075153476626',  // Globe / Website link    (CryptoIcons i92, reused)
   '✖️': '5195042564062865767',  // X logo                  (CryptoIcons i138)
@@ -42,9 +42,41 @@ export const CRYPTO_ICONS_MAP = {
 };
 
 /**
+ * Resolved utility icons from RestrictedEmoji + SM Animated packs.
+ * All verified is_animated=true.
+ * Keys use the pack's exact strings (with variation selector U+FE0F where present).
+ * buildEmojiTheme automatically aliases bare/styled forms.
+ */
+export const UTILITY_ICONS_MAP = {
+  '📊':  '5431577498364158238',  // Market Data    (RestrictedEmoji)
+  '👥':  '5372926953978341366',  // Holders        (RestrictedEmoji)
+  '🧠':  '5237799019329105246',  // Narrative      (RestrictedEmoji)
+  '🔎':  '5188311512791393083',  // DYOR           (RestrictedEmoji)
+  '🔐':  '5472308992514464048',  // Premium        (RestrictedEmoji)
+  '❗️': '5467928559664242360',  // Warning        (RestrictedEmoji, with VS16)
+  '⏳':  '5451732530048802485',  // Cooldown       (RestrictedEmoji)
+  '⛓️': '5318757666800031348',  // Chain          (RestrictedEmoji, with VS16)
+  '➡️': '5321300317504030049',  // Full Analysis  (SM Animated, with VS16)
+  '📌':  '5321006159488892145',  // CA pin         (SM Animated)
+};
+
+/**
+ * Complete combined theme: CryptoIcons logos + RestrictedEmoji utilities + SM Animated.
+ * Apply this map via the DM approval flow or EMOJI_THEME env after user approval.
+ */
+export const FULL_THEME_MAP = {
+  ...CRYPTO_ICONS_MAP,
+  ...UTILITY_ICONS_MAP,
+};
+
+/**
  * Build an emoji resolver from a {standard: custom_emoji_id} map.
  * Returns noTheme when the map is empty or invalid.
  * Each resolved emoji becomes <tg-emoji emoji-id="ID">standard</tg-emoji>.
+ *
+ * Variation-selector aliasing: some emoji exist in both bare (U+2639) and
+ * emoji-style (U+2639 U+FE0F) forms. The map is keyed to the pack's exact string;
+ * the renderer may emit either form. Both are tried before falling back.
  */
 export function buildEmojiTheme(customMap) {
   if (!customMap || typeof customMap !== 'object' || !Object.keys(customMap).length) {
@@ -55,6 +87,17 @@ export function buildEmojiTheme(customMap) {
   for (const [std, id] of Object.entries(customMap)) {
     if (typeof id === 'string' && /^\d+$/.test(id.trim())) {
       validated[std] = id.trim();
+      // Also index the alternate variation-selector form so both bare and styled match.
+      const VS16 = '\uFE0F';
+      if (std.endsWith(VS16)) {
+        validated[std.slice(0, -1)] = id.trim();   // bare form → same id
+      } else {
+        // Only add the emoji-style form if the base is a known symbol codepoint.
+        // We key it conservatively: only single-codepoint base chars.
+        if ([...std].length === 1) {
+          validated[std + VS16] = id.trim();        // styled form → same id
+        }
+      }
     }
   }
   if (!Object.keys(validated).length) return noTheme;

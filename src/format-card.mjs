@@ -105,13 +105,13 @@ export function formatCard(result, {
   if (status !== 'ok') {
     const mockSuffix = (mockLabel || mode === 'mock') ? ' <i>[mock]</i>' : '';
     const msgs = {
-      'not-found':        `${e('⚠️')} <b>Token Not Found</b>${mockSuffix}\n\nNo data for this address. It may not have a trading pair yet.`,
-      'invalid-response': `${e('⚠️')} <b>Scan Error</b>${mockSuffix}\n\nThe backend returned an unexpected response. Please try again.`,
-      'api-error':        `${e('⚠️')} <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. Please try again later.`,
+      'not-found':        `${e('❗️')} <b>Token Not Found</b>${mockSuffix}\n\nNo data for this address. It may not have a trading pair yet.`,
+      'invalid-response': `${e('❗️')} <b>Scan Error</b>${mockSuffix}\n\nThe backend returned an unexpected response. Please try again.`,
+      'api-error':        `${e('❗️')} <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. Please try again later.`,
       'rate-limited':     `${e('⏳')} <b>Rate Limited</b>${mockSuffix}\n\nToo many requests. Please wait a moment and try again.`,
     };
     return {
-      text: msgs[status] ?? `${e('⚠️')} <b>Scan failed.</b>${mockSuffix} Please try again.`,
+      text: msgs[status] ?? `${e('❗️')} <b>Scan failed.</b>${mockSuffix} Please try again.`,
       buttons: [],
     };
   }
@@ -131,12 +131,12 @@ export function formatCard(result, {
   lines.push(`${e('🚀')} <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockTag}`);
   lines.push('');
   lines.push(`${e('🪙')} <b>${esc(name)} ($${esc(symbol)})</b>`);
-  lines.push(`${e('⛓')} Chain: ${esc(chainLabel(chain))} (${e(chainIcon(chain))})`);
+  lines.push(`${e('⛓️')} Chain: ${esc(chainLabel(chain))} (${e(chainIcon(chain))})`);
 
   if (explorerLink) {
-    lines.push(`${e('📍')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a> — <a href="${esc(explorerLink)}">Explorer ↗</a>`);
+    lines.push(`${e('📌')} CA: <a href="${esc(explorerLink)}">${addrDisplay}</a> — <a href="${esc(explorerLink)}">Explorer ↗</a>`);
   } else {
-    lines.push(`${e('📍')} CA:`);
+    lines.push(`${e('📌')} CA:`);
   }
   // Full address on its own copyable monospace line (casing preserved, no link)
   lines.push(`<code>${addrFull}</code>`);
@@ -144,7 +144,7 @@ export function formatCard(result, {
   // ---- Market Data --------------------------------------------------------
   lines.push('');
   lines.push(DIV);
-  lines.push(`${e('💰')} <b>MARKET DATA</b>`);
+  lines.push(`${e('📊')} <b>MARKET DATA</b>`);
   lines.push('');
 
   const price  = fmt(market?.priceUsd, 8);
@@ -172,7 +172,7 @@ export function formatCard(result, {
   // ---- Holder Overview ----------------------------------------------------
   lines.push('');
   lines.push(DIV);
-  lines.push(`${e('📊')} <b>HOLDER OVERVIEW</b>`);
+  lines.push(`${e('👥')} <b>HOLDER OVERVIEW</b>`);
   lines.push('');
 
   const totalH  = fmtNum(holders?.total);
@@ -222,7 +222,7 @@ export function formatCard(result, {
   lines.push('• KOL Call History');
   lines.push('• Smart Money Insights');
   lines.push('');
-  lines.push(`${e('👉')} <b>FULL TOKEN ANALYSIS:</b>`);
+  lines.push(`${e('➡️')} <b>FULL TOKEN ANALYSIS:</b>`);
 
   // ---- Updated at ---------------------------------------------------------
   if (updatedAt) {
@@ -252,7 +252,7 @@ export function formatCard(result, {
   if (analysisUrl)        buttons.push([{ text: '🔍 View Full Analysis', url: analysisUrl }]);
 
   const row2 = [];
-  if (resolvedPremiumUrl) row2.push({ text: '⚡ Unlock Premium', url: resolvedPremiumUrl });
+  if (resolvedPremiumUrl) row2.push({ text: '🔐 Unlock Premium', url: resolvedPremiumUrl });
   if (resolvedWebsiteUrl) row2.push({ text: '🌐 Explore', url: resolvedWebsiteUrl });
   if (row2.length)        buttons.push(row2);
 
