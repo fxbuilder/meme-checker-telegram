@@ -12,7 +12,7 @@
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
 | 1 | Bot can be added to a group | ✅ | USER-GROUP: bot in private test group, responded to `/check` |
-| 2 | Bot detects CA in messages per configured permission | 🟡 | USER-GROUP: `/check` card seen. Auto-detect of a plain pasted address in-group not yet separately evidenced (needs Group Privacy off / admin) |
+| 2 | Bot detects CA in messages per configured permission | ✅ | USER-GROUP: plain Solana CA pasted in group triggered a scan (Desktop+Mobile) |
 | 3 | Supports Solana and BNB Chain | ✅ | USER-DM + USER-GROUP: both mock scans passed; OFFLINE both chains |
 | 4 | Calls Core Backend | 🟡 (mock) | OFFLINE via mock adapter; live backend ⛔ pending staging contract |
 | 5 | Returns Token Identity | ✅ | USER (Solana card) + OFFLINE |
@@ -25,7 +25,7 @@
 | 12 | Handles invalid CA and API errors | 🟡 | OFFLINE: invalid-CA rejection, not-found vs api-error distinct. Live user-side error paths not yet exercised |
 | 13 | Anti-spam + cache (cooldown/dedup) | 🟡 | OFFLINE: per-user 15s cooldown, per-chat 60s dup suppression. User-side ≥15s dup test not yet reported |
 | 14 | No loop with other bots | ✅ | OFFLINE: `is_bot` guard on all handlers + auto-detect |
-| 15 | Messages render well on Telegram **mobile** | ⬜ | USER test was on Telegram **Desktop**. Mobile rendering NOT yet evidenced |
+| 15 | Messages render well on Telegram **mobile** | ✅ | USER: tested on Telegram Desktop AND Mobile; DM + private-group flows render |
 
 ## Still needs evidence (to close acceptance)
 
