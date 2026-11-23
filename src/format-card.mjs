@@ -206,6 +206,12 @@ export function formatCard(result, {
   lines.push('• Smart Money Insights');
   lines.push('');
   lines.push(`${e('➡️')} <b>FULL TOKEN ANALYSIS:</b>`);
+  // The section stays visible without a working CTA, but it must not end on a
+  // dangling label — say why there is nothing to tap. The URL is resolved below,
+  // so decide the note from the same value the button uses.
+  if (!isAcceptableUrl(fullAnalysisUrl)) {
+    lines.push('<i>Full analysis page coming soon.</i>');
+  }
 
   // ---- Updated at ---------------------------------------------------------
   if (updatedAt) {

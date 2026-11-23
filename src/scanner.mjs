@@ -1,17 +1,16 @@
 /**
  * src/scanner.mjs
  * Thin scan dispatcher: routes to mock or live backend based on SCAN_MODE env.
- * Live adapter is a stub that throws until @mc-integration wires the real endpoint.
+ *
+ * `live` uses src/live-scan.mjs — real, keyless market data. That is NOT the
+ * Core Backend API; the Core contract is still unconfirmed and the project rule
+ * is to never call a guessed live path. See src/live-scan.mjs and
+ * docs/backend-contract-checklist.md.
  */
 import { mockScan } from './mock-scan.mjs';
+import { liveScan } from './live-scan.mjs';
 
 const SCAN_MODE = process.env.SCAN_MODE ?? 'mock';
-
-async function liveScan(_request) {
-  // Placeholder — @mc-integration will replace with real HTTP client once
-  // the Core API contract is confirmed. Never call guessed live paths.
-  throw new Error('Live backend not configured. Set SCAN_MODE=mock or provide the real adapter.');
-}
 
 /**
  * scan({ chain, address }) → normalized result object

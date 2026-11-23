@@ -171,6 +171,19 @@ test('valid https fullAnalysisUrl is accepted', () => {
   assert.ok(flat.some(b => b.text.includes('View Full Analysis') && b.url.includes('memechecker.io')));
 });
 
+test('Full Analysis section shows an availability note when there is no CTA', () => {
+  const { text, buttons } = formatCard({ ...SOL_OK, fullAnalysisUrl: null });
+  // The section heading stays, but it must not end on a dangling label.
+  assert.ok(text.includes('FULL TOKEN ANALYSIS'), 'section heading must remain visible');
+  assert.ok(/Full analysis page coming soon/i.test(text), 'missing availability note for absent CTA');
+  assert.equal(buttons.flat().find(b => b.text.includes('Full Analysis')), undefined);
+});
+
+test('availability note is absent when the CTA exists', () => {
+  const { text } = formatCard(SOL_OK);
+  assert.ok(!/coming soon/i.test(text), 'must not claim unavailability when a CTA is present');
+});
+
 // ---- §9 button order --------------------------------------------------------
 
 test('§9 Row 1 is Full Analysis when fullAnalysisUrl set', () => {
