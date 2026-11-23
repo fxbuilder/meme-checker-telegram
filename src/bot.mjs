@@ -5,14 +5,17 @@
  * Env vars (see .env.example):
  *   TELEGRAM_BOT_TOKEN    — required for live Telegram
  *   SCAN_MODE             — 'mock' (default) or 'live'
- *   TOKEN_PAGE_BASE_URL   — e.g. https://meme-checker.example  (placeholder until confirmed)
+ *   CARD_VIEW             — 'compact' (default) or 'detailed'
+ *   DEFAULT_EVM_CHAIN     — chain assumed for a bare 0x… address (default bsc)
+ *   TOKEN_PAGE_BASE_URL   — token page origin, when the website route is confirmed
  */
 
 import { Telegraf, Markup } from 'telegraf';
-import { detectCandidates } from './detect-ca.mjs';
+import { detectAll, parseChainHint, DEFAULT_EVM_CHAIN as DETECT_DEFAULT_EVM } from './detect-ca.mjs';
 import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
+import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
 import {
   loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
   extractCustomEmojiIds, detectPackLink, listPackStickers, CARD_EMOJI_SLOTS,
@@ -23,6 +26,10 @@ const WEBSITE_BASE = (process.env.TOKEN_PAGE_BASE_URL ?? '').replace(/\/$/, '');
 const PREMIUM_URL  = (process.env.PREMIUM_URL ?? '').trim();
 const SCAN_MODE    = process.env.SCAN_MODE ?? 'mock';
 const EMOJI_THEME  = loadEnvTheme();
+const DEFAULT_EVM  = resolveChainAlias(process.env.DEFAULT_EVM_CHAIN ?? '') ?? DETECT_DEFAULT_EVM;
+
+/** Bot-level card mode. /detail and /compact toggle it for the whole process. */
+let CARD_VIEW = (process.env.CARD_VIEW ?? 'compact').toLowerCase() === 'detailed' ? 'detailed' : 'compact';
 
 // Bot username populated after launch via getMe
 let BOT_USERNAME = '';
@@ -45,7 +52,7 @@ function buildKeyboard(buttons) {
   );
 }
 
-async function runScan(ctx, chain, address) {
+async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
   const userId = ctx.from?.id ?? 0;
   const chatId = ctx.chat?.id ?? 0;
 
@@ -63,7 +70,7 @@ async function runScan(ctx, chain, address) {
 
   let loadingMsg;
   try {
-    loadingMsg = await ctx.reply(`🔍 Scanning ${chain === 'solana' ? 'Solana' : 'BNB Chain'} token…`);
+    loadingMsg = await ctx.reply(`🔍 Scanning ${chainLabel(chain)} token…`);
   } catch (_) { /* non-fatal */ }
 
   const result = await scan({ chain, address });
@@ -73,6 +80,7 @@ async function runScan(ctx, chain, address) {
     premiumUrl:  PREMIUM_URL,
     botUsername: BOT_USERNAME,
     emojiTheme:  activeEmojiTheme,
+    view,
   });
 
   const keyboard = buildKeyboard(buttons);
@@ -133,14 +141,17 @@ bot.help(async ctx => {
     '<b>Commands:</b>',
     '• <code>/start</code> — Introduction',
     '• <code>/help</code> — This message',
-    '• <code>/check &lt;address&gt;</code> — Manually check a token',
+    '• <code>/check &lt;address&gt;</code> — Check a token',
+    '• <code>/check &lt;chain&gt; &lt;address&gt;</code> — Check on a specific chain',
+    '• <code>/chains</code> — Supported networks and what each can show',
+    '• <code>/compact</code> — Compact card (default)',
+    '• <code>/detail</code> — Detailed card',
     '• <code>/about</code> — About Meme Checker',
     '• <code>/website</code> — Open the website',
     '',
     '<b>Auto-detect:</b>',
-    'Paste a Solana or BNB Chain contract address anywhere in this chat and Meme Checker will scan it automatically.',
-    '',
-    '<b>Supported chains:</b> Solana, BNB Chain (BSC)',
+    'Paste a Solana or EVM contract address in the chat and Meme Checker will scan it.',
+    'A 0x address can exist on several networks, so you will be asked to pick one.',
     '',
     '<b>Cooldowns:</b> 15 s per user. Duplicate addresses in the same chat are skipped for 60 s.',
   ].join('\n');
@@ -207,26 +218,77 @@ bot.command('resettheme', async ctx => {
 bot.command('check', async ctx => {
   if (ctx.from?.is_bot) return;
 
-  const args = ctx.message?.text?.split(/\s+/).slice(1) ?? [];
-  if (!args.length) {
-    await ctx.reply('Usage: <code>/check &lt;contract_address&gt;</code>', { parse_mode: 'HTML' });
-    return;
-  }
-
-  const raw = args[0].trim();
-  const candidates = detectCandidates(raw);
-
-  if (!candidates.length) {
+  const raw = (ctx.message?.text ?? '').replace(/^\/check(@\w+)?\s*/i, '').trim();
+  if (!raw) {
     await ctx.reply(
-      '❌ <b>Invalid Contract Address</b>\n\nSupported formats:\n• Solana: base58, 32–44 chars\n• BNB Chain: 0x + 40 hex chars',
-      { parse_mode: 'HTML' }
+      'Usage:\n' +
+      '<code>/check &lt;address&gt;</code>\n' +
+      '<code>/check &lt;chain&gt; &lt;address&gt;</code>\n\n' +
+      'Example: <code>/check base 0x4200…0006</code>\n' +
+      'See <code>/chains</code> for supported networks.',
+      { parse_mode: 'HTML' },
     );
     return;
   }
 
-  // /check processes the first valid candidate only
-  const { chain, address } = candidates[0];
+  // An explicit chain prefix removes EVM ambiguity.
+  const hint = parseChainHint(raw);
+  const det = detectAll(hint.rest, { defaultEvmChain: DEFAULT_EVM, chainHint: hint.chainId });
+
+  if (!det.candidates.length) {
+    await ctx.reply(
+      '❌ <b>Invalid Contract Address</b>\n\nSupported formats:\n• Solana: base58, 32–44 characters\n• EVM: 0x + 40 hex characters',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  if (hint.chainId && !det.candidates.some((c) => c.chain === hint.chainId)) {
+    await ctx.reply(`❌ That address is not valid on ${chainLabel(hint.chainId)}.`, { parse_mode: 'HTML' });
+    return;
+  }
+
+  const { chain, address } = det.candidates[0];
   await runScan(ctx, chain, address);
+});
+
+// ---- Card view toggle ------------------------------------------------------
+
+bot.command('compact', async ctx => {
+  if (ctx.from?.is_bot) return;
+  CARD_VIEW = 'compact';
+  await ctx.reply('📱 Card view set to <b>compact</b>.', { parse_mode: 'HTML' });
+});
+
+bot.command('detail', async ctx => {
+  if (ctx.from?.is_bot) return;
+  CARD_VIEW = 'detailed';
+  await ctx.reply('📄 Card view set to <b>detailed</b>.', { parse_mode: 'HTML' });
+});
+
+// ---- Chain support reference ----------------------------------------------
+
+bot.command('chains', async ctx => {
+  if (ctx.from?.is_bot) return;
+  const rows = capabilitySummary();
+  const lines = ['🌐 <b>Supported Chains</b>', ''];
+  for (const r of rows) {
+    if (!r.market) {
+      lines.push(`${getChain(r.id).emoji} <b>${r.name}</b> — scan unavailable`);
+      continue;
+    }
+    const bits = [];
+    // Only claim a capability the data source actually provides.
+    bits.push(r.holders ? 'holders' : null);
+    bits.push(r.tax ? 'tax' : null);
+    bits.push(r.lpLock ? 'LP lock' : null);
+    bits.push(r.dexPaid ? 'dex paid' : null);
+    lines.push(`${getChain(r.id).emoji} <b>${r.name}</b> — ${bits.filter(Boolean).join(', ')}`);
+  }
+  lines.push('');
+  lines.push('<i>Bare 0x addresses default to ' + chainLabel(DEFAULT_EVM) + '. Prefix another chain to switch, e.g.</i>');
+  lines.push('<code>/check base 0x…</code>');
+  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', disable_web_page_preview: true });
 });
 
 // ---- Auto-detect in messages -----------------------------------------------
@@ -363,12 +425,84 @@ bot.on('message', async ctx => {
   // ---- CA auto-detection (groups and DMs) ---------------------------------
   if (!msgText) return;
 
-  const candidates = detectCandidates(msgText);
-  if (!candidates.length) return;
+  const det = detectAll(msgText, { defaultEvmChain: DEFAULT_EVM });
+  if (!det.candidates.length) return;
+
+  // An EVM address is valid on 13 chains. Scanning the wrong one wastes a
+  // request and shows the wrong token, so offer the chains instead of guessing.
+  // The default is still one tap away and is first in the list.
+  if (det.kind === 'evm' && det.ambiguous && det.hasOwnProperty('evmChains')) {
+    await sendChainPicker(ctx, det.candidates[0].address);
+    return;
+  }
 
   // Process first detected candidate only (brief: one reply per message)
-  const { chain, address } = candidates[0];
+  const { chain, address } = det.candidates[0];
   await runScan(ctx, chain, address);
+});
+
+// ---- Chain picker for ambiguous EVM addresses ------------------------------
+
+/**
+ * Ask which chain a bare 0x… address belongs to.
+ * Callback data stays well under Telegram's 64-byte limit: "c:<chain>:<addr>".
+ */
+async function sendChainPicker(ctx, address) {
+  const chains = Object.values(CHAINS).filter((c) => c.kind === 'evm' && c.market);
+  // 2 per row keeps labels readable on mobile.
+  const rows = [];
+  for (let i = 0; i < chains.length; i += 2) {
+    rows.push(chains.slice(i, i + 2).map((c) => {
+      const mark = c.id === DEFAULT_EVM ? '★ ' : '';
+      return Markup.button.callback(`${mark}${c.name}`, `c:${c.id}:${address}`);
+    }));
+  }
+  rows.push([Markup.button.callback('✖️ Cancel', 'c:cancel')]);
+
+  await ctx.reply(
+    `<b>Which chain is this address on?</b>\n\n<code>${escHtml(address)}</code>\n\n` +
+    `A 0x address can exist on several networks, so I will not guess.\n` +
+    `★ marks the default. You can also type <code>/check base ${escHtml(address.slice(0, 10))}…</code>`,
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
+  );
+}
+
+function escHtml(v) {
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+bot.action(/^c:(.+)$/, async ctx => {
+  const data = ctx.match[1];
+  if (data === 'cancel') {
+    await ctx.answerCbQuery('Cancelled');
+    await ctx.deleteMessage().catch(() => {});
+    return;
+  }
+  // "chain:address"
+  const sep = data.indexOf(':');
+  const chain = data.slice(0, sep);
+  const address = data.slice(sep + 1);
+  const def = getChain(chain);
+  if (!def || def.kind !== 'evm') {
+    await ctx.answerCbQuery('Unknown chain');
+    return;
+  }
+  await ctx.answerCbQuery(`Scanning ${def.name}…`);
+  // Remove the picker so the chat is not left with a dead keyboard.
+  await ctx.deleteMessage().catch(() => {});
+  await runScan(ctx, chain, address.toLowerCase());
+});
+
+// ---- Card view toggle via inline button ------------------------------------
+
+bot.action(/^v:(compact|detailed)(?::(.+))?$/, async ctx => {
+  const view = ctx.match[1];
+  const address = ctx.match[2] ?? null;
+  CARD_VIEW = view;
+  await ctx.answerCbQuery(view === 'detailed' ? 'Detailed view' : 'Compact view');
+  if (!address) return;
+  // Re-render the same token immediately in the new mode.
+  await runScan(ctx, DEFAULT_EVM, address.toLowerCase(), { view });
 });
 
 // ---- Error handler ---------------------------------------------------------
@@ -396,6 +530,9 @@ Promise.resolve(bot.telegram?.getMe?.())
         { command: 'start',   description: 'Welcome and introduction' },
         { command: 'help',    description: 'Show all commands' },
         { command: 'check',   description: 'Check a token: /check <address>' },
+        { command: 'detail',  description: 'Detailed card view' },
+        { command: 'compact', description: 'Compact card view (default)' },
+        { command: 'chains',  description: 'Supported chains and data coverage' },
         { command: 'about',   description: 'About Meme Checker' },
         { command: 'website', description: 'Open the Meme Checker website' },
         { command: 'upgrade', description: 'Unlock Premium analysis' },

@@ -64,7 +64,9 @@ test('addressKey rejects malformed input and canonicalizes EVM to lowercase', ()
   // the adapter must never case-fold Solana input.
   assert.equal(addressKey('solana', BONK.toLowerCase()), BONK.toLowerCase());
   assert.notEqual(addressKey('solana', BONK.toLowerCase()), BONK);
-  assert.equal(addressKey('ethereum', CAKE), null, 'unsupported chain');
+  assert.equal(addressKey('notachain', CAKE), null, 'unknown chain rejected');
+  // Any recognised EVM chain now accepts a 0x address and canonicalizes it.
+  assert.equal(addressKey('ethereum', CAKE), CAKE.toLowerCase());
 });
 
 test('matchingPairs keeps only pairs whose baseToken is this exact contract', () => {
@@ -222,8 +224,12 @@ test('pairAge formats from a real timestamp and rejects nonsense', () => {
 test('liveScan caches a success and reuses it without a second provider call', async () => {
   clearLiveCache();
   const f = stubFetch(() => jsonRes([pair()]));
-  const a = await liveScan({ chain: 'solana', address: BONK }, { fetchImpl: f });
-  const b = await liveScan({ chain: 'solana', address: BONK }, { fetchImpl: f });
+  // Risk and Dex Paid are separate sources; stub them so this test isolates
+  // the market-data cache rather than making network calls.
+  const noRisk = async () => ({ status: 'unsupported', data: null, detail: 'test' });
+  const noPaid = async () => ({ status: 'unknown', detail: 'test' });
+  const a = await liveScan({ chain: 'solana', address: BONK }, { fetchImpl: f, riskFetch: noRisk, paidFetch: noPaid });
+  const b = await liveScan({ chain: 'solana', address: BONK }, { fetchImpl: f, riskFetch: noRisk, paidFetch: noPaid });
   assert.equal(a.status, 'ok');
   assert.equal(b.status, 'ok');
   assert.equal(f.calls.length, 1, 'second scan must be served from cache');

@@ -17,11 +17,12 @@ export class Telegraf {
   help(f){globalThis.uh.help=f}
   command(k,f){globalThis.uh[k]=f}
   on(k,f){globalThis.uh[k]=f}
+  action(re,f){ (globalThis.uhActions ||= []).push({re,f}) }
   catch(){}
   async launch(){}
 }
 export const Markup={
-  button:{url:(text,url)=>({text,url})},
+  button:{url:(text,url)=>({text,url}), callback:(text,data)=>({text,callback_data:data})},
   inlineKeyboard:rows=>({reply_markup:{inline_keyboard:rows}})
 };
 `;
@@ -43,6 +44,10 @@ process.env.TOKEN_PAGE_BASE_URL = '';
 process.env.PREMIUM_URL = '';
 process.env.EMOJI_THEME = '';
 globalThis.uh = {};
+
+// Solana fixture address — used where a test needs a scan to actually run,
+// since a bare 0x… now correctly asks which chain first.
+const SOL_CA = 'FiXtUrE111111111111111111111111111111111111';
 
 await import(pathToFileURL(resolve(import.meta.dirname, '../src/bot.mjs')));
 
@@ -67,7 +72,9 @@ async function dispatch(key, opts = {}) {
     chat: { id: chatId, type: chatType },
     from: { id: 99, is_bot: isBot },
     telegram,
-    reply: async (t, _opts) => { out.push({ type: 'reply', text: t }); return { message_id: 1 }; },
+    reply: async (t, _opts) => { out.push({ type: 'reply', text: t, opts: _opts }); return { message_id: 1 }; },
+    answerCbQuery: async (t) => { out.push({ type: 'cbq', text: t }); },
+    deleteMessage: async () => { out.push({ type: 'delete' }); },
   };
   if (globalThis.uh[key]) await globalThis.uh[key](ctx);
   return out;
@@ -107,9 +114,9 @@ test('ordinary scans use standard emoji while approval is pending', async () => 
   // Set up a pending theme in chat 70
   const entities = [{ type: 'custom_emoji', custom_emoji_id: '7777777777777777777' }];
   await dispatch('message', { text: '🚀', entities, chatType: 'private', chatId: 70 });
-  // Now post a CA in a different (group) chat — should use standard emoji, not the pending theme
-  const address = '0xabcdef0123456789abcdef0123456789abcdef01';
-  const out = await dispatch('message', { text: address, chatType: 'group', chatId: 300 });
+  // Now post a CA in a different (group) chat — should use standard emoji, not the pending theme.
+  // A Solana CA is used because a bare 0x… now correctly asks for a chain first.
+  const out = await dispatch('message', { text: SOL_CA, chatType: 'group', chatId: 300 });
   const card = out.find(m => m.text?.includes('MEME CHECKER'));
   assert.ok(card, 'card not found');
   assert.ok(!card.text.includes('tg-emoji'), 'pending theme must not leak into scans before approval');
@@ -138,8 +145,8 @@ test('DM approval ❌ no discards the theme', async () => {
 test('no theme set → card uses standard emoji (no tg-emoji tags)', async () => {
   // Reset theme to default before this test (prior approval tests may have set one)
   await dispatch('resettheme', { chatType: 'private', chatId: 99 });
-  const address = '0xabcdef0123456789abcdef0123456789abcdef01';
-  const out = await dispatch('message', { text: address, chatType: 'group', chatId: 200 });
+  // Solana CA avoids the EVM chain picker, so this test still exercises a scan.
+  const out = await dispatch('message', { text: SOL_CA, chatType: 'group', chatId: 200 });
   const card = out.find(m => m.text?.includes('MEME CHECKER'));
   assert.ok(card, 'card not found');
   assert.ok(!card.text.includes('tg-emoji'), 'standard mode should not contain tg-emoji');

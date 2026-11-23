@@ -28,6 +28,9 @@
  *              must never be synthesized.
  */
 import { isAcceptableUrl } from './format-card.mjs';
+import { getChain, ADDRESS_KIND } from './chains.mjs';
+import { fetchRisk, emptyRisk } from './risk-intel.mjs';
+import { fetchDexPaid } from './dex-paid.mjs';
 
 const DEX_BASE = 'https://api.dexscreener.com/token-pairs/v1';
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -46,18 +49,26 @@ const cache = new Map();
 /**
  * Validate an address for its chain and return the canonical form.
  * This is an identity/URL guard, not proof the address is a token.
+ * Chain shape comes from the registry, so adding a chain does not need a code
+ * change here. Solana base58 is case-sensitive; EVM is canonicalized lowercase.
  */
 export function addressKey(chain, address) {
   if (typeof address !== 'string') return null;
-  if (chain === 'solana' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return address;
-  if (chain === 'bsc' && /^0x[0-9a-f]{40}$/i.test(address)) return address.toLowerCase();
+  const def = getChain(chain);
+  if (!def) return null;
+  if (def.kind === 'solana') {
+    return ADDRESS_KIND.solana.test(address) ? address : null;
+  }
+  if (def.kind === 'evm') {
+    return ADDRESS_KIND.evm.test(address) ? address.toLowerCase() : null;
+  }
   return null;
 }
 
 /** EVM addresses are case-insensitive; Solana base58 is case-sensitive. */
 function sameAddress(chain, a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  return chain === 'bsc' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  return getChain(chain)?.kind === 'evm' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
 const num = (v) => {
@@ -262,9 +273,46 @@ export function normalizePairs(request, pairs, { nowMs = Date.now() } = {}) {
     project: projectLinks(matched),
     updatedAt: null,
     fullAnalysisUrl: buildAnalysisUrl(chain, address),
+    // Risk + paid status start empty; liveScan fills them from their own sources
+    // so a risk-provider failure can never affect the market read.
+    risk: emptyRisk(),
+    riskStatus: 'pending',
+    dexPaid: { status: 'unknown', detail: 'not checked' },
     // Provenance for operators; the renderer ignores unknown keys.
     source: { provider: 'dexscreener', pairs: matched.length, pairAddress: primary?.pairAddress ?? null },
   };
+}
+
+/**
+ * Attach risk intel and Dex Paid status to an `ok` result.
+ * Runs both sources in parallel. A failure in either degrades that block only.
+ */
+export async function enrichResult(result, { fetchImpl, riskFetch, paidFetch } = {}) {
+  if (!result || result.status !== 'ok') return result;
+  const { chain, address } = result.token;
+
+  const [risk, paid] = await Promise.all([
+    fetchRisk(chain, address, { fetchImpl: riskFetch ?? fetchImpl }),
+    fetchDexPaid(chain, address, { fetchImpl: paidFetch ?? fetchImpl }),
+  ]);
+
+  const out = { ...result, dexPaid: paid };
+
+  if (risk.status === 'ok') {
+    out.risk = risk.data;
+    out.riskStatus = 'ok';
+    // The card's Holder Overview reads a flat shape; keep both in sync so the
+    // quick-check block and the holder section can never disagree.
+    out.holders = {
+      total: risk.data.holders.total,
+      top10Percentage: risk.data.holders.top10Percentage,
+      largestHolderPercentage: risk.data.holders.largestHolderPercentage,
+    };
+  } else {
+    out.riskStatus = risk.status; // 'unsupported' | 'no-data' | 'error'
+    out.riskDetail = risk.detail;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,8 +326,14 @@ const cacheKey = (chain, key) => `scan:${chain}:${key}`;
  * Cached by (chain, address); failures are cached briefly so a throttle is not
  * re-hit by every message in a busy group.
  */
-export async function liveScan(request, { fetchImpl, timeoutMs, baseUrl, nowMs } = {}) {
+export async function liveScan(request, { fetchImpl, riskFetch, paidFetch, timeoutMs, baseUrl, nowMs } = {}) {
   const chain = request?.chain;
+  const def = getChain(chain);
+  if (!def) return { mode: 'live', status: 'invalid-response' };
+  // Chain recognised but no data source covers it (e.g. story).
+  // A capability gap is NOT "token not found" and must say so.
+  if (!def.market) return { mode: 'live', status: 'chain-unsupported', chain };
+
   const key = addressKey(chain, request?.address);
   if (!key) return { mode: 'live', status: 'invalid-response' };
 
@@ -289,9 +343,14 @@ export async function liveScan(request, { fetchImpl, timeoutMs, baseUrl, nowMs }
 
   const fetched = await fetchTokenPairs({ chain, address: key }, { fetchImpl, timeoutMs, baseUrl });
 
-  const result = fetched.status === 'ok'
+  let result = fetched.status === 'ok'
     ? normalizePairs({ chain, address: key }, fetched.pairs, { nowMs })
     : { mode: 'live', status: fetched.status };
+
+  // Enrich only a real hit. Market data must stand on its own if risk/paid fail.
+  if (result.status === 'ok') {
+    result = await enrichResult(result, { riskFetch: riskFetch ?? fetchImpl, paidFetch: paidFetch ?? fetchImpl });
+  }
 
   const isOk = result.status === 'ok';
   if (isOk || fetched.status === 'rate-limited' || fetched.status === 'api-error') {

@@ -1,9 +1,12 @@
 # Meme Checker Telegram Bot
 
-Meme Checker trả kết quả quét token **Solana** và **BNB Smart Chain (BSC)** ngay trong Telegram. Bot hoạt động trong DM và group, nhận địa chỉ contract (CA) trực tiếp hoặc qua lệnh `/check`. Card hiển thị dữ liệu thị trường, holder, narrative và thông tin dự án khi có dữ liệu. CA xuất hiện đầy đủ một lần trên dòng monospace riêng để copy.
+Meme Checker trả kết quả quét token trên **15 chain** ngay trong Telegram. Bot hoạt động trong DM và group, nhận địa chỉ contract (CA) trực tiếp hoặc qua lệnh `/check`. Card hiển thị dữ liệu thị trường, **Quick Checks** (Top 10, Holders, Dex Paid, Tax, LP Lock, Dev), narrative và thông tin dự án khi có dữ liệu. CA xuất hiện đầy đủ một lần trên dòng monospace riêng để copy.
+
+Bot có **hai chế độ hiển thị**: `compact` (mặc định) và `detailed`. Xem [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md) để biết chính xác chain nào có dữ liệu gì.
 
 - **Bot staging** [@MemeCheckerStagingBot](https://t.me/MemeCheckerStagingBot)
-- **Nhánh bàn giao** `demo/offline-mvp`, mốc code `2b58363`
+- **Nhánh làm việc** `mc/card-ui` (chưa push)
+- **Tài liệu UI và chain** [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md)
 - **Checklist nghiệm thu** [docs/acceptance-checklist.md](docs/acceptance-checklist.md)
 
 Staging dùng dữ liệu mẫu có nhãn `[mock]`. Ba phần cần nghiệm thu tích hợp là Core API thật, trang Full Analysis theo token và trang Premium trên website.
@@ -24,9 +27,15 @@ Staging dùng dữ liệu mẫu có nhãn `[mock]`. Ba phần cần nghiệm thu
 | `/start` | Mở màn hình giới thiệu. |
 | `/help` | Xem hướng dẫn và danh sách lệnh. |
 | `/check <CA>` | Quét địa chỉ contract chỉ định. |
+| `/check <chain> <CA>` | Quét trên chain cụ thể, ví dụ `/check base 0x…`. |
+| `/chains` | Danh sách chain và dữ liệu từng chain có thể hiển thị. |
+| `/compact` | Card gọn (mặc định). |
+| `/detail` | Card đầy đủ. |
 | `/about` | Xem giới thiệu Meme Checker. |
 | `/website` | Mở website khi URL đã được cấu hình. |
 | `/upgrade` | Mở trang nâng cấp khi `PREMIUM_URL` đã được cấu hình. |
+
+Địa chỉ `0x…` có thể tồn tại trên nhiều chain, nên bot **sẽ hỏi bạn chọn chain** thay vì tự đoán. Gõ `/check <chain> <CA>` để chỉ định trước.
 
 Trong group, gõ `/` để xem gợi ý lệnh. Có thể dùng `/check@TênBot <CA>` để gọi đúng bot khi group có nhiều bot.
 
@@ -59,9 +68,9 @@ npm start
 ## 3. Thử tự nhận CA trong group
 
 1. Tạo một group test riêng và thêm bot đang chạy.
-2. Để test CA trong tin nhắn thường, dùng bot làm admin trong group test hoặc tắt **Group Privacy** của bot qua [@BotFather](https://t.me/BotFather). Nếu chọn tắt Group Privacy khi bot đã ở trong group, gỡ và thêm lại bot để Telegram áp dụng thay đổi.
-3. Dán CA Solana dạng tin nhắn thường. Đợi card `[mock]` xuất hiện, chờ ít nhất 15 giây rồi dán CA BNB.
-4. Copy dòng CA từ mỗi card vào ô soạn tin và đối chiếu từng ký tự với địa chỉ mẫu. Kiểm tra menu lệnh, icon và cách xuống dòng trên Telegram Desktop và Mobile.
+2. Group Privacy của bot phải **TẮT** qua [@BotFather](https://t.me/BotFather) để bot đọc được tin nhắn thường. Kiểm tra bằng `getMe`: `can_read_all_group_messages` phải là `true`. Nếu đổi khi bot đã ở trong group, gỡ và thêm lại bot. **Không cần quyền admin** cho chức năng hiện tại.
+3. Dán CA Solana dạng tin nhắn thường. Card `[mock]` xuất hiện.
+4. Với địa chỉ `0x…`, bot sẽ hiện nút chọn chain — chọn chain rồi card hiện ra.
 
 ### Kiểm thử nhanh
 
