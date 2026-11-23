@@ -6,9 +6,11 @@ request, not read from documentation.
 
 ---
 
-## 1. Two render modes
+## 1. Three render modes
 
-| | compact (default for the bot) | detailed |
+STANDARD is the bot default. SHORT is opt-in. DETAILED is the technical view.
+
+| | STANDARD (default) | SHORT | DETAILED |
 |---|---|---|
 | Identity | `🚀 Name $SYM` + chain on two lines | header block with chain icon + `CA:` label |
 | Market | `💰 Price` + one dense line (`MC · Liq · 24H · age`) | full block: price, mcap, FDV, liquidity, volume, change 1H/24H, pair age |

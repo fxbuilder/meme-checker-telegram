@@ -206,17 +206,22 @@ test('an unknown chain in callback data is rejected without scanning', async () 
   assert.ok(!out.some((o) => o.text?.includes('QUICK CHECKS')));
 });
 
-test('/compact and /detail switch the render mode', async () => {
-  const a = await dispatch('compact', { chatType: 'private', chatId: 403 });
-  assert.ok(a[0].text.includes('compact'));
+test('/standard, /short and /detail switch the render mode', async () => {
+  const a = await dispatch('short', { chatType: 'private', chatId: 403 });
+  assert.ok(a[0].text.includes('short'), `expected short confirmation, got: ${a[0].text}`);
   const b = await dispatch('detail', { chatType: 'private', chatId: 404 });
   assert.ok(b[0].text.includes('detailed'));
+  const c = await dispatch('standard', { chatType: 'private', chatId: 405 });
+  assert.ok(c[0].text.includes('standard'));
+  // 'compact' remains a working alias for the short card.
+  const d = await dispatch('compact', { chatType: 'private', chatId: 406 });
+  assert.ok(d[0].text.includes('short'), 'legacy /compact should map to short');
   // Leave the bot in the product default for any later test.
-  await dispatch('compact', { chatType: 'private', chatId: 405 });
+  await dispatch('standard', { chatType: 'private', chatId: 407 });
 });
 
 test('/chains lists capabilities without overclaiming', async () => {
-  const out = await dispatch('chains', { chatType: 'private', chatId: 406 });
+  const out = await dispatch('chains', { chatType: 'private', chatId: 408 });
   const t = out[0].text;
   assert.ok(t.includes('Story'), 'story listed');
   assert.ok(/Story<\/b> — scan unavailable/.test(t), 'story marked unavailable, not silently omitted');

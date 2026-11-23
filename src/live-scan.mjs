@@ -147,14 +147,36 @@ export function matchingPairs(chain, address, pairs) {
 const liquidityOf = (p) => num(p?.liquidity?.usd) ?? 0;
 
 /**
- * The deepest pool is the most reliable read of a token's real market: pairs for
- * the same token disagree on price, and therefore on market cap (observed: 30
- * distinct market-cap values across BONK's pairs). Ranking by depth is not
- * identity selection — identity is already fixed by `matchingPairs`.
+ * Pick the pair that best represents the token's real market price.
+ *
+ * Deepest-liquidity alone is NOT reliable: on BONK one Meteora pool holds $26M
+ * liquidity (13x the next pool) but quotes a different asset, reporting a
+ * $874B market cap against a true ~$200M everywhere else. Taking that pool as
+ * primary would publish a materially wrong number.
+ *
+ * So: group the matching pairs by reported market cap, take the MEDIAN cap
+ * (robust against the outliers that disagree), then choose the deepest pool
+ * whose market cap sits closest to that median. Liquidity only breaks ties
+ * inside the consistent cluster — identity is already fixed by matchingPairs.
  */
 export function primaryPair(pairs) {
   if (!Array.isArray(pairs) || !pairs.length) return null;
-  return [...pairs].sort((a, b) => liquidityOf(b) - liquidityOf(a))[0] ?? null;
+  const withCap = pairs.filter((p) => Number.isFinite(num(p?.marketCap)));
+  if (!withCap.length) {
+    // No market caps reported: fall back to depth alone.
+    return [...pairs].sort((a, b) => liquidityOf(b) - liquidityOf(a))[0] ?? null;
+  }
+
+  const caps = withCap.map((p) => num(p.marketCap)).sort((a, b) => a - b);
+  const median = caps[Math.floor(caps.length / 2)];
+
+  // Prefer pools within 3x of the median (generous, but rejects a 4000x outlier).
+  const consistent = withCap.filter((p) => {
+    const c = num(p.marketCap);
+    return c > 0 && median > 0 && c <= median * 3 && c >= median / 3;
+  });
+  const pool = consistent.length ? consistent : withCap;
+  return [...pool].sort((a, b) => liquidityOf(b) - liquidityOf(a))[0] ?? null;
 }
 
 function pickUrl(value) {
@@ -197,10 +219,35 @@ export function pairAge(createdAtMs, nowMs = Date.now()) {
     return hours < 1 ? '<1h' : `${hours}h`;
   }
   if (days < 30) return `${days}d`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  const years = Math.floor(days / 365);
-  const months = Math.floor((days % 365) / 30);
+  // Represent the age in whole years + remaining whole months using a 30.44-day
+  // average month (365.25/12). The previous 365-day split produced "3y 12mo" and
+  // "0y 11mo" at the year boundary; both came from mixing two different month
+  // lengths in one calculation.
+  const totalMonths = days >= 365
+    ? Math.max(12, Math.round(days / 30.4375))
+    : Math.floor(days / 30.4375);
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  if (years === 0) return `${months}mo`;
   return months ? `${years}y ${months}mo` : `${years}y`;
+}
+
+/**
+ * Token logo + chart URL, taken only from the provider payload.
+ * `info.imageUrl` is a real CDN URL for the token; `pair.url` is the DEX page.
+ * Both are validated before use — never synthesized.
+ */
+function mediaLinks(pairs, primary) {
+  let logo = null;
+  let chart = null;
+  // Logo may appear on any matching pair, not only the deepest.
+  for (const p of pairs) {
+    const img = p?.info?.imageUrl;
+    if (!logo && isAcceptableUrl(img)) { logo = img; break; }
+  }
+  const pairUrl = primary?.url;
+  if (isAcceptableUrl(pairUrl)) chart = pairUrl;
+  return { logo, chart };
 }
 
 /**
@@ -253,11 +300,13 @@ export function normalizePairs(request, pairs, { nowMs = Date.now() } = {}) {
   // marketCap and fdv are distinct. Never let FDV stand in for a missing cap.
   const marketCap = num(primary?.marketCap);
   const fdv = num(primary?.fdv);
+  const media = mediaLinks(matched, primary);
 
   return {
     mode: 'live',
     status: 'ok',
-    token: { chain, address, name, symbol },
+    token: { chain, address, name, symbol, logo: media.logo },
+    chartUrl: media.chart,
     market: {
       priceUsd: num(primary?.priceUsd),
       marketCapUsd: marketCap,

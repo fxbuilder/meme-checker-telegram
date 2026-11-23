@@ -2,10 +2,10 @@
 
 Meme Checker trả kết quả quét token trên **15 chain** ngay trong Telegram. Bot hoạt động trong DM và group, nhận địa chỉ contract (CA) trực tiếp hoặc qua lệnh `/check`. Card hiển thị dữ liệu thị trường, **Quick Checks** (Top 10, Holders, Dex Paid, Tax, LP Lock, Dev), narrative và thông tin dự án khi có dữ liệu. CA xuất hiện đầy đủ một lần trên dòng monospace riêng để copy.
 
-Bot có **hai chế độ hiển thị**: `compact` (mặc định) và `detailed`. Xem [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md) để biết chính xác chain nào có dữ liệu gì.
+Bot có **ba chế độ hiển thị**: `standard` (mặc định), `short` và `detailed`. Xem [docs/card-redesign.md](docs/card-redesign.md) và [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md).
 
 - **Bot staging** [@MemeCheckerStagingBot](https://t.me/MemeCheckerStagingBot)
-- **Nhánh làm việc** `mc/card-ui` (chưa push)
+- **Nhánh làm việc** `mc/card-ui-v2` (chưa push)
 - **Tài liệu UI và chain** [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md)
 - **Checklist nghiệm thu** [docs/acceptance-checklist.md](docs/acceptance-checklist.md)
 
@@ -29,8 +29,9 @@ Staging dùng dữ liệu mẫu có nhãn `[mock]`. Ba phần cần nghiệm thu
 | `/check <CA>` | Quét địa chỉ contract chỉ định. |
 | `/check <chain> <CA>` | Quét trên chain cụ thể, ví dụ `/check base 0x…`. |
 | `/chains` | Danh sách chain và dữ liệu từng chain có thể hiển thị. |
-| `/compact` | Card gọn (mặc định). |
-| `/detail` | Card đầy đủ. |
+| `/standard` | Card chuẩn (mặc định). |
+| `/short` | Card rút gọn. |
+| `/detail` | Card đầy đủ kỹ thuật. |
 | `/about` | Xem giới thiệu Meme Checker. |
 | `/website` | Mở website khi URL đã được cấu hình. |
 | `/upgrade` | Mở trang nâng cấp khi `PREMIUM_URL` đã được cấu hình. |

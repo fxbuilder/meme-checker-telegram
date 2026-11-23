@@ -260,3 +260,44 @@ test('liveScan builds the provider URL from chain + canonicalized address', asyn
   // EVM addresses are canonicalized to lowercase for the provider call.
   assert.ok(f.calls[0].endsWith(`/bsc/${CAKE.toLowerCase()}`), `unexpected URL: ${f.calls[0]}`);
 });
+
+// ---- pair age arithmetics -------------------------------------------------
+
+test('pair age never reports 12 months and handles the year boundary', () => {
+  const now = Date.UTC(2026, 10, 23);
+  const day = 86_400_000;
+  // The previous implementation produced "3y 12mo" and "0y 11mo" here.
+  for (let d = 360; d <= 1500; d += 5) {
+    const label = pairAge(now - d * day, now);
+    assert.ok(!/12mo/.test(label), `${d}d produced an impossible "${label}"`);
+    assert.ok(!/^0y/.test(label), `${d}d produced "${label}"`);
+  }
+  assert.equal(pairAge(now - 365 * day, now), '1y');
+  assert.equal(pairAge(now - 730 * day, now), '2y');
+  assert.equal(pairAge(now - 45 * day, now), '1mo');
+  assert.equal(pairAge(now - 29 * day, now), '29d');
+});
+
+// ---- primary pair selection ----------------------------------------------
+
+test('primaryPair rejects a deep pool whose market cap is a wrong-pair outlier', () => {
+  // Real BONK shape: a $26M Meteora pool reporting a $874B cap while ~28 other
+  // pools agree on ~$200M. Depth alone would publish $874B.
+  const rows = [
+    pair({ pairAddress: 'BAD', liquidity: { usd: 26_016_782 }, marketCap: 874_319_493_249 }),
+    pair({ pairAddress: 'GOOD1', liquidity: { usd: 226_138 }, marketCap: 200_517_585 }),
+    pair({ pairAddress: 'GOOD2', liquidity: { usd: 202_411 }, marketCap: 200_122_078 }),
+    pair({ pairAddress: 'GOOD3', liquidity: { usd: 99_839 }, marketCap: 202_540_656 }),
+  ];
+  const p = primaryPair(rows);
+  assert.equal(p.pairAddress, 'GOOD1', 'must pick the deepest pool inside the consistent cluster');
+  assert.notEqual(p.pairAddress, 'BAD');
+});
+
+test('primaryPair still falls back to depth when no caps are reported', () => {
+  const rows = [
+    pair({ pairAddress: 'S', liquidity: { usd: 10 }, marketCap: null }),
+    pair({ pairAddress: 'D', liquidity: { usd: 999 }, marketCap: null }),
+  ];
+  assert.equal(primaryPair(rows).pairAddress, 'D');
+});

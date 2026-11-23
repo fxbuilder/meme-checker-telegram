@@ -1,26 +1,37 @@
 /**
  * qa/owner-card-test.mjs
- * OWNER-ONLY DM test. Sends real live cards via @MemeCheckerStagingBot and
- * reports what Telegram actually accepted (entities, buttons, integrity).
+ * OWNER-ONLY DM visual acceptance for the three card modes.
  *
- * Sends:
- *   1. compact card, Ethereum PEPE (rich data: tax/LP/dev/paid all real)
- *   2. detailed card, same token
- *   3. compact card, Solana (tax n/a — proves the honest unsupported state)
- *   4. compact card, Story (chain-unsupported message)
- *   5. chain picker keyboard (ambiguous EVM behaviour)
+ * Cases:
+ *   1. PEPE on Ethereum      — full security data, Dex Paid
+ *   2. BONK on Solana        — no tax concept (n/a), real holders
+ *   3. HyperEVM token        — chain with NO risk source (all n/a)
+ *   4. Solana WETH replica   — inconsistent provider market data
+ *
+ * Sends each case in standard/short/detailed and reports the send echo so the
+ * result is checkable rather than asserted.
+ *
+ * Usage: SCAN_MODE=live node --env-file=.env qa/owner-card-test.mjs [caseFilter]
  */
+import { liveScan, clearLiveCache } from '../src/live-scan.mjs';
+import { clearRiskCache } from '../src/risk-intel.mjs';
+import { clearDexPaidCache } from '../src/dex-paid.mjs';
+import { formatCard } from '../src/format-card.mjs';
+import { buildEmojiTheme, FULL_THEME_MAP } from '../src/emoji-theme.mjs';
+
 const TOKEN = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
 const OWNER = '1307106746';
-const CA_PEPE = '0x6982508145454ce325ddbe47a25d4ec3d2311933';
-const CA_SOL = '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs';
-
-const { liveScan } = await import('../src/live-scan.mjs');
-const { formatCard } = await import('../src/format-card.mjs');
-const { buildEmojiTheme, FULL_THEME_MAP } = await import('../src/emoji-theme.mjs');
+const BOT = 'MemeCheckerStagingBot';
+const filter = (process.argv[2] ?? '').toLowerCase();
 
 const theme = buildEmojiTheme(FULL_THEME_MAP);
-const BOT = 'MemeCheckerStagingBot';
+
+const CASES = [
+  { key: 'pepe', label: 'Ethereum PEPE (full data)', chain: 'ethereum', address: '0x6982508145454ce325ddbe47a25d4ec3d2311933' },
+  { key: 'bonk', label: 'Solana BONK (no tax concept)', chain: 'solana', address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+  { key: 'norf', label: 'HyperEVM (no risk source)', chain: 'hyperevm', address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f' },
+  { key: 'weird', label: 'Solana WETH replica (bad market data)', chain: 'solana', address: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs' },
+];
 
 async function send(payload) {
   const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
@@ -30,88 +41,80 @@ async function send(payload) {
   });
   const body = await res.json();
   const m = body.result;
+  const text = m?.text ?? '';
   return {
     ok: Boolean(body.ok),
     err: body.ok ? null : body.description,
     id: m?.message_id ?? null,
+    chars: text.length,
+    lines: text ? text.split('\n').length : 0,
     entities: (m?.entities ?? []).map((e) => e.type),
     custom: (m?.entities ?? []).filter((e) => e.type === 'custom_emoji').length,
     buttons: m?.reply_markup?.inline_keyboard ?? null,
-    chars: (m?.text ?? '').length,
-    text: m?.text ?? null,
+    text,
   };
 }
 
-const out = [];
+clearLiveCache(); clearRiskCache(); clearDexPaidCache();
 
-// 1 + 2: compact vs detailed on a data-rich EVM token
-const pepe = await liveScan({ chain: 'ethereum', address: CA_PEPE });
-for (const view of ['compact', 'detailed']) {
-  const { text, buttons } = formatCard(pepe, {
-    view, botUsername: BOT, emojiTheme: theme,
-  });
-  const r = await send({
-    chat_id: OWNER, text, parse_mode: 'HTML', disable_web_page_preview: true,
-    ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}),
-  });
-  out.push({ test: `ethereum PEPE ${view}`, ...r, fullCa: (r.text ?? '').includes(CA_PEPE) });
-  await new Promise((s) => setTimeout(s, 900));
-}
+const report = [];
+for (const c of CASES) {
+  if (filter && !c.key.includes(filter)) continue;
 
-// 3: Solana — tax must read n/a
-const sol = await liveScan({ chain: 'solana', address: CA_SOL });
-{
-  const { text, buttons } = formatCard(sol, { view: 'compact', botUsername: BOT, emojiTheme: theme });
-  const r = await send({
-    chat_id: OWNER, text, parse_mode: 'HTML', disable_web_page_preview: true,
-    ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}),
-  });
-  out.push({
-    test: 'solana compact', ...r, fullCa: (r.text ?? '').includes(CA_SOL),
-    taxIsNa: /Tax: n\/a/.test(r.text ?? ''),
-    noFakeTaxZero: !/Tax: 0/.test(r.text ?? ''),
-  });
-  await new Promise((s) => setTimeout(s, 900));
-}
+  const r = await liveScan({ chain: c.chain, address: c.address });
 
-// 4: Story — capability gap must not read as token-not-found
-{
-  const story = await liveScan({ chain: 'story', address: CA_PEPE });
-  const { text } = formatCard(story, { view: 'compact', botUsername: BOT, emojiTheme: theme });
-  const r = await send({ chat_id: OWNER, text, parse_mode: 'HTML' });
-  out.push({
-    test: 'story unsupported', ...r,
-    saysNotSupported: /Not Supported/i.test(r.text ?? ''),
-    notTokenNotFound: !/Token Not Found/i.test(r.text ?? ''),
-  });
-  await new Promise((s) => setTimeout(s, 900));
-}
-
-// 5: chain picker
-{
-  const rows = [];
-  const evm = ['ethereum', 'bsc', 'base', 'arbitrum', 'optimism', 'polygon',
-    'avalanche', 'hyperevm', 'monad', 'robinhood', 'unichain', 'berachain', 'abstract', 'megaeth'];
-  for (let i = 0; i < evm.length; i += 2) {
-    rows.push(evm.slice(i, i + 2).map((c) => ({ text: c, callback_data: `c:${c}:${CA_PEPE}` })));
+  for (const view of ['standard', 'short', 'detailed']) {
+    const { text, buttons } = formatCard(r, {
+      view, botUsername: BOT, emojiTheme: theme,
+    });
+    const sent = await send({
+      chat_id: OWNER,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}),
+    });
+    const ca = r.token?.address ?? '';
+    report.push({
+      case: c.key,
+      view,
+      ok: sent.ok,
+      err: sent.err,
+      id: sent.id,
+      chars: sent.chars,
+      lines: sent.lines,
+      custom: sent.custom,
+      bold: sent.entities.filter((t) => t === 'bold').length,
+      code: sent.entities.filter((t) => t === 'code').length,
+      links: sent.entities.filter((t) => t === 'text_link').length,
+      buttons: (sent.buttons ?? []).flat().map((b) => b.text),
+      caIntact: ca ? (sent.text.split(ca).length - 1) === 1 : null,
+      noMock: !/\[mock\]/i.test(sent.text),
+      noRawHtml: !/<(b|i|code|a |tg-emoji)/.test(sent.text),
+      sample: view === 'standard' ? sent.text : null,
+    });
+    await new Promise((s) => setTimeout(s, 900));
   }
-  rows.push([{ text: '✖️ Cancel', callback_data: 'c:cancel' }]);
-  // Guard Telegram's 64-byte callback_data limit.
-  const tooLong = rows.flat().filter((b) => Buffer.byteLength(b.callback_data) > 64);
-  const r = await send({
-    chat_id: OWNER,
-    text: `<b>Which chain is this address on?</b>\n\n<code>${CA_PEPE}</code>\n\n` +
-          `A 0x address can exist on several networks, so I will not guess.\n` +
-          `★ marks the default.`,
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: rows },
-  });
-  out.push({
-    test: 'chain picker', ...r,
-    buttonsSent: rows.length,
-    callbackDataTooLong: tooLong.length,
-    maxCallbackBytes: Math.max(...rows.flat().map((b) => Buffer.byteLength(b.callback_data))),
-  });
 }
 
-console.log(JSON.stringify(out, null, 1));
+for (const row of report) {
+  const flags = [
+    row.ok ? 'SENT' : `FAIL(${row.err})`,
+    `${row.chars}c/${row.lines}L`,
+    `emoji=${row.custom}`,
+    `bold=${row.bold}`,
+    `code=${row.code}`,
+    `links=${row.links}`,
+    row.buttons.length ? `btn=[${row.buttons.join('|')}]` : 'btn=[]',
+    row.caIntact === null ? '' : `ca=${row.caIntact ? 'once' : 'BAD'}`,
+    row.noMock ? '' : 'MOCK-LEAK',
+    row.noRawHtml ? '' : 'RAW-HTML',
+  ].filter(Boolean).join('  ');
+  console.log(`${row.case.padEnd(6)} ${row.view.padEnd(9)} ${flags}`);
+}
+
+console.log('\n===== STANDARD CARD TEXTS (for visual review) =====');
+for (const row of report.filter((x) => x.sample)) {
+  console.log(`\n----- ${row.case} -----`);
+  console.log(row.sample);
+}

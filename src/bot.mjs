@@ -5,7 +5,7 @@
  * Env vars (see .env.example):
  *   TELEGRAM_BOT_TOKEN    — required for live Telegram
  *   SCAN_MODE             — 'mock' (default) or 'live'
- *   CARD_VIEW             — 'compact' (default) or 'detailed'
+ *   CARD_VIEW             — 'standard' (default), 'short' or 'detailed'
  *   DEFAULT_EVM_CHAIN     — chain assumed for a bare 0x… address (default bsc)
  *   TOKEN_PAGE_BASE_URL   — token page origin, when the website route is confirmed
  */
@@ -28,8 +28,18 @@ const SCAN_MODE    = process.env.SCAN_MODE ?? 'mock';
 const EMOJI_THEME  = loadEnvTheme();
 const DEFAULT_EVM  = resolveChainAlias(process.env.DEFAULT_EVM_CHAIN ?? '') ?? DETECT_DEFAULT_EVM;
 
-/** Bot-level card mode. /detail and /compact toggle it for the whole process. */
-let CARD_VIEW = (process.env.CARD_VIEW ?? 'compact').toLowerCase() === 'detailed' ? 'detailed' : 'compact';
+/**
+ * Bot-level card mode. STANDARD is the product default: information-rich and
+ * readable. 'short' is opt-in for groups that ask for a minimal card, and
+ * 'detailed' is the full technical view.
+ */
+function normalizeCardView(v) {
+  const s = String(v ?? '').toLowerCase();
+  if (s === 'detailed' || s === 'detail') return 'detailed';
+  if (s === 'short' || s === 'compact') return 'short';
+  return 'standard';
+}
+let CARD_VIEW = normalizeCardView(process.env.CARD_VIEW ?? 'standard');
 
 // Bot username populated after launch via getMe
 let BOT_USERNAME = '';
@@ -254,10 +264,23 @@ bot.command('check', async ctx => {
 
 // ---- Card view toggle ------------------------------------------------------
 
+bot.command('standard', async ctx => {
+  if (ctx.from?.is_bot) return;
+  CARD_VIEW = 'standard';
+  await ctx.reply('📋 Card view set to <b>standard</b> (default).', { parse_mode: 'HTML' });
+});
+
+bot.command('short', async ctx => {
+  if (ctx.from?.is_bot) return;
+  CARD_VIEW = 'short';
+  await ctx.reply('⚡ Card view set to <b>short</b>.', { parse_mode: 'HTML' });
+});
+
+// 'compact' is kept as an alias so any existing saved workflow still works.
 bot.command('compact', async ctx => {
   if (ctx.from?.is_bot) return;
-  CARD_VIEW = 'compact';
-  await ctx.reply('📱 Card view set to <b>compact</b>.', { parse_mode: 'HTML' });
+  CARD_VIEW = 'short';
+  await ctx.reply('⚡ Card view set to <b>short</b>.', { parse_mode: 'HTML' });
 });
 
 bot.command('detail', async ctx => {
@@ -530,8 +553,9 @@ Promise.resolve(bot.telegram?.getMe?.())
         { command: 'start',   description: 'Welcome and introduction' },
         { command: 'help',    description: 'Show all commands' },
         { command: 'check',   description: 'Check a token: /check <address>' },
+        { command: 'standard', description: 'Standard card view (default)' },
+        { command: 'short',   description: 'Short summary card' },
         { command: 'detail',  description: 'Detailed card view' },
-        { command: 'compact', description: 'Compact card view (default)' },
         { command: 'chains',  description: 'Supported chains and data coverage' },
         { command: 'about',   description: 'About Meme Checker' },
         { command: 'website', description: 'Open the Meme Checker website' },

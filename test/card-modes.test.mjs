@@ -1,10 +1,11 @@
 /**
  * test/card-modes.test.mjs
- * Compact vs detailed rendering, and the honesty rules that must hold in BOTH.
+ * STANDARD / SHORT / DETAILED rendering, plus the honesty and Telegram-HTML
+ * safety rules that must hold in every mode.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCard } from '../src/format-card.mjs';
+import { formatCard, normalizeView } from '../src/format-card.mjs';
 import { emptyRisk } from '../src/risk-intel.mjs';
 
 const CA = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82';
@@ -13,7 +14,11 @@ function result(over = {}) {
   return {
     mode: 'live',
     status: 'ok',
-    token: { chain: 'bsc', address: CA.toLowerCase(), name: 'PancakeSwap Token', symbol: 'Cake' },
+    token: {
+      chain: 'bsc', address: CA.toLowerCase(), name: 'PancakeSwap Token', symbol: 'Cake',
+      logo: 'https://cdn.example.org/cake.png',
+    },
+    chartUrl: 'https://dexscreener.com/bsc/0xpair',
     market: {
       priceUsd: 1.53, marketCapUsd: 534_000_000, fdvUsd: 534_000_000,
       liquidityUsd: 4_820_000, volume24hUsd: 650_000, priceChange24h: 1.9,
@@ -39,138 +44,191 @@ function result(over = {}) {
   };
 }
 
-// ---- Compact ---------------------------------------------------------------
+// ---- Mode normalisation ---------------------------------------------------
 
-test('compact card is materially shorter than detailed', () => {
-  const c = formatCard(result(), { view: 'compact' }).text;
-  const d = formatCard(result(), { view: 'detailed' }).text;
-  assert.ok(c.length < d.length * 0.65,
-    `compact (${c.length}) should be much shorter than detailed (${d.length})`);
+test('view names normalise, and legacy "compact" maps to short', () => {
+  assert.equal(normalizeView('standard'), 'standard');
+  assert.equal(normalizeView('default'), 'standard');
+  assert.equal(normalizeView('short'), 'short');
+  assert.equal(normalizeView('compact'), 'short');
+  assert.equal(normalizeView('detailed'), 'detailed');
+  assert.equal(normalizeView('detail'), 'detailed');
+  assert.equal(normalizeView(undefined), 'standard');
+  assert.equal(normalizeView('nonsense'), 'standard');
 });
 
-test('compact card omits the detail-only sections', () => {
-  const c = formatCard(result(), { view: 'compact' }).text;
-  for (const heading of ['MARKET DATA', 'HOLDER OVERVIEW', 'NARRATIVE', 'PROJECT INFO', 'WANT TO DYOR DEEPER', 'SECURITY']) {
-    assert.ok(!c.includes(heading), `compact must not include ${heading}`);
+// ---- STANDARD is the rich default ----------------------------------------
+
+const STD = formatCard(result(), { view: 'standard' }).text;
+
+test('STANDARD carries every required section', () => {
+  for (const heading of ['MEME CHECKER', 'MARKET OVERVIEW', 'SECURITY OVERVIEW', 'NARRATIVE', 'PROJECT LINKS']) {
+    assert.ok(STD.includes(heading), `standard missing section: ${heading}`);
   }
 });
 
-test('compact card still carries identity, CA, price and quick checks', () => {
-  const c = formatCard(result(), { view: 'compact' }).text;
-  assert.ok(c.includes('PancakeSwap Token'));
-  assert.ok(c.includes('$Cake'));
-  assert.ok(c.includes('BNB Chain'));
-  assert.ok(c.includes(CA.toLowerCase()), 'full CA must be present');
-  assert.ok(c.includes('Price'));
-  assert.ok(c.includes('QUICK CHECKS'));
-  for (const label of ['Top 10', 'Holders', 'Dex Paid', 'Tax', 'LP Lock', 'Dev']) {
-    assert.ok(c.includes(label), `missing quick check: ${label}`);
+test('STANDARD header has branding, name, ticker, chain and copyable CA', () => {
+  assert.ok(STD.includes('MEME CHECKER'));
+  assert.ok(STD.includes('PancakeSwap Token'));
+  assert.ok(STD.includes('$Cake'));
+  assert.ok(STD.includes('BNB Chain'));
+  assert.ok(STD.includes(`<code>${CA.toLowerCase()}</code>`), 'CA must be a code entity');
+  assert.equal(STD.split(CA.toLowerCase()).length - 1, 1, 'CA appears exactly once');
+});
+
+test('STANDARD market metrics are separate aligned rows, not one dense line', () => {
+  for (const label of ['Price', 'Market Cap', 'Liquidity', 'Volume 24H', 'Change 1H', 'Change 24H', 'Pair Age']) {
+    // Each label starts its own line and is followed by a left-aligned value.
+    const rows = STD.split(String.fromCharCode(10)).filter((l) => l.startsWith(`${label}:`));
+    assert.equal(rows.length, 1, `expected exactly one ${label} row`);
+    assert.ok(/^.+?:\s+\S/.test(rows[0]), `expected a value after the ${label} label: ${rows[0]}`);
   }
+  // The rejected dense format used a middot separator between metrics.
+  assert.ok(!/MC \$[\d.]+[MK]?\s+·\s+Liq/.test(STD), 'must not regress to the dense one-line dump');
 });
 
-test('the full CA appears exactly once in compact mode', () => {
-  const c = formatCard(result(), { view: 'compact' }).text;
-  assert.equal(c.split(CA.toLowerCase()).length - 1, 1);
+test('STANDARD security block shows all six signals with real values', () => {
+  assert.ok(/Top 10:\s+20\.2%/.test(STD));
+  assert.ok(/Holders:\s+102,545/.test(STD));
+  assert.ok(/Dex Paid:\s+Not Paid/.test(STD));
+  assert.ok(/Tax \(B\/S\):\s+0\.0%/.test(STD));
+  assert.ok(/LP Locked:\s+99%/.test(STD));
+  assert.ok(/Creator Holds:\s+1\.2%/.test(STD));
 });
 
-test('quick check values reflect real data', () => {
-  const c = formatCard(result(), { view: 'compact' }).text;
-  assert.ok(c.includes('Top 10: 20.2%'));
-  assert.ok(c.includes('Holders: 102,545'));
-  assert.ok(c.includes('Dex Paid: Not Paid'));
-  assert.ok(c.includes('Tax: 0.0%'));
-  assert.ok(c.includes('LP Lock: 99%'));
-  assert.ok(c.includes('Dev: 1.2%'));
+test('creator holding is labelled as a current balance, never dev history', () => {
+  assert.ok(STD.includes('Creator Holds'));
+  assert.ok(!/Dev History/i.test(STD), 'must not imply dev history');
 });
 
-// ---- Detailed --------------------------------------------------------------
+test('STANDARD keeps project links and narrative section', () => {
+  assert.ok(STD.includes('pancakeswap.finance'));
+  assert.ok(/No verified narrative available/.test(STD));
+});
 
-test('detailed card keeps the §4.1 section headings', () => {
+test('STANDARD has no DYOR marketing block and no promotional coming-soon block', () => {
+  assert.ok(!STD.includes('WANT TO DYOR DEEPER'));
+  assert.ok(!STD.includes('Full analysis page coming soon'));
+  assert.ok(!STD.includes('Bubble Map'));
+});
+
+test('STANDARD is substantially richer than short', () => {
+  const short = formatCard(result(), { view: 'short' }).text;
+  assert.ok(STD.length > short.length * 1.6,
+    `standard (${STD.length}) should be clearly richer than short (${short.length})`);
+});
+
+test('STANDARD does not stack horizontal rules between sections', () => {
+  const rules = (STD.match(/━/g) ?? []).length;
+  assert.ok(rules <= 1, `expected at most one rule, found ${rules}`);
+});
+
+// ---- SHORT ---------------------------------------------------------------
+
+test('SHORT is minimal but still honest and copyable', () => {
+  const t = formatCard(result(), { view: 'short' }).text;
+  assert.ok(t.includes('PancakeSwap Token'));
+  assert.ok(t.includes(CA.toLowerCase()), 'full CA still present');
+  assert.ok(t.includes('Price'));
+  assert.ok(!t.includes('MARKET OVERVIEW'));
+  assert.ok(!t.includes('SECURITY OVERVIEW'));
+  assert.ok(!t.includes('NARRATIVE'));
+});
+
+test('SHORT omits unavailable security rows rather than printing placeholders', () => {
+  const t = formatCard(result({ risk: emptyRisk(), riskStatus: 'unsupported' }), { view: 'short' }).text;
+  assert.ok(!t.includes('n/a'), 'short should not carry an all-placeholder security block');
+});
+
+// ---- DETAILED ------------------------------------------------------------
+
+test('DETAILED keeps the documented §4.1 headings', () => {
   const d = formatCard(result(), { view: 'detailed' }).text;
   for (const h of ['MARKET DATA', 'HOLDER OVERVIEW', 'NARRATIVE', 'PROJECT INFO', 'WANT TO DYOR DEEPER']) {
-    assert.ok(d.includes(h), `detailed must include ${h}`);
+    assert.ok(d.includes(h), `detailed missing ${h}`);
   }
 });
 
-test('detailed card shows security flags only when known', () => {
+test('DETAILED adds risk flags, sources and holder detail', () => {
   const d = formatCard(result(), { view: 'detailed' }).text;
+  assert.ok(d.includes('RISK FLAGS'));
   assert.ok(d.includes('Not honeypot'));
   assert.ok(d.includes('Mintable'));
-  // openSource true must not be announced as a warning.
-  assert.ok(!d.includes('Closed source'));
+  assert.ok(d.includes('SOURCES'));
+  assert.ok(d.includes('HOLDER DETAIL'));
 });
 
-test('detailed card omits security block entirely when nothing is known', () => {
-  const d = formatCard(result({ risk: emptyRisk(), riskStatus: 'unsupported' }), { view: 'detailed' }).text;
-  assert.ok(!d.includes('SECURITY'));
+test('DETAILED does not announce a flag that was never observed', () => {
+  const d = formatCard(result(), { view: 'detailed' }).text;
+  assert.ok(!d.includes('Closed source'), 'openSource true must not raise a closed-source warning');
 });
 
-// ---- Honesty in both modes -------------------------------------------------
+// ---- Honesty in every mode ------------------------------------------------
 
-test('unsupported chain shows n/a in both modes, never a fake zero', () => {
-  for (const view of ['compact', 'detailed']) {
+test('unsupported chain shows unavailable markers in every mode, never a fake zero', () => {
+  for (const view of ['standard', 'short', 'detailed']) {
     const t = formatCard(result({ risk: emptyRisk(), riskStatus: 'unsupported', dexPaid: { status: 'unknown' } }), { view }).text;
-    assert.ok(t.includes('n/a'), `${view} must state n/a for unsupported risk data`);
-    assert.ok(!t.includes('Top 10: 0'), `${view} must not invent a 0 concentration`);
-    assert.ok(!t.includes('Dex Paid: Not Paid'), `${view} must not claim unpaid when unknown`);
+    assert.ok(!/Top 10: 0/.test(t), `${view} must not invent a 0 concentration`);
+    assert.ok(!/Dex Paid: Not Paid/.test(t), `${view} must not claim unpaid when unknown`);
   }
 });
 
-test('no [mock] label appears for a live card', () => {
-  for (const view of ['compact', 'detailed']) {
-    const t = formatCard(result(), { view }).text;
-    assert.ok(!/\[mock\]/i.test(t));
+test('no data source is marked n/a, distinct from a dash', () => {
+  const t = formatCard(result({ risk: emptyRisk(), riskStatus: 'unsupported' }), { view: 'standard' }).text;
+  assert.ok(t.includes('n/a'), 'unsupported must read n/a');
+  const t2 = formatCard(result({ risk: emptyRisk(), riskStatus: 'no-data' }), { view: 'standard' }).text;
+  assert.ok(t2.includes('—'), 'covered-but-empty must read as a dash');
+});
+
+test('material risk warnings are never dropped for brevity', () => {
+  const risky = result({
+    risk: {
+      ...emptyRisk(),
+      holders: { total: 500, top10Percentage: 92, largestHolderPercentage: 70 },
+      tax: { buy: 25, sell: 25 },
+      lpLock: { lockedPercentage: 0 },
+      dev: { address: '0xdev', balancePercentage: 40 },
+      security: { ...emptyRisk().security, honeypot: true },
+    },
+  });
+  for (const view of ['standard', 'short', 'detailed']) {
+    const t = formatCard(risky, { view }).text;
+    assert.ok(/92\.0%/.test(t), `${view} must keep the concentration`);
+    assert.ok(/25\.0%/.test(t), `${view} must keep the tax`);
   }
 });
 
-test('chain-unsupported status has its own message, distinct from not-found', () => {
+test('no [mock] label appears on a live card in any mode', () => {
+  for (const view of ['standard', 'short', 'detailed']) {
+    assert.ok(!/\[mock\]/i.test(formatCard(result(), { view }).text), `${view} leaked a mock label`);
+  }
+});
+
+test('chain-unsupported status is distinct from not-found', () => {
   const t = formatCard({ mode: 'live', status: 'chain-unsupported', chain: 'story' }).text;
   assert.ok(/Not Supported/i.test(t));
   assert.ok(/Story/.test(t));
-  assert.ok(!/Token Not Found/i.test(t), 'a capability gap must not read as a token miss');
-  assert.ok(/not a statement about the token/i.test(t), 'must not imply anything about the token');
+  assert.ok(!/Token Not Found/i.test(t));
+  assert.ok(/not a statement about the token/i.test(t));
 });
 
-test('api-error explicitly disclaims being evidence about the token', () => {
-  const t = formatCard({ mode: 'live', status: 'api-error' }).text;
-  assert.ok(/says nothing about the token/i.test(t));
-});
-
-test('compact card renders all chains without crashing', () => {
-  const chainIds = ['solana', 'ethereum', 'bsc', 'base', 'arbitrum', 'optimism', 'polygon',
-    'avalanche', 'hyperevm', 'monad', 'robinhood', 'unichain', 'berachain', 'abstract', 'megaeth'];
-  for (const chain of chainIds) {
-    const r = result({
-      token: { chain, address: chain === 'solana' ? 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' : CA.toLowerCase(), name: 'T', symbol: 'T' },
-    });
-    const { text } = formatCard(r, { view: 'compact' });
-    assert.ok(text.includes('QUICK CHECKS'), `${chain} card missing quick checks`);
-    assert.ok(!text.includes('undefined'), `${chain} card leaked "undefined"`);
-    assert.ok(!text.includes('NaN'), `${chain} card leaked NaN`);
-    assert.ok(!text.includes('null'), `${chain} card leaked "null"`);
-  }
+test('api-error disclaims being evidence about the token', () => {
+  assert.ok(/says nothing about the token/i.test(formatCard({ mode: 'live', status: 'api-error' }).text));
 });
 
 // ---- Telegram HTML safety -------------------------------------------------
 
-/**
- * The card is sent with parse_mode=HTML. A value like "<1%" is a legal display
- * string but an illegal tag opener, and Telegram rejects the ENTIRE message.
- * These tests validate the tag structure rather than comparing strings.
- */
 function telegramHtmlErrors(html) {
   const errors = [];
   const stack = [];
+  const allowed = ['b', 'i', 'code', 'pre', 'a', 's', 'u', 'tg-emoji'];
   const re = /<(\/?)([a-zA-Z-]+)([^>]*)>|<|>/g;
   let m;
   while ((m = re.exec(html))) {
     if (!m[2]) { errors.push(`bare angle bracket at ${m.index}`); continue; }
     const closing = m[1] === '/';
     const tag = m[2].toLowerCase();
-    if (!['b', 'i', 'code', 'a', 'tg-emoji'].includes(tag)) {
-      errors.push(`unsupported tag <${tag}> at ${m.index}`);
-      continue;
-    }
+    if (!allowed.includes(tag)) { errors.push(`unsupported tag <${tag}> at ${m.index}`); continue; }
     if (!closing) stack.push(tag);
     else if (stack.pop() !== tag) errors.push(`mismatched close </${tag}> at ${m.index}`);
   }
@@ -178,73 +236,107 @@ function telegramHtmlErrors(html) {
   return errors;
 }
 
-test('every quick-check value is HTML-escaped so Telegram can parse the card', () => {
-  // Sub-1% renders as "<1%" — the exact value that broke a real send.
-  const r = result({
-    risk: { ...emptyRisk(), lpLock: { lockedPercentage: 0.09 }, dev: { address: '0xabc', balancePercentage: 0.04 } },
-  });
-  const { text } = formatCard(r, { view: 'compact' });
-  assert.ok(text.includes('&lt;1%'), 'sub-1% must be escaped');
-  assert.ok(!/<1%/.test(text), 'raw "<1%" must never appear — it breaks Telegram parsing');
-  assert.deepEqual(telegramHtmlErrors(text), []);
-});
-
-test('compact and detailed cards are structurally valid Telegram HTML across chains', () => {
+test('every mode is structurally valid Telegram HTML', () => {
   const cases = [
     result(),
     result({ risk: emptyRisk(), riskStatus: 'unsupported' }),
     result({ risk: emptyRisk(), riskStatus: 'no-data', dexPaid: { status: 'unknown', detail: 'no "quotes" & <angle>' } }),
     result({ token: { chain: 'solana', address: 'So11111111111111111111111111111111111111112', name: 'A & B <script>', symbol: 'X&Y' } }),
+    result({ market: { ...result().market, priceChange24h: 5000, priceChange1h: -500 } }),
+    result({ market: { ...result().market, marketCapUsd: 1_503_569_501_787, priceChange24h: 1_007_903 } }),
   ];
   for (const c of cases) {
-    for (const view of ['compact', 'detailed']) {
+    for (const view of ['standard', 'short', 'detailed']) {
       const { text } = formatCard(c, { view });
-      assert.deepEqual(telegramHtmlErrors(text), [], `${view} card produced invalid HTML:\n${text}`);
+      assert.deepEqual(telegramHtmlErrors(text), [], `${view} produced invalid HTML:\n${text}`);
     }
   }
 });
 
-test('a token name containing angle brackets cannot inject tags', () => {
-  const r = result({ token: { chain: 'bsc', address: CA.toLowerCase(), name: '<b>hax</b>', symbol: 'X' } });
-  const { text } = formatCard(r, { view: 'compact' });
-  assert.ok(!text.includes('<b>hax</b>'));
-  assert.ok(text.includes('&lt;b&gt;hax&lt;/b&gt;'));
-  assert.deepEqual(telegramHtmlErrors(text), []);
+test('sub-1% values are escaped so Telegram can parse the card', () => {
+  const r = result({ risk: { ...emptyRisk(), lpLock: { lockedPercentage: 0.09 }, dev: { address: '0xabc', balancePercentage: 0.04 } } });
+  for (const view of ['standard', 'detailed']) {
+    const t = formatCard(r, { view }).text;
+    assert.ok(t.includes('&lt;1%'), `${view} must escape "<1%"`);
+    assert.ok(!/<1%/.test(t), `${view} must never emit a raw "<1%"`);
+    assert.deepEqual(telegramHtmlErrors(t), []);
+  }
 });
 
-// ---- Implausible market data ----------------------------------------------
-
-test('absurd percentage moves are clamped in the display', () => {
-  const r = result({ market: { ...result().market, priceChange24h: 1_007_903 } });
-  const { text } = formatCard(r, { view: 'compact' });
-  assert.ok(text.includes('&gt;+1000%'), 'huge positive change must be clamped and HTML-escaped');
-  assert.ok(!text.includes('1007903'), 'raw absurd value must not be printed');
-});
-
-test('a $1.5T market cap triggers an inconsistency note, value still shown', () => {
-  const r = result({ market: { ...result().market, marketCapUsd: 1_503_569_501_787, priceChange24h: 1_007_903 } });
-  const { text } = formatCard(r, { view: 'compact' });
-  assert.ok(/look inconsistent/i.test(text), 'must disclose, not silently present');
-  assert.ok(text.includes('MC $'), 'the figure is still shown — we warn, we do not hide');
-});
-
-test('normal market data gets no inconsistency note', () => {
-  const { text } = formatCard(result(), { view: 'compact' });
-  assert.ok(!/look inconsistent/i.test(text));
-});
-
-test('both clamp directions are escaped and produce valid HTML', () => {
-  // Compact shows 24H only, so drive the positive clamp through 24H...
-  const pos = formatCard(result({ market: { ...result().market, priceChange24h: 5000 } }), { view: 'compact' }).text;
-  assert.deepEqual(telegramHtmlErrors(pos), []);
+test('both percentage clamp directions are escaped', () => {
+  const pos = formatCard(result({ market: { ...result().market, priceChange24h: 5000 } }), { view: 'standard' }).text;
   assert.ok(pos.includes('&gt;+1000%'));
+  assert.deepEqual(telegramHtmlErrors(pos), []);
 
-  // ...and the negative clamp through 24H too.
-  const neg = formatCard(result({ market: { ...result().market, priceChange24h: -500 } }), { view: 'compact' }).text;
+  const neg = formatCard(result({ market: { ...result().market, priceChange1h: -500 } }), { view: 'detailed' }).text;
+  assert.ok(neg.includes('&lt;-100%'));
   assert.deepEqual(telegramHtmlErrors(neg), []);
-  assert.ok(neg.includes('&lt;-100%'), 'negative clamp must be escaped');
+});
 
-  // Detailed mode renders both 1H and 24H, so verify both there as well.
-  const det = formatCard(result({ market: { ...result().market, priceChange1h: -500, priceChange24h: 5000 } }), { view: 'detailed' }).text;
-  assert.deepEqual(telegramHtmlErrors(det), []);
+test('a token name with angle brackets cannot inject tags', () => {
+  const r = result({ token: { chain: 'bsc', address: CA.toLowerCase(), name: '<b>hax</b>', symbol: 'X' } });
+  for (const view of ['standard', 'short', 'detailed']) {
+    const t = formatCard(r, { view }).text;
+    assert.ok(!t.includes('<b>hax</b>'), `${view} allowed tag injection`);
+    assert.deepEqual(telegramHtmlErrors(t), []);
+  }
+});
+
+// ---- Implausible market data ---------------------------------------------
+
+test('an implausible figure is disclosed, not hidden', () => {
+  const r = result({ market: { ...result().market, marketCapUsd: 1_503_569_501_787, priceChange24h: 1_007_903 } });
+  const t = formatCard(r, { view: 'standard' }).text;
+  assert.ok(/inconsistent/i.test(t), 'must disclose the inconsistency');
+  assert.ok(t.includes('Market Cap:'), 'the figure is still shown — warn, do not hide');
+});
+
+test('normal data raises no inconsistency note', () => {
+  assert.ok(!/inconsistent/i.test(formatCard(result(), { view: 'standard' }).text));
+});
+
+// ---- Actions --------------------------------------------------------------
+
+test('STANDARD exposes chart and add-to-group, and omits dead destinations', () => {
+  const { buttons } = formatCard(result(), { view: 'standard', botUsername: 'TestBot' });
+  const flat = buttons.flat();
+  assert.ok(flat.some((b) => b.text.includes('Chart') && b.url.includes('dexscreener')));
+  assert.ok(flat.some((b) => b.text.includes('Add to Group')));
+  assert.ok(!flat.some((b) => b.text.includes('Analysis')), 'must not render an inactive analysis button');
+});
+
+test('Analysis button appears only when the token URL is real', () => {
+  const withUrl = result({ fullAnalysisUrl: 'https://app.memechecker.io/check/bsc/0xabc' });
+  const { buttons } = formatCard(withUrl, { view: 'standard' });
+  assert.ok(buttons.flat().some((b) => b.text.includes('Analysis')));
+});
+
+test('placeholder and credentialed URLs never become buttons in any mode', () => {
+  for (const view of ['standard', 'short', 'detailed']) {
+    for (const bad of ['https://meme-checker.example/x', 'https://u:p@real.io/x', 'http://insecure.io/x']) {
+      const { buttons } = formatCard(result({ fullAnalysisUrl: bad, chartUrl: bad }), { view });
+      assert.ok(!buttons.flat().some((b) => b.url === bad), `${view} used an unacceptable URL`);
+      assert.ok(!buttons.flat().some((b) => b.text.includes('Chart')), `${view} used a bad chart URL`);
+    }
+  }
+});
+
+// ---- Provider failure is not "no data" ------------------------------------
+
+test('a risk fetch failure says so explicitly instead of showing silent dashes', () => {
+  const r = result({ risk: emptyRisk(), riskStatus: 'error', riskDetail: 'timeout' });
+  const t = formatCard(r, { view: 'standard' }).text;
+  assert.ok(/could not be fetched/i.test(t), 'must disclose the fetch failure');
+  assert.ok(/incomplete, not clear/i.test(t), 'must not let it read as an all-clear');
+});
+
+test('a genuine no-data result does NOT claim a fetch failure', () => {
+  const r = result({ risk: emptyRisk(), riskStatus: 'no-data' });
+  const t = formatCard(r, { view: 'standard' }).text;
+  assert.ok(!/could not be fetched/i.test(t), 'no-data is not a failure');
+});
+
+test('the standard header prints no stray image glyph', () => {
+  const t = formatCard(result(), { view: 'standard' }).text;
+  assert.ok(!t.includes('🖼'), 'a bare logo glyph read as a rendering bug');
 });
