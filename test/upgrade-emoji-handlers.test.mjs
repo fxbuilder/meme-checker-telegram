@@ -151,3 +151,75 @@ test('no theme set → card uses standard emoji (no tg-emoji tags)', async () =>
   assert.ok(card, 'card not found');
   assert.ok(!card.text.includes('tg-emoji'), 'standard mode should not contain tg-emoji');
 });
+
+// ---- chain picker + view callbacks ----------------------------------------
+
+/** Fire a registered bot.action handler with a synthetic ctx. */
+async function fireAction(pattern, data, opts = {}) {
+  const { chatId = 401, viaBot = false } = opts;
+  const entry = (globalThis.uhActions ?? []).find((a) => a.re.test(data));
+  assert.ok(entry, `no action handler matched: ${data}`);
+  const out = [];
+  const ctx = {
+    match: entry.re.exec(data),
+    chat: { id: chatId, type: 'group' },
+    from: { id: 99, is_bot: viaBot },
+    answerCbQuery: async (t) => out.push({ type: 'cbq', text: t }),
+    deleteMessage: async () => out.push({ type: 'delete' }),
+    reply: async (t) => { out.push({ type: 'reply', text: t }); return { message_id: 9 }; },
+    telegram: {
+      editMessageText: async (a, b, c, t) => out.push({ type: 'edit', text: t }),
+      getMe: async () => ({ username: 'TestBot' }),
+    },
+  };
+  await entry.f(ctx);
+  return out;
+}
+
+test('a bare EVM address triggers the chain picker instead of guessing', async () => {
+  const out = await dispatch('message', {
+    text: '0xabcdef0123456789abcdef0123456789abcdef01',
+    chatType: 'group', chatId: 402,
+  });
+  const picker = out.find((m) => m.text?.includes('Which chain'));
+  assert.ok(picker, 'expected a chain picker prompt');
+  // It must not have scanned blind.
+  assert.ok(!out.find((m) => m.text?.includes('MEME CHECKER') && m.text?.includes('QUICK CHECKS')),
+    'must not scan before the chain is chosen');
+  // Every callback stays inside Telegram's 64-byte limit.
+  const cbs = (picker.opts?.reply_markup?.inline_keyboard ?? []).flat();
+  assert.ok(cbs.length >= 14, 'all EVM chains offered');
+  for (const b of cbs) {
+    assert.ok(Buffer.byteLength(b.callback_data) <= 64, `callback_data too long: ${b.callback_data}`);
+  }
+});
+
+test('chain picker callback answered and cleaned up', async () => {
+  const out = await fireAction(/^c:(.+)$/, 'c:cancel');
+  assert.ok(out.some((o) => o.type === 'delete'), 'picker message should be removed');
+  assert.ok(out.some((o) => o.type === 'cbq'));
+});
+
+test('an unknown chain in callback data is rejected without scanning', async () => {
+  const out = await fireAction(/^c:(.+)$/, 'c:notachain:0xabcdef0123456789abcdef0123456789abcdef01');
+  assert.ok(out.some((o) => o.type === 'cbq' && /Unknown chain/.test(o.text ?? '')));
+  assert.ok(!out.some((o) => o.text?.includes('QUICK CHECKS')));
+});
+
+test('/compact and /detail switch the render mode', async () => {
+  const a = await dispatch('compact', { chatType: 'private', chatId: 403 });
+  assert.ok(a[0].text.includes('compact'));
+  const b = await dispatch('detail', { chatType: 'private', chatId: 404 });
+  assert.ok(b[0].text.includes('detailed'));
+  // Leave the bot in the product default for any later test.
+  await dispatch('compact', { chatType: 'private', chatId: 405 });
+});
+
+test('/chains lists capabilities without overclaiming', async () => {
+  const out = await dispatch('chains', { chatType: 'private', chatId: 406 });
+  const t = out[0].text;
+  assert.ok(t.includes('Story'), 'story listed');
+  assert.ok(/Story<\/b> — scan unavailable/.test(t), 'story marked unavailable, not silently omitted');
+  // Solana has no tax concept and must not be advertised as having one.
+  assert.ok(/Solana<\/b> — holders, LP lock, dex paid/.test(t), `unexpected solana line:\n${t}`);
+});
