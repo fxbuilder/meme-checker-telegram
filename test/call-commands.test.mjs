@@ -114,17 +114,28 @@ test('/call on a token-not-found scan reports it and saves nothing', async () =>
   assert.equal(store.callsForChat(CHAT).length, 0);
 });
 
-test('/call reports the existing first caller instead of stealing it', async () => {
+test('/call for an already-tracked token reports the existing call, never a second one', async () => {
+  // Product rule: one canonical tracked call per group + chain + contract. A later
+  // caller cannot add a second record or take attribution from the first caller.
   const store = tmpStore();
-  await recordCall({
+  const first = await recordCall({
     store, scanResult: okScan(),
     caller: { id: 1, displayName: 'First', username: 'first' },
     chatId: CHAT, now: Date.now() - 60_000,
   });
+
   const { ctx, out } = makeCtx({ text: `/call ${CA}`, userId: 2, username: 'second' });
   await handleCall(ctx, { store, scan: scanOk });
-  assert.ok(!/first call/.test(out[0].text), 'second caller must not be labelled first');
-  assert.match(out[0].text, /First call: @first/);
+
+  assert.equal(store.callsForChat(CHAT, { limit: 50 }).length, 1, 'still exactly one record');
+  // The message may legitimately say "first call by <someone>"; what must NOT
+  // happen is the second member being presented as the caller.
+  assert.ok(!/@second/.test(out[0].text), 'the second caller must not be presented as owner');
+  assert.match(out[0].text, /First/, 'the original caller is named');
+  // Attribution and entry are untouched. okScan() is BSC, so query that chain.
+  const kept = store.callsForToken(CHAT, 'bsc', CA)[0];
+  assert.equal(kept.id, first.call.id);
+  assert.equal(kept.callerKey, 'u:1');
 });
 
 // ---- /calls --------------------------------------------------------------

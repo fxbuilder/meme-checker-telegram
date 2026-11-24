@@ -101,13 +101,28 @@ export async function recordCall({
 
   // First-caller attribution is decided BEFORE insert, from persisted history.
   const prior = store.firstCall(chatId, entry.chain, entry.address);
+
+  // The store enforces one canonical call per (group, chain, contract). When the
+  // token is already tracked this returns the EXISTING record untouched, so a
+  // re-scan can never move the entry market cap, timestamp or first caller.
   const saved = await store.addCall(record);
+  if (saved.duplicate) {
+    const existing = saved.existing ?? saved.row;
+    return {
+      status: CALL_STATUS.DUPLICATE,
+      reason: 'this token is already tracked in this group',
+      call: existing,
+      isFirstCall: false,
+      firstCall: prior ?? existing,
+      entryMarketCapUsd: existing.entryMarketCapUsd,
+    };
+  }
 
   return {
     status: CALL_STATUS.RECORDED,
-    call: saved,
+    call: saved.row,
     isFirstCall: prior == null,
-    firstCall: prior ?? saved,
+    firstCall: prior ?? saved.row,
     entryMarketCapUsd: entry.entryMarketCapUsd,
   };
 }

@@ -27,9 +27,9 @@ export const HIT_THRESHOLD = 2;
 /** Periods offered in the UI. */
 export const PERIODS = [
   { id: '1d', label: '1D', ms: 24 * 3600_000 },
-  { id: '7d', label: '7D', ms: 7 * 24 * 3600_000 },
-  { id: '14d', label: '14D', ms: 14 * 24 * 3600_000 },
-  { id: '30d', label: '30D', ms: 30 * 24 * 3600_000 },
+  { id: '7d', label: '1W', ms: 7 * 24 * 3600_000 },
+  { id: '14d', label: '2W', ms: 14 * 24 * 3600_000 },
+  { id: '30d', label: '1M', ms: 30 * 24 * 3600_000 },
 ];
 
 export function periodById(id) {
@@ -39,6 +39,17 @@ export function periodById(id) {
 function esc(v) {
   if (v == null) return '';
   return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Profile multiples are written with at most ONE decimal, matching the requested
+ * layout ("1.0x", "11.8x", "3x"). The card's two-decimal format reads as false
+ * precision for a summary row.
+ */
+export function fmtProfileMultiple(m) {
+  if (!Number.isFinite(m)) return '—';
+  const rounded = Math.round(m * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(1)}x` : `${rounded.toFixed(1)}x`;
 }
 
 function clip(s, n) {
@@ -105,69 +116,54 @@ export function renderCallerProfile({
   period = '7d',
   now = Date.now(),
   page = 0,
-  pageSize = 8,
+  pageSize = 10,
 }) {
   const agg = aggregateCaller(calls, { period, now });
-  const label = callerLabel(agg.calls[0] ?? { callerKey, callerName: null });
-  const name = agg.calls[0] ? callerLabel(agg.calls[0]) : (callerKey?.startsWith('c:') ? 'Anonymous admin' : 'Caller');
+  const first = agg.calls[0] ?? null;
+  const name = first ? callerLabel(first) : (String(callerKey).startsWith('c:') ? 'Anonymous admin' : 'Caller');
 
-  const lines = [];
-  lines.push(`👤 <b>${esc(clip(name, 40))}</b>`);
-  lines.push(`📁 ${esc(clip(groupTitle ?? 'this group', 40))}`);
-  lines.push(`🗓 <b>${agg.period.label}</b>`);
-  lines.push('');
+  const L = [];
+  L.push(`👤 <b>${esc(clip(name, 32))}</b>`);
+  L.push(`📁 ${esc(clip(groupTitle ?? 'this group', 40))}`);
+  L.push('');
+  L.push(`Period: <b>${agg.period.label}</b>`);
+  L.push(`Calls: <b>${agg.totalCalls}</b>`);
 
   if (!agg.totalCalls) {
-    lines.push(`<i>No calls by this caller in the last ${agg.period.label}.</i>`);
-    return { text: lines.join('\n'), agg, page: 0, pages: 0 };
+    L.push('');
+    L.push('<i>No tracked calls in this period.</i>');
+    return { text: L.join('\n'), agg, page: 0, pages: 0 };
   }
 
-  lines.push(`Total calls: <b>${agg.totalCalls}</b>`);
+  // One metric, stated once. "hit" = an observed peak of at least 2x.
   if (agg.hitRate == null) {
-    lines.push('Hit rate: <i>no observed peak yet</i>');
+    L.push('Hit Rate: <i>no peak observed yet</i>');
   } else {
-    lines.push(`Hit rate: <b>${agg.hitRate.toFixed(0)}%</b> (${agg.hits}/${agg.measuredCalls} at ≥${agg.hitThreshold}x peak)`);
+    L.push(`Hit Rate: <b>${agg.hitRate.toFixed(0)}%</b> ≥${agg.hitThreshold}x`);
   }
+  L.push(`Best Call: <b>${agg.bestMultiple != null ? esc(fmtProfileMultiple(agg.bestMultiple)) : '—'}</b>`);
+  L.push(`Median: <b>${agg.medianPeak != null ? esc(fmtProfileMultiple(agg.medianPeak)) : '—'}</b>`);
+  L.push(`Avg. Peak: <b>${agg.averagePeak != null ? esc(fmtProfileMultiple(agg.averagePeak)) : '—'}</b>`);
 
-  if (agg.bestCall) {
-    const sym = agg.bestCall.symbol ? `$${agg.bestCall.symbol}` : (agg.bestCall.name ?? 'token');
-    lines.push(`Best call: <b>${esc(clip(sym, 24))}</b> at <b>${esc(fmtMultiple(agg.bestMultiple))}</b> peak`);
-  }
-
-  if (agg.averagePeak != null) {
-    lines.push('');
-    lines.push(`Average peak: <b>${esc(fmtMultiple(agg.averagePeak))}</b>`);
-    lines.push(`Median peak: <b>${esc(fmtMultiple(agg.medianPeak))}</b>`);
-  }
-
-  // ---- token list ------------------------------------------------------
+  // ---- one row per tracked contract -------------------------------------
   const sorted = agg.calls;
   const pages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(Math.max(0, page), pages - 1);
   const slice = sorted.slice(safePage * pageSize, safePage * pageSize + pageSize);
 
-  lines.push('');
-  lines.push(`<b>Tokens called</b>${pages > 1 ? ` (${safePage + 1}/${pages})` : ''}`);
+  L.push('');
   for (const c of slice) {
     const m = callMetrics(c, now);
-    const sym = c.symbol ? `$${c.symbol}` : (c.name ?? 'token');
-    // Current vs peak are labelled separately on purpose.
-    const cur = m.currentMultiple != null ? fmtMultiple(m.currentMultiple) : '—';
-    const peak = m.peakMeasured ? fmtMultiple(m.peakMultiple) : 'not observed';
-    lines.push(
-      `• <b>${esc(clip(sym, 18))}</b> — now ${esc(cur)} · peak ${esc(peak)} · ${esc(m.ageLabel ?? '')} ago`,
-    );
+    const sym = c.symbol ? `$${c.symbol}` : esc(clip(c.name ?? 'token', 16));
+    // The peak is the single performance figure. When no peak was observed the
+    // row says so rather than implying a 1.0x result.
+    const perf = m.peakMeasured ? `[${esc(fmtProfileMultiple(m.peakMultiple))}]` : '[no peak]';
+    // timeSince already returns "just now"; appending "ago" produced "just now ago".
+    const age = m.ageLabel ? `${m.ageLabel} ago` : '';
+    L.push(`🟣 <b>${esc(sym)}</b> ${perf} (${esc(age)})`);
   }
 
-  if (agg.unmeasuredCalls > 0) {
-    lines.push('');
-    lines.push(`<i>${agg.unmeasuredCalls} call(s) excluded: no observed peak to measure.</i>`);
-  }
-
-  lines.push('');
-  lines.push('<i>Peak = highest observed since the call, not all-time high. Multiples are price ratios, not realized profit.</i>');
-
-  return { text: lines.join('\n'), agg, page: safePage, pages };
+  return { text: L.join('\n'), agg, page: safePage, pages };
 }
 
 /** Inline keyboard for period switching and pagination. */

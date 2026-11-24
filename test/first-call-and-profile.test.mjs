@@ -135,17 +135,17 @@ test('calls with no observed peak are excluded from the rate, not counted as mis
 
 test('an empty period says so instead of showing zero percentages', () => {
   const { text } = renderCallerProfile({ callerKey: 'u:42', calls: [], groupTitle: 'sissooo1', period: '7d' });
-  assert.match(text, /No calls by this caller/);
-  assert.ok(!text.includes('0%'));
+  assert.match(text, /No tracked calls in this period/);
+  assert.ok(!text.includes('Hit Rate: <b>0%'));
 });
 
 test('the profile states its hit threshold and distinguishes current from peak', () => {
   const calls = [mkCall({ peakMarketCapUsd: 3_000_000, currentMarketCapUsd: 1_500_000 }, 0)];
   const { text } = renderCallerProfile({ callerKey: 'u:42', calls, groupTitle: 'sissooo1', period: '7d' });
-  assert.ok(text.includes('≥2x peak'), 'threshold stated');
-  assert.ok(text.includes('now '), 'current shown');
-  assert.ok(text.includes('peak '), 'peak shown');
-  assert.match(text, /not all-time high/);
+  assert.ok(text.includes('≥2x'), 'threshold stated');
+  // One metric per token row: the observed peak only.
+  assert.ok(text.includes('[3.0x]'), `peak multiple shown: ${text}`);
+  assert.ok(!/now 1.5x/.test(text), 'no redundant current value per row');
 });
 
 test('the profile includes caller, group and period', () => {
@@ -153,7 +153,7 @@ test('the profile includes caller, group and period', () => {
   const { text } = renderCallerProfile({ callerKey: 'u:42', calls, groupTitle: 'sissooo1', period: '14d' });
   assert.ok(text.includes('Foxy'));
   assert.ok(text.includes('sissooo1'));
-  assert.ok(text.includes('14D'));
+  assert.ok(text.includes('2W'), 'period label shown');
 });
 
 test('all four periods exist with the right ids', () => {

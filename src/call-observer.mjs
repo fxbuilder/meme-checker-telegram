@@ -67,7 +67,15 @@ export async function observePass({
     const key = `${c.chain}:${normaliseAddress(c.chain, c.address)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    targets.push({ key, calls: store.callsForToken(c.chatId, c.chain, c.address).filter((x) => x.status === 'active') });
+    // One provider request, but EVERY group tracking this contract gets the
+    // observation: the dedupe above is about avoiding duplicate API calls, not
+    // about updating only the first group that happened to be seen.
+    const sameToken = store.doc.calls.filter((c) => c.status === 'active'
+      && !isSynthetic(c)
+      && c.chain === c.chain
+      && normaliseAddress(c.chain, c.address) === normaliseAddress(c.chain, c.address)
+      && `${c.chain}:${normaliseAddress(c.chain, c.address)}` === key);
+    targets.push({ key, calls: sameToken });
     if (targets.length >= maxCalls) break;
   }
 

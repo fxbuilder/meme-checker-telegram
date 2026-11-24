@@ -276,12 +276,21 @@ test('the same caller cannot double-record the same token inside the window', as
   assert.equal(s.callsForChat(CHAT).length, 1, 'only one record');
 });
 
-test('a legitimate re-call after the dedup window IS recorded', async () => {
+test('a re-call is NEVER recorded again, however much time passes', async () => {
+  // Product rule: one canonical tracked call per group + chain + contract. Time
+  // does not create a second tracked call, so Total Calls cannot inflate.
   const s = tmpStore();
-  await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1_000_000 });
-  const b = await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1_000_000 + 20 * 60_000, duplicateWindowMs: 10 * 60_000 });
-  assert.equal(b.status, CALL_STATUS.RECORDED);
-  assert.equal(b.isFirstCall, false, 'but it is not the first call');
+  const a = await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1_000_000 });
+  assert.equal(a.status, CALL_STATUS.RECORDED);
+
+  for (const later of [10 * 60_000, 24 * 3600_000, 90 * 86400_000]) {
+    const b = await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1_000_000 + later });
+    assert.equal(b.status, CALL_STATUS.DUPLICATE, `after ${later}ms`);
+    assert.equal(b.call.id, a.call.id, 'the ORIGINAL record is returned');
+    assert.equal(b.call.entryMarketCapUsd, a.call.entryMarketCapUsd, 'entry is unchanged');
+    assert.equal(b.call.calledAt, a.call.calledAt, 'timestamp is unchanged');
+  }
+  assert.equal(s.callsForChat(CHAT, { limit: 50 }).length, 1, 'still exactly one record');
 });
 
 test('calls are isolated per group', async () => {
@@ -520,18 +529,20 @@ test('observePass respects the per-call cooldown', async () => {
   assert.ok(pass.skipped >= 1);
 });
 
-test('observePass observes one token once even with several calls on it', async () => {
+test('observePass makes one provider request per tracked token', async () => {
+  // Uniqueness means a token has at most one record per group, so the shared-token
+  // case is now about two GROUPS tracking the same contract independently.
   const { observePass } = await import('../src/call-observer.mjs');
   const s = tmpStore();
   await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1000 });
-  await recordCall({ store: s, scanResult: okScan(), caller: { id: 77, displayName: 'b', username: 'b' }, chatId: CHAT, now: 1100 });
+  await recordCall({ store: s, scanResult: okScan(), caller, chatId: '-100999', now: 1100 });
 
   let calls = 0;
   const scan = async () => { calls += 1; return okScan({ market: { ...okScan().market, marketCapUsd: 6_000_000 } }); };
   const pass = await observePass({ store: s, scan, now: 2000, perCallCooldownMs: 0, force: true });
 
-  assert.equal(calls, 1, 'one provider request for the shared token');
-  assert.equal(pass.observed, 2, 'but both call records are updated');
+  assert.equal(calls, 1, 'one provider request for the shared contract');
+  assert.equal(pass.observed, 2, "both groups' records are updated");
 });
 
 test('observePass ignores synthetic and cancelled calls', async () => {

@@ -25,6 +25,7 @@ import { canChangeSettings } from './access.mjs';
 import { verifyExtremeObservation } from './extreme-verify.mjs';
 import { renderCallerProfile, profileKeyboard } from './caller-profile.mjs';
 import { mintCallerToken, resolveCallerToken } from './deep-link.mjs';
+import { callerLabel } from './caller-identity.mjs';
 
 /** Age labels read naturally: "just now", not "just now ago". */
 function ageLabel(label) {
@@ -127,8 +128,18 @@ async function renderCallOutcome(outcome, { chain, address, result }) {
       lines.push('', '<i>Use /pnl for performance, /calls for history.</i>');
       return lines.join('\n');
     }
-    case CALL_STATUS.DUPLICATE:
-      return '⚠️ You already called this token recently. <i>Use /pnl to see how it is doing.</i>';
+    case CALL_STATUS.DUPLICATE: {
+      // The token is already tracked in this group. Name the existing call rather
+      // than telling every later caller "you already called this", which is wrong
+      // for a different member and hides who actually owns the call.
+      const existing = outcome.firstCall ?? outcome.call;
+      const who = existing ? callerLabel(existing) : 'another member';
+      const entry = existing?.entryMarketCapUsd ? fmtUsd(existing.entryMarketCapUsd) : null;
+      return `📌 This token is already tracked in this group — first call by <b>${esc(who)}</b>`
+        + `${entry ? ` at <b>${esc(entry)}</b>` : ''}.
+`
+        + '<i>One call per token per group. Use /pnl to see it.</i>';
+    }
     case CALL_STATUS.LOW_MCAP:
       return `⚠️ Not recorded: ${esc(outcome.reason)}.\n<i>An admin can change this with /callsettings minmc &lt;usd&gt;.</i>`;
     case CALL_STATUS.NOT_FOUND:
@@ -468,7 +479,10 @@ export async function handleCallerProfile(ctx, deps) {
     .filter((c) => c.callerKey === callerKey || String(c.callerId) === bare
       || String(c.callerId) === callerKey);
 
-  const visible = all.filter((c) => c.status !== 'cancelled' && !isSynthetic(c));
+  // Only ACTIVE records count. `cancelled` was withdrawn by the caller and
+  // `superseded` is a duplicate that lost to the canonical call; neither may be
+  // listed or counted, or the same contract appears more than once.
+  const visible = all.filter((c) => c.status === 'active' && !isSynthetic(c));
   const { text, page: safePage, pages } = renderCallerProfile({
     callerKey, calls: visible, groupTitle, period, page,
   });

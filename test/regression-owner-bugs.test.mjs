@@ -100,8 +100,8 @@ test('1. a real auto call persists and its link resolves into a NON-EMPTY profil
     period: resolved.period,
   });
   assert.ok(profile, 'profile must render');
-  assert.ok(!/No calls by this caller/.test(profile.text), `empty profile: ${profile.text}`);
-  assert.match(profile.text, /Total calls: <b>1<\/b>/);
+  assert.ok(!/No tracked calls in this period/.test(profile.text), `empty profile: ${profile.text}`);
+  assert.match(profile.text, /Calls: <b>1<\/b>/);
   assert.ok(profile.text.includes('Foxy'), 'caller name must appear');
 });
 
@@ -117,7 +117,7 @@ test('1b. a profile opened in the DM must NOT query the DM chat id (the original
   const profile = await handleCallerProfile(ctx, {
     store, callerKey: `u:${OWNER}`, chatId: GROUP, groupTitle: 'sissooo1', period: '7d',
   });
-  assert.ok(!/No calls by this caller/.test(profile.text));
+  assert.ok(!/No tracked calls in this period/.test(profile.text));
 });
 
 // ---- 2. group scope retained ----------------------------------------------
@@ -130,7 +130,7 @@ test('2. a profile never reads another group, even with a valid caller key', asy
   const profile = await handleCallerProfile(ctx, {
     store, callerKey: `u:${OWNER}`, chatId: OTHER, groupTitle: 'other', period: '7d',
   });
-  assert.match(profile.text, /No calls by this caller/);
+  assert.match(profile.text, /No tracked calls in this period/);
 });
 
 test('2b. a token minted for one group does not resolve in another', () => {
@@ -148,7 +148,7 @@ test('3. all four periods are queryable and include eligible recent calls', asyn
     const profile = await handleCallerProfile(ctx, {
       store, callerKey: `u:${OWNER}`, chatId: GROUP, groupTitle: 'sissooo1', period,
     });
-    assert.match(profile.text, /Total calls: <b>1<\/b>/, `${period} must include a 1h-old call`);
+    assert.match(profile.text, /Calls: <b>1<\/b>/, `${period} must include a 1h-old call`);
     assert.ok(profile.keyboard[0].some((b) => b.callback_data.endsWith(period)), `${period} button present`);
   }
 });
@@ -162,8 +162,8 @@ test('3b. a 20-day-old call appears in 30D only', () => {
   };
   for (const [p, n] of [['1d', 0], ['7d', 0], ['14d', 0], ['30d', 1]]) {
     const { text } = renderCallerProfile({ callerKey: `u:${OWNER}`, calls: [old], groupTitle: 'g', period: p });
-    if (n === 0) assert.match(text, /No calls by this caller/, p);
-    else assert.match(text, /Total calls: <b>1<\/b>/, p);
+    if (n === 0) assert.match(text, /No tracked calls in this period/, p);
+    else assert.match(text, /Calls: <b>1<\/b>/, p);
   }
 });
 
@@ -171,21 +171,28 @@ test('3b. a 20-day-old call appears in 30D only', () => {
 
 test('4. real records show; synthetic and cancelled are excluded', async () => {
   const store = tmpStore();
+  // A synthetic record for a DIFFERENT token, so it cannot be confused with the
+  // real one under the one-call-per-token rule.
   await recordCall({
-    store, scanResult: scanRes,
+    store,
+    scanResult: {
+      status: 'ok',
+      token: { chain: 'solana', address: 'So11111111111111111111111111111111111111112', name: 'Sim', symbol: 'SIMULATION' },
+      market: { marketCapUsd: 1_000_000, liquidityUsd: 50_000 },
+      media: {},
+    },
     caller: resolveCaller({ from: { id: OWNER, first_name: 'Foxy' } }, { id: Number(GROUP) }),
     chatId: GROUP, source: 'synthetic', messageId: 500,
   });
-  const real = await seedRealCall(store);
-  const cancelled = await seedRealCall(store, { messageId: 211 });
-  await store.updateCall(cancelled.call.id, { status: 'cancelled' });
+
+  await seedRealCall(store);
 
   const { ctx } = ctxFor({ chatId: DM, chatType: 'private' });
   const profile = await handleCallerProfile(ctx, {
     store, callerKey: `u:${OWNER}`, chatId: GROUP, groupTitle: 'sissooo1', period: '7d',
   });
-  assert.match(profile.text, /Total calls: <b>1<\/b>/, 'only the single live real call counts');
-  assert.ok(!/SIMULATION/.test(profile.text));
+  assert.match(profile.text, /Calls: <b>1<\/b>/, `only the live real call counts: ${profile.text}`);
+  assert.ok(!/SIMULATION/.test(profile.text), 'synthetic token must not be listed');
 });
 
 test('4b. firstCall ignores cancelled and synthetic records', async () => {

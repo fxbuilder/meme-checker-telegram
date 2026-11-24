@@ -506,9 +506,16 @@ async function sendEmojiPreview(ctx, map) {
   await ctx.reply(bnbCardText, { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
-bot.on('message', async ctx => {
+bot.on('message', async (ctx, next) => {
+  // WHY THIS HANDLER TAKES `next`:
+  // Telegraf runs middlewares in registration order. This listener is registered
+  // BEFORE bot.command('pnl'|'call'|'calls'|'fc'|...), and a handler that returns
+  // without calling next() stops the chain — so those commands never ran and
+  // appeared to do nothing. Every path this listener does not itself answer must
+  // hand control on with `return next()`.
+  //
   // Skip other bots (loop guard)
-  if (ctx.from?.is_bot) return;
+  if (ctx.from?.is_bot) return next();
 
   // STAGING ALLOWLIST: the bot only acts in explicitly allowed chats. Any other
   // group is ignored completely — no scan, no reply, no call record.
@@ -604,7 +611,8 @@ bot.on('message', async ctx => {
   }
 
   // ---- CA auto-detection (groups and DMs) ---------------------------------
-  if (!msgText) return;
+  // Nothing to scan: let later handlers see a message we do not understand.
+  if (!msgText) return next();
 
   // COMMANDS ARE NOT CONTRACTS.
   // Telegraf runs `on('message')` for command messages too, and this listener is
@@ -613,10 +621,10 @@ bot.on('message', async ctx => {
   // is consumed here as a pasted contract and replaced with a scan or chain picker,
   // so the real command handler never runs. Verified: an owner `/pnl 0x…` returned
   // the chain picker and then a token card.
-  if (/^\/\w/.test(msgText.trim())) return;
+  if (/^\/\w/.test(msgText.trim())) return next();
 
   const det = detectAll(msgText, { defaultEvmChain: DEFAULT_EVM });
-  if (!det.candidates.length) return;
+  if (!det.candidates.length) return next();
 
   // An EVM address is valid on 13 chains. Scanning the wrong one wastes a
   // request and shows the wrong token, so offer the chains instead of guessing.
@@ -855,10 +863,19 @@ bot.action(/^c[pg]:cp_[A-Za-z0-9_-]+/, async ctx => {
   });
   await ctx.answerCbQuery();
   if (out) {
-    await ctx.editMessageText(out.text, {
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: out.keyboard },
-    });
+    try {
+      await ctx.editMessageText(out.text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: out.keyboard },
+      });
+    } catch (err) {
+      // Tapping the period that is already selected produces identical content and
+      // Telegram rejects the edit with 400 "message is not modified". That is a
+      // no-op, not an error: without this the bot.catch handler posted
+      // "An unexpected error occurred" into the DM.
+      const desc = String(err?.description ?? err?.message ?? '');
+      if (!/message is not modified/i.test(desc)) throw err;
+    }
   }
 });
 

@@ -275,21 +275,56 @@ export class CallStore {
   }
 
   /** Append a validated call record. */
+  /**
+   * Insert a call — ENFORCING one canonical call per (group, chain, contract).
+   *
+   * The uniqueness rule lives here, at the storage layer, not in a cooldown or in
+   * UI filtering. Repeated scans of the same contract must not create new tracked
+   * calls no matter how much time passes, and the original first caller, entry
+   * market cap and timestamp must survive.
+   *
+   * Insertion is serialised through `writeQueue` so two concurrent updates for the
+   * same token cannot both pass the existence check and then both insert — the
+   * check and the push happen inside one queued section.
+   *
+   * Returns { row, duplicate: true, existing } when the token is already tracked.
+   */
   async addCall(record) {
     this.load();
+    const chatId = String(record.chatId);
+    const chain = record.chain;
+    const normAddr = normaliseAddress(chain, record.address);
+    const synthetic = record.source === SYNTHETIC_FLAG;
+
+    // CHECK AND PUSH WITH NO AWAIT BETWEEN THEM.
+    // Node runs this section without yielding, so two concurrent callers cannot
+    // both observe "not tracked" and both insert: the existence check and the
+    // push are one atomic step. Persisting afterwards is what is async, and
+    // persist() serialises its own writes.
+    //
+    // A cancelled call does NOT reserve the token, so an accidental call cannot
+    // permanently block a later legitimate first call.
+    const existing = this.doc.calls.find((c) => c.chatId === chatId
+      && c.chain === chain
+      && normaliseAddress(chain, c.address) === normAddr
+      && c.status !== 'cancelled'
+      && (isSynthetic(c) === synthetic));
+
+    if (existing) return { row: existing, duplicate: true, existing };
+
     this.doc.seq += 1;
     const row = {
       ...record,
       id: `c${this.doc.seq}`,
-      chatId: String(record.chatId),
+      chatId,
       calledAt: record.calledAt ?? Date.now(),
     };
     this.doc.calls.push(row);
     await this.persist();
-    return row;
+    return { row, duplicate: false, existing: null };
   }
 
-  /** Patch one call by id. Used by the peak/current observer and by /justscan. */
+  /** Apply a partial update to one record (observations, cancellation, repair). */
   async updateCall(id, patch) {
     this.load();
     const i = this.doc.calls.findIndex((c) => c.id === id);
