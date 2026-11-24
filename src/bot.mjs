@@ -27,6 +27,11 @@ import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
 import { handleAlertTest } from './alert-test.mjs';
 import { handleNarrative, handleX, handleKol } from './research/research-commands.mjs';
 import { handleRisk, handleDev, handleBundle } from './risk-commands.mjs';
+import {
+  handleLeaderboard, handleGroupPnl, handleSettings,
+  handleBoardCallback, handleSettingsCallback,
+} from './settings-commands.mjs';
+import { callerLabel } from './caller-identity.mjs';
 import { isEntitledToFullResearch, buildPreview, renderPreview } from './research/premium-preview.mjs';
 import { cardXSection } from './research/research-service.mjs';
 import { researchToken, cardNarrativeLines, cardXLine, cardKolLine } from './research/research-service.mjs';
@@ -852,6 +857,19 @@ function researchDeps() {
   };
 }
 
+/**
+ * Phase 6 deps. `isGroup` is injected rather than imported so the handler module stays
+ * free of Telegraf context shape assumptions.
+ */
+function boardDeps(ctx) {
+  return {
+    store: callStore,
+    policy: accessPolicy,
+    isGroup: (c) => isGroupChat(c),
+    period: null,
+  };
+}
+
 function callDeps() {
   return {
     store: callStore,
@@ -1097,6 +1115,30 @@ bot.command('kol', ctx => handleKol(ctx, researchDeps()));
 bot.command('risk', ctx => handleRisk(ctx, { ...researchDeps(), fetchImpl: undefined }));
 bot.command('dev', ctx => handleDev(ctx, { ...researchDeps(), fetchImpl: undefined }));
 bot.command('bundle', ctx => handleBundle(ctx, { ...researchDeps(), fetchImpl: undefined }));
+
+// ---- Phase 6: community, leaderboard, settings -----------------------------
+bot.command('lb', ctx => handleLeaderboard(ctx, boardDeps(ctx)));
+bot.command('leaderboard', ctx => handleLeaderboard(ctx, boardDeps(ctx)));
+bot.command('gpnl', ctx => handleGroupPnl(ctx, boardDeps(ctx)));
+bot.command('settings', ctx => handleSettings(ctx, boardDeps(ctx)));
+
+bot.action(/^l[bp]:/, async ctx => {
+  try {
+    await handleBoardCallback(ctx, boardDeps(ctx));
+  } catch (err) {
+    console.error('[bot] leaderboard callback failed:', err?.message ?? err);
+    await ctx.answerCbQuery('Something went wrong').catch(() => {});
+  }
+});
+
+bot.action(/^st:/, async ctx => {
+  try {
+    await handleSettingsCallback(ctx, boardDeps(ctx));
+  } catch (err) {
+    console.error('[bot] settings callback failed:', err?.message ?? err);
+    await ctx.answerCbQuery('Something went wrong').catch(() => {});
+  }
+});
 bot.command('alerts', ctx => handleAlerts(ctx, callDeps()));
 /**
  * /alerttest — owner-only delivery check. Registered AFTER the generic message
