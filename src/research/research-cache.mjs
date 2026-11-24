@@ -20,6 +20,8 @@
  *   posts        30m   engagement moves; a post's existence does not change
  *   failure      30s   a throttle must recover without being hammered
  */
+import fs from 'node:fs';
+import path from 'node:path';
 
 /** TTLs in ms. */
 export const TTL_MS = {
@@ -176,6 +178,9 @@ export class RequestBudget {
     this.#roll();
     if (this.used + n > this.limit) return false;
     this.used += n;
+    // Persist immediately: a crash between spend and delivery must not hand the
+    // allowance back, or a restart loop becomes a free-request exploit.
+    this.__persist?.();
     return true;
   }
 
@@ -204,6 +209,35 @@ export class RequestBudget {
     this.#roll();
     return { label: this.label, used: this.used, limit: this.limit, remaining: this.remaining(), windowMs: this.windowMs };
   }
+
+  /**
+   * Serialise the window so the allowance survives a restart.
+   *
+   * WITHOUT THIS the daily budget resets every time the bot restarts. An operator who
+   * restarts twice in an afternoon quietly gets three times the intended allowance,
+   * which is exactly the failure the budget exists to prevent.
+   */
+  toJSON() {
+    this.#roll();
+    return { used: this.used, windowStart: this.windowStart, limit: this.limit, windowMs: this.windowMs };
+  }
+
+  /** Restore a persisted window. A window that has already elapsed keeps its reset. */
+  restore(state) {
+    if (!state || typeof state !== 'object') return false;
+    const used = Number(state.used);
+    const windowStart = Number(state.windowStart);
+    if (!Number.isFinite(used) || !Number.isFinite(windowStart)) return false;
+    // A different limit or window length means the stored state is from another
+    // configuration; its `used` count would be meaningless, so ignore it.
+    if (Number.isFinite(Number(state.limit)) && Number(state.limit) !== this.limit) return false;
+    if (Number.isFinite(Number(state.windowMs)) && Number(state.windowMs) !== this.windowMs) return false;
+    if (used < 0 || used > this.limit) return false;
+    this.used = used;
+    this.windowStart = windowStart;
+    this.#roll();
+    return true;
+  }
 }
 
 /** The process-wide research cache. One instance, shared by every command. */
@@ -220,7 +254,47 @@ export const researchCache = new ResearchCache();
 export function xBudgetFromEnv(env = process.env) {
   const raw = Number(env.RESEARCH_X_BUDGET);
   const limit = Number.isFinite(raw) && raw >= 0 ? raw : 20;
-  return new RequestBudget({ limit, windowMs: 24 * 60 * 60_000, label: 'x-search' });
+  const budget = new RequestBudget({ limit, windowMs: 24 * 60 * 60_000, label: 'x-search' });
+  attachBudgetPersistence(budget, env);
+  return budget;
+}
+
+/** Where the budget window is remembered between restarts. */
+export function budgetStatePath(env = process.env) {
+  return env.RESEARCH_BUDGET_PATH
+    ? path.resolve(env.RESEARCH_BUDGET_PATH)
+    : path.resolve(process.cwd(), 'data', 'research-budget.json');
+}
+
+/**
+ * Make a budget remember itself.
+ *
+ * Loads the stored window on construction and writes it after every spend. Every
+ * filesystem interaction is best-effort: a budget that cannot persist still works
+ * for this process, and a broken state file must never stop a scan.
+ */
+export function attachBudgetPersistence(budget, env = process.env) {
+  const file = budgetStatePath(env);
+  try {
+    if (fs.existsSync(file)) {
+      const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+      budget.restore(state?.[budget.label]);
+    }
+  } catch {
+    // Unreadable state is treated as absent, not as a hard failure.
+  }
+  const save = () => {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const prev = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+      prev[budget.label] = budget.toJSON();
+      fs.writeFileSync(file, JSON.stringify(prev, null, 2));
+    } catch {
+      // Persistence is an optimisation, never a precondition.
+    }
+  };
+  budget.__persist = save;
+  return budget;
 }
 
 export const xBudget = xBudgetFromEnv();

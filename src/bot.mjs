@@ -15,6 +15,7 @@ import { detectAll, parseChainHint, DEFAULT_EVM_CHAIN as DETECT_DEFAULT_EVM } fr
 import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
+import { esc } from './card-layout.mjs';
 import { deliverCard } from './delivery.mjs';
 import { resolveTokenImage } from './media.mjs';
 import { CallStore } from './store.mjs';
@@ -25,6 +26,8 @@ import { mintCallerToken } from './deep-link.mjs';
 import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
 import { handleAlertTest } from './alert-test.mjs';
 import { handleNarrative, handleX, handleKol } from './research/research-commands.mjs';
+import { isEntitledToFullResearch, buildPreview, renderPreview } from './research/premium-preview.mjs';
+import { cardXSection } from './research/research-service.mjs';
 import { researchToken, cardNarrativeLines, cardXLine, cardKolLine } from './research/research-service.mjs';
 import { researchCache, xBudget } from './research/research-cache.mjs';
 import { startObserver } from './observer-loop.mjs';
@@ -221,9 +224,14 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
             evidence: research.narrative.summaryClass,
           };
         }
+        // Full detail is OWNER-only during staging; everyone else gets the preview.
+        const entitled = isEntitledToFullResearch(accessPolicy, ctx.from?.id);
+        const section = cardXSection(research, { entitled, premiumUrl: PREMIUM_URL });
         researchLines = {
-          xLine: cardXLine(research.x),
-          kolLine: cardKolLine(research.x),
+          previewLines: renderPreview(section.preview, { esc }),
+          // Only populated for an entitled caller. Null means "preview only".
+          xLine: entitled ? cardXLine(research.x) : null,
+          kolLine: entitled ? cardKolLine(research.x) : null,
         };
 
         // Persist genuine public-call evidence so /kol can retrieve it later.
@@ -800,6 +808,11 @@ function researchDeps() {
      */
     recordedCallsForHandle: (handle) => callStore.recordedXCallsForHandle(handle),
     kolCoverage: 'Recorded from public X posts this bot has observed; not the account\'s full trading record.',
+    // Entitlement + destination for the premium website CTA. PREMIUM_URL is empty
+    // until the website confirms a route, so the preview degrades to an invitation
+    // rather than a broken link.
+    policy: accessPolicy,
+    premiumUrl: PREMIUM_URL || null,
   };
 }
 

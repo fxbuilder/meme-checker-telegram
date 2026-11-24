@@ -21,6 +21,7 @@ import { Markup } from 'telegraf';
 import { getChain } from '../chains.mjs';
 import { parseCallArgs } from '../call-commands.mjs';
 import { detectAll } from '../detect-ca.mjs';
+import { buildPreview, renderPreview, isEntitledToFullResearch } from './premium-preview.mjs';
 import { researchToken } from './research-service.mjs';
 import { fmtUsd } from '../card-layout.mjs';
 import { timeAgo, callMetrics, fmtMultiple } from '../calls.mjs';
@@ -201,7 +202,9 @@ export async function handleNarrative(ctx, deps) {
   const text = renderNarrative({
     target, research, chainName: getChain(target.chain)?.name ?? target.chain,
   });
-  await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true });
+  // /narrative is a FREE feature (basic narrative). The footer only appears when a
+  // verified premium destination is configured.
+  await ctx.reply(text + premiumFooter(deps, ctx), { parse_mode: 'HTML', disable_web_page_preview: true });
 }
 
 // ---- /x -------------------------------------------------------------------
@@ -278,21 +281,51 @@ export async function handleX(ctx, deps) {
   }
   target.chain = resolved.chain;
 
+  // ENTITLEMENT. Deep X/KOL research is a premium website feature. The OWNER (and
+  // any explicitly authorized staging user) may spend a real request; an ordinary
+  // user gets only what is already cached, so /x can never become a way to burn the
+  // provider allowance from a public group.
+  const entitled = isEntitledToFullResearch(deps.policy, ctx.from?.id);
+
   let research;
   try {
     research = await researchToken({
       chain: target.chain, address: target.address,
       cache: deps.cache, budget: deps.budget, fetchImpl: deps.fetchImpl,
+      // Non-entitled callers cannot cause a paid search.
+      xCacheOnly: !entitled,
     });
   } catch (err) {
     console.error('[research] /x failed:', err?.message ?? err);
     await ctx.reply('⚠️ X research could not be completed.');
     return;
   }
+
+  // A non-entitled caller with nothing cached gets the preview invitation, not an
+  // empty result set that reads like "this token has no posts".
+  if (!entitled && !(research?.x?.available && (research.x.posts?.length ?? 0) > 0)) {
+    const preview = buildPreview(research, { premiumUrl: deps.premiumUrl });
+    await ctx.reply(renderPreview(preview, { esc }).join('\n'), {
+      parse_mode: 'HTML', disable_web_page_preview: true,
+    });
+    return;
+  }
   const text = renderXPosts({
     target, research, chainName: getChain(target.chain)?.name ?? target.chain,
   });
   await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true });
+}
+
+/**
+ * Premium CTA footer for free-tier output.
+ * Returns '' when no verified destination exists, so the bot never prints a dead
+ * or invented link.
+ */
+function premiumFooter(deps, ctx) {
+  if (isEntitledToFullResearch(deps.policy, ctx.from?.id)) return '';
+  const url = deps.premiumUrl;
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return '';
+  return `\n\n<a href="${esc(url)}">Full X &amp; KOL research on the website</a>`;
 }
 
 // ---- /kol ----------------------------------------------------------------
@@ -366,7 +399,8 @@ export async function handleKol(ctx, deps) {
   const entries = typeof deps.recordedCallsForHandle === 'function'
     ? await deps.recordedCallsForHandle(handle)
     : [];
-  await ctx.reply(renderKolProfile({ handle, entries, coverage: deps.kolCoverage }), {
-    parse_mode: 'HTML', disable_web_page_preview: true,
-  });
+  await ctx.reply(
+    renderKolProfile({ handle, entries, coverage: deps.kolCoverage }) + premiumFooter(deps, ctx),
+    { parse_mode: 'HTML', disable_web_page_preview: true },
+  );
 }

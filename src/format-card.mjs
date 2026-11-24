@@ -453,12 +453,21 @@ export function formatCard(result, {
   // Only rendered when research actually produced something. Absent research
   // prints NOTHING here — not a zero, not "0 posts" — because an empty count
   // would assert that we looked and found nothing.
-  if (research?.xLine || research?.kolLine) {
+  //
+  // PHASE 4 STRATEGY: deep X/KOL research is a premium WEBSITE feature. The card
+  // therefore renders a PREVIEW (counts, up to two accounts, short narrative) plus a
+  // website CTA. `research.previewLines` is produced by premium-preview.mjs, which
+  // only states what cached evidence supports and omits anything it cannot prove.
+  // `research.xLine`/`kolLine` are the staging-only detailed form.
+  const previewLines = Array.isArray(research?.previewLines) ? research.previewLines : null;
+  const detailLines = [research?.xLine, research?.kolLine].filter(Boolean);
+
+  if (previewLines?.length || detailLines.length) {
     lines.push('');
     lines.push(sectionTitle(e('𝕏'), 'X INTELLIGENCE'));
     lines.push('');
-    if (research.xLine) lines.push(esc(research.xLine));
-    if (research.kolLine) lines.push(esc(research.kolLine));
+    if (previewLines?.length) lines.push(...previewLines);
+    else lines.push(...detailLines.map(esc));
   }
 
   // ===== PROJECT LINKS ====================================================

@@ -20,6 +20,7 @@ import {
   searchTokenPosts, summariseKols, xDiscoveryStatus, coverageNote,
 } from './x-source.mjs';
 import { researchCache, cacheKey, TTL_MS, xBudget } from './research-cache.mjs';
+import * as premiumPreview from './premium-preview.mjs';
 
 /**
  * Everything known about a token's narrative and X presence.
@@ -233,6 +234,30 @@ export function cardNarrativeLines(narrative) {
   if (!narrative?.available || !narrative.summary) return null;
   const s = narrative.summary;
   return s.length <= 220 ? s : `${s.slice(0, 220).replace(/\s\S*$/, '')}…`;
+}
+
+/**
+ * Build the card's X section.
+ *
+ * The card shows a PREVIEW by default (post count, account count, identified public
+ * callers, up to two accounts, and a short narrative) because deep X/KOL research is
+ * now a premium website feature. An entitled caller (the OWNER during staging) gets
+ * the fuller line set for testing.
+ *
+ * This function never fetches. The caller decides whether research was permitted at
+ * all, so "no paid X request from an ordinary scan" is enforced by control flow.
+ */
+export function cardXSection(research, { entitled = false, premiumUrl = null } = {}) {
+  const { buildPreview } = premiumPreview;
+  const preview = buildPreview(research, { premiumUrl });
+  if (entitled) {
+    // Staging: the owner still sees the detailed lines the bot used to print.
+    return {
+      preview,
+      lines: [cardXLine(research?.x), cardKolLine(research?.x)].filter(Boolean),
+    };
+  }
+  return { preview, lines: null };
 }
 
 /** Compact X line for the card: counts only, never a fabricated claim. */
