@@ -6,7 +6,22 @@ vendor claim sheet.** Each cell says what actually came back.
 Sources:
 - **GoPlus** — `GET /api/v1/token_security/{chainId}` (EVM) and `/api/v1/solana/token_security`. Free, keyless.
 - **RugCheck** — `GET api.rugcheck.xyz/v1/tokens/{mint}/report`. Free, keyless, Solana only.
+- **GeckoTerminal token-info** — already fetched for narrative; its payload carries
+  `holders.distribution_percentage.top_10`, `mint_authority`, `freeze_authority`,
+  `is_honeypot`, `developer_holding_percentage`. Free, keyless. This was being
+  **discarded** before, and it is the only keyless concentration source on chains with
+  no GoPlus coverage.
 - Chain ids verified live against `GET /api/v1/supported_chains` (46 chains listed).
+
+### Three-tier resolution
+
+1. **GoPlus** (primary) — 13 of 15 chains.
+2. **RugCheck** (Solana field-level) — fills tax/LP/creator that GoPlus omits.
+3. **GeckoTerminal** (last resort) — concentration, authorities, honeypot; also the only
+   source at all for HyperEVM and MegaETH.
+
+Each tier fills only nulls, so a measured value is never replaced by another vendor's
+methodology.
 
 ## Matrix
 

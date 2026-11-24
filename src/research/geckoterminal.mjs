@@ -243,6 +243,30 @@ export function normaliseTokenInfo(a, { chain, address } = {}) {
       ? a.coingecko_coin_id
       : null,
     categories: Array.isArray(a.categories) ? a.categories.filter((c) => typeof c === 'string').slice(0, 6) : [],
+
+    // ---- security-relevant fields carried by this same payload --------------
+    // Surfaced here because the endpoint is already being called for narrative.
+    // They are kept raw-ish (not defaulted) so a missing field stays distinguishable
+    // from a measured one: `holders: null` is "not reported", not "zero holders".
+    holders: a.holders && typeof a.holders === 'object'
+      ? {
+        count: Number.isFinite(Number(a.holders.count)) ? Number(a.holders.count) : null,
+        top10Percentage: (() => {
+          const v = Number(a.holders?.distribution_percentage?.top_10);
+          return Number.isFinite(v) && v >= 0 && v <= 100 ? v : null;
+        })(),
+      }
+      : null,
+    // Absent key = unknown; explicit null = renounced. Preserved as `undefined` so the
+    // difference survives.
+    mintAuthority: Object.prototype.hasOwnProperty.call(a, 'mint_authority') ? a.mint_authority : undefined,
+    freezeAuthority: Object.prototype.hasOwnProperty.call(a, 'freeze_authority') ? a.freeze_authority : undefined,
+    isHoneypot: a.is_honeypot,
+    developerAddress: typeof a.developer_address === 'string' && a.developer_address ? a.developer_address : null,
+    developerHoldingPercentage: (() => {
+      const v = Number(a.developer_holding_percentage);
+      return Number.isFinite(v) && v >= 0 && v <= 100 ? v : null;
+    })(),
   };
 }
 

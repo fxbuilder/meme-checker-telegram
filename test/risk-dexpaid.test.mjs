@@ -84,9 +84,35 @@ test('emptyRisk is the explicit all-unknown shape', () => {
 
 // ---- fetchRisk statuses ----------------------------------------------------
 
-test('unsupported chain reports capability gap, not an error', async () => {
-  const r = await fetchRisk('hyperevm', '0x1111111111111111111111111111111111111111');
-  assert.equal(r.status, 'unsupported');
+test('a chain with no GoPlus coverage falls back instead of giving up', async () => {
+  clearRiskCache();
+  // HyperEVM has no GoPlus id. It now consults GeckoTerminal, which DOES carry holder
+  // concentration and authority flags - so "no GoPlus" is not "no data".
+  // fetchTokenInfo reads res.text() and parses it, so the stub must supply text().
+  const body = {
+    data: {
+      attributes: {
+        holders: { count: 1234, distribution_percentage: { top_10: '44.5' } },
+        mint_authority: null,
+        freeze_authority: null,
+        is_honeypot: 'unknown',
+      },
+    },
+  };
+  const f = stub(() => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }));
+  const r = await fetchRisk('hyperevm', '0x1111111111111111111111111111111111111111', { fetchImpl: f });
+  assert.equal(r.status, 'ok', 'the fallback supplied usable fields');
+  assert.equal(r.data.holders.top10Percentage, 44.5);
+  assert.equal(r.data.security.mintable, false, 'an explicit null authority means renounced');
+});
+
+test('a fallback that yields nothing usable still reports a capability gap', async () => {
+  clearRiskCache();
+  const body = { data: { attributes: { name: 'X', symbol: 'X' } } };
+  const f = stub(() => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }));
+  const r = await fetchRisk('hyperevm', '0x2222222222222222222222222222222222222222', { fetchImpl: f });
+  assert.equal(r.status, 'no-data', 'no security fields is "provider has nothing", not "safe"');
+  assert.equal(r.data, null);
 });
 
 test('GoPlus code:1 with empty result is no-data, not an error and not zero', async () => {

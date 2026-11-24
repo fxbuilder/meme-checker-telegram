@@ -20,6 +20,8 @@
  */
 import { getChain } from './chains.mjs';
 import { fetchRugCheck } from './security/rugcheck.mjs';
+import { securityFromTokenInfo, hasUsableSecurity } from './security/geckoterminal-security.mjs';
+import { fetchTokenInfo, gtSupportsChain } from './research/geckoterminal.mjs';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
 const TIMEOUT_MS = 8_000;
@@ -351,11 +353,20 @@ export function mergeRisk(primary, fallback) {
  */
 export async function fetchRisk(chainId, address, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const chain = getChain(chainId);
-  if (!chain || !chain.goplus) {
-    return { status: 'unsupported', data: null, detail: `no risk data source for ${chainId}` };
+  if (!chain) {
+    return { status: 'unsupported', data: null, detail: `unknown chain ${chainId}` };
   }
   if (typeof fetchImpl !== 'function') {
     return { status: 'error', data: null, detail: 'no fetch implementation' };
+
+  }
+
+  // A chain with NO primary provider is not the end of the story: GeckoTerminal may
+  // still supply concentration and authority flags. Returning 'unsupported' here - as
+  // this function used to - skipped every fallback, which is why HyperEVM and MegaETH
+  // always reported nothing even though GeckoTerminal covers them.
+  if (!chain.goplus) {
+    return fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs });
   }
 
   const ck = `risk:${chainId}:${address}`;
@@ -393,6 +404,40 @@ export async function fetchRisk(chainId, address, { fetchImpl = globalThis.fetch
   } catch (err) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
     result = { status: 'error', data: null, detail: timedOut ? 'timeout' : `transport: ${err?.message ?? err}` };
+  }
+
+  // ---- Second fallback: GeckoTerminal's embedded security fields ----------
+  // This endpoint is ALREADY fetched for narrative on most scans, and its token-info
+  // payload carries holder concentration, authorities and a honeypot flag that we were
+  // discarding. On chains with no GoPlus coverage it is the only keyless source of
+  // concentration, and it costs nothing extra where narrative already ran.
+  //
+  // It is consulted when the chain has no GoPlus coverage OR GoPlus returned nothing
+  // usable - never as a replacement for a provider that actually answered.
+  const needsGt = !chain.goplus || result.status !== 'ok';
+  if (needsGt && gtSupportsChain(chainId)) {
+    try {
+      const gt = await fetchTokenInfo(chainId, address, { fetchImpl });
+      const block = gt?.status === 'ok' ? securityFromTokenInfo(gt.token?._attributes ?? null) : null;
+      // fetchTokenInfo normalises away the raw attributes, so fall back to its token
+      // shape when the raw block is unavailable.
+      const fallbackBlock = block ?? (gt?.status === 'ok' ? securityFromTokenInfo({
+        holders: gt.token?.holders ?? null,
+        mint_authority: gt.token?.mintAuthority ?? undefined,
+        freeze_authority: gt.token?.freezeAuthority ?? undefined,
+        is_honeypot: gt.token?.isHoneypot ?? undefined,
+        developer_address: gt.token?.developerAddress ?? null,
+        developer_holding_percentage: gt.token?.developerHoldingPercentage ?? null,
+      }) : null);
+
+      if (hasUsableSecurity(fallbackBlock)) {
+        const primary = result.status === 'ok' ? result.data : null;
+        const merged = mergeRisk(primary, fallbackBlock);
+        if (merged) result = { status: 'ok', data: merged, detail: result.detail ?? null };
+      }
+    } catch {
+      // A fallback that throws is not a reason to fail the whole check.
+    }
   }
 
   // ---- Field-level fallback for Solana -----------------------------------
@@ -438,4 +483,53 @@ export function emptyRisk() {
 
 export function clearRiskCache() {
   cache.clear();
+}
+
+/**
+ * Risk lookup using only non-GoPlus sources.
+ *
+ * Used for chains GoPlus does not cover. GeckoTerminal's token-info endpoint carries
+ * holder concentration, mint/freeze authority and a honeypot flag, so "no GoPlus" is
+ * frequently not "no data". If it yields nothing usable the chain genuinely has no
+ * source and the caller gets an honest 'unsupported'.
+ */
+async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs }) {
+  const ck = `risk:${chainId}:${address}`;
+  const hit = cache.get(ck);
+  if (hit && hit.expiresAt > Date.now()) return hit.result;
+
+  let result = { status: 'unsupported', data: null, detail: `no risk data source for ${chainId}` };
+
+  if (gtSupportsChain(chainId)) {
+    try {
+      const gt = await fetchTokenInfo(chainId, address, { fetchImpl, timeoutMs });
+      if (gt?.status === 'ok') {
+        const block = securityFromTokenInfo({
+          holders: gt.token?.holders ?? null,
+          mint_authority: gt.token?.mintAuthority,
+          freeze_authority: gt.token?.freezeAuthority,
+          is_honeypot: gt.token?.isHoneypot,
+          developer_address: gt.token?.developerAddress ?? null,
+          developer_holding_percentage: gt.token?.developerHoldingPercentage ?? null,
+        });
+        if (hasUsableSecurity(block)) {
+          result = { status: 'ok', data: mergeRisk(null, block), detail: 'geckoterminal only' };
+        } else {
+          result = { status: 'no-data', data: null, detail: 'geckoterminal returned no security fields' };
+        }
+      } else if (gt?.status === 'not-found') {
+        result = { status: 'no-data', data: null, detail: 'no token record' };
+      } else {
+        result = { status: 'error', data: null, detail: gt?.status ?? 'provider-error' };
+      }
+    } catch (err) {
+      result = { status: 'error', data: null, detail: String(err?.message ?? err) };
+    }
+  }
+
+  cache.set(ck, {
+    result,
+    expiresAt: Date.now() + (result.status === 'ok' ? OK_TTL_MS : FAIL_TTL_MS),
+  });
+  return result;
 }
