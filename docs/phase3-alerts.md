@@ -101,6 +101,31 @@ Env overrides: `OBSERVER` (on/off), `OBSERVER_INTERVAL_MS`, `OBSERVER_MAX_TOKENS
   jitter.
 - Dex Paid is polled on its own slower cadence (default 15 min).
 
+## Testing alerts on demand — /alerttest
+
+Waiting for a real token to reach a milestone is a bad way to verify delivery. The
+owner can fire any alert type with:
+
+```
+/alerttest 2x           (or 5x / 10x / 20x / 50x / 100x, any value >= 2)
+/alerttest dexpaid
+/alerttest migration
+/alerttest pump
+/alerttest dump
+/alerttest drawdown
+```
+
+Owner-only, authorized group only. Every message opens with
+`🧪 TEST / SIMULATED — not real performance` and the token is `$SIM` with round
+figures, so a screenshot can never be read as a real result.
+
+**What it cannot affect.** `/alerttest` renders through the same formatters as real
+alerts but does **not** call `deliverAlert()`. So it takes no claim, writes no alert
+row, and cannot consume a genuine milestone or desync dedupe state. It reads nothing
+from the call store and builds its call object in memory — no call record, ROI, peak
+market cap or caller statistic is touched. Verified by snapshotting the store before
+and after running all seven targets: byte-identical, zero alert rows created.
+
 ## Settings
 
 `/alerts` — owner-only during staging. Toggles: multiplier, Dex Paid, migration,
