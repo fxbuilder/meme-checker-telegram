@@ -407,8 +407,12 @@ test('the card labels project prose as an unverified claim', async () => {
   };
   const { text } = formatCard(result, { view: 'standard' });
   const seg = text.split('NARRATIVE')[1]?.split('PROJECT LINKS')[0] ?? '';
-  assert.match(seg, /unverified claim/i, 'the evidence class must reach the reader');
-  assert.match(seg, /project's own description/i);
+  // OWNER correction 4A/C removed the technical footer from the standard card. The
+  // epistemic requirement it carried - do not present a claim as a verified fact - is
+  // now satisfied by attributing the prose to the project in plain language.
+  assert.match(seg, /describes itself/i, 'a self-description must be attributed to the project');
+  assert.ok(!/unverified claim ·/.test(seg), 'the long technical source footer is gone');
+  assert.ok(!/GeckoTerminal|CoinGecko/.test(seg), 'provider names stay off the card');
 });
 
 test('/kol never invents an entry market cap or a win rate', async () => {

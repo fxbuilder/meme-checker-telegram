@@ -63,8 +63,18 @@ function b64url(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/**
+ * The period a NEW deep-link opens on.
+ *
+ * OWNER requirement (section 4A/E): every fresh open of a Caller Profile shows 1D,
+ * including after a restart. This is not merely a UI default - the link is minted for
+ * a period, so the default has to be right at mint time or the profile opens on the
+ * wrong window regardless of the button state.
+ */
+export const DEFAULT_PERIOD = '1d';
+
 /** Scope string for a caller in a group for a period. */
-export function scopeFor(chatId, callerKey, period = '7d') {
+export function scopeFor(chatId, callerKey, period = DEFAULT_PERIOD) {
   return `${chatId}:${callerKey}:${period}`;
 }
 
@@ -72,7 +82,7 @@ export function scopeFor(chatId, callerKey, period = '7d') {
  * Mint a payload for one (chat, caller, period).
  * Returns a string guaranteed to fit Telegram's payload limit.
  */
-export function mintCallerToken(chatId, callerKey, period = '7d', { secret = signingSecret() } = {}) {
+export function mintCallerToken(chatId, callerKey, period = DEFAULT_PERIOD, { secret = signingSecret() } = {}) {
   if (chatId == null || !callerKey) throw new Error('chatId and callerKey are required');
   const mac = crypto.createHmac('sha256', secret).update(scopeFor(chatId, callerKey, period)).digest();
   const payload = PREFIX + b64url(mac.subarray(0, TOKEN_BYTES));

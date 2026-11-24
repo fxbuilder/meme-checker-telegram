@@ -25,6 +25,8 @@ import { callerLabel } from './caller-identity.mjs';
 export const HIT_THRESHOLD = 2;
 
 /** Periods offered in the UI. */
+export const DEFAULT_PERIOD = '1d';
+
 export const PERIODS = [
   { id: '1d', label: '1D', ms: 24 * 3600_000 },
   { id: '7d', label: '1W', ms: 7 * 24 * 3600_000 },
@@ -61,7 +63,7 @@ function clip(s, n) {
  * Aggregate one caller's calls inside a period.
  * @param {Array} calls  records for this caller in this group
  */
-export function aggregateCaller(calls, { period = '7d', now = Date.now(), hitThreshold = HIT_THRESHOLD } = {}) {
+export function aggregateCaller(calls, { period = DEFAULT_PERIOD, now = Date.now(), hitThreshold = HIT_THRESHOLD } = {}) {
   const p = periodById(period);
   const cutoff = now - p.ms;
   const inPeriod = (calls ?? []).filter((c) => Number.isFinite(c.calledAt) && c.calledAt >= cutoff);
@@ -113,7 +115,7 @@ export function renderCallerProfile({
   callerKey,
   calls,
   groupTitle,
-  period = '7d',
+  period = DEFAULT_PERIOD,
   now = Date.now(),
   page = 0,
   pageSize = 10,

@@ -103,7 +103,8 @@ test('creator holding is labelled as a current balance, never dev history', () =
 
 test('STANDARD keeps project links and narrative section', () => {
   assert.ok(STD.includes('pancakeswap.finance'));
-  assert.ok(/No verified narrative available/.test(STD));
+  // Master plan v2 §5 specifies this exact unavailable state.
+  assert.ok(/No reliable narrative available/.test(STD));
 });
 
 test('STANDARD has no DYOR marketing block and no promotional coming-soon block', () => {

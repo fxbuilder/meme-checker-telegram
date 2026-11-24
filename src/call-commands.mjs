@@ -458,7 +458,7 @@ export async function handleCallerProfile(ctx, deps) {
   // `chatId` is the ORIGINATING GROUP the profile is about — never ctx.chat.id.
   // A profile link is opened in the bot DM, so ctx.chat.id there is the owner's
   // private chat. Querying it returned zero calls and produced an empty profile.
-  const { store, callerKey, chatId, groupTitle, period = '7d', page = 0, policy, isOwnerCheck } = deps;
+  const { store, callerKey, chatId, groupTitle, period = '1d', page = 0, policy, isOwnerCheck } = deps;
   if (!callerKey) {
     await ctx.reply('No caller specified.');
     return;

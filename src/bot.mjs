@@ -22,7 +22,7 @@ import { CallStore } from './store.mjs';
 import { loadPolicy, isChatAllowed, isOwner, describePolicy } from './access.mjs';
 import { verifyExtremeObservation } from './extreme-verify.mjs';
 import { resolveCaller, isAttributable } from './caller-identity.mjs';
-import { mintCallerToken } from './deep-link.mjs';
+import { mintCallerToken, DEFAULT_PERIOD } from './deep-link.mjs';
 import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
 import { handleAlertTest } from './alert-test.mjs';
 import { handleNarrative, handleX, handleKol } from './research/research-commands.mjs';
@@ -184,7 +184,7 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     try {
       firstCall = callStore.firstCall(ctx.chat.id, chain, address);
       if (firstCall?.callerKey) {
-        callerToken = mintCallerToken(ctx.chat.id, firstCall.callerKey, '7d');
+        callerToken = mintCallerToken(ctx.chat.id, firstCall.callerKey, DEFAULT_PERIOD);
       }
     } catch (err) {
       console.warn('[bot] first-call lookup failed (card continues):', err?.message ?? err);
@@ -224,14 +224,22 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
             evidence: research.narrative.summaryClass,
           };
         }
-        // Full detail is OWNER-only during staging; everyone else gets the preview.
+        // 4A/C: the standard card shows a LOCKED premium teaser, not a technical
+        // status line. Detail remains available to the OWNER during staging for
+        // verification, so `premiumTeaser` is suppressed for an entitled caller who
+        // actually has cached research to look at.
         const entitled = isEntitledToFullResearch(accessPolicy, ctx.from?.id);
         const section = cardXSection(research, { entitled, premiumUrl: PREMIUM_URL });
+        const hasDetailed = entitled && (research.x?.available && (research.x.posts?.length ?? 0) > 0);
         researchLines = {
-          previewLines: renderPreview(section.preview, { esc }),
-          // Only populated for an entitled caller. Null means "preview only".
-          xLine: entitled ? cardXLine(research.x) : null,
-          kolLine: entitled ? cardKolLine(research.x) : null,
+          // The teaser is the default for everyone else, cached evidence or not: it is
+          // a product surface, not a data readout.
+          premiumTeaser: !hasDetailed,
+          premiumUrl: PREMIUM_URL || null,
+          previewLines: entitled ? renderPreview(section.preview, { esc }) : null,
+          // Only populated for an entitled caller. Null means "teaser".
+          xLine: hasDetailed ? cardXLine(research.x) : null,
+          kolLine: hasDetailed ? cardKolLine(research.x) : null,
         };
 
         // Persist genuine public-call evidence so /kol can retrieve it later.
@@ -945,7 +953,7 @@ bot.command('profile', async ctx => {
     // Inside a group, ctx.chat.id IS the group; make that explicit.
     chatId: ctx.chat.id,
     groupTitle: callStore.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? 'this group',
-    period: '7d',
+    period: DEFAULT_PERIOD,
     policy: accessPolicy,
     isOwnerCheck: (id) => isOwner(accessPolicy, id),
   });

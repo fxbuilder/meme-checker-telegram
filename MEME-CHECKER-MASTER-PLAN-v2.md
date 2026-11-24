@@ -1,4 +1,4 @@
-# MEME CHECKER — MASTER DEVELOPMENT PLAN
+# MEME CHECKER — MASTER DEVELOPMENT PLAN V2
 
 **Owner authorization:** 24 November 2026  
 **Execution mode:** autonomous sequential implementation, followed by one integrated OWNER acceptance cycle  
@@ -13,7 +13,7 @@ Complete the remaining Phase 4, Phase 5, Phase 6 and Phase 7 in order, integrate
 
 This document supersedes the old requirement to wait for OWNER approval before starting every next phase. The OWNER now authorizes automatic progression through the remaining phases after each internal technical checkpoint. It does NOT authorize publication, deployment, paid purchases, new live-provider testing, or a claim of OWNER acceptance.
 
-Phase 1 and Phase 2 are OWNER-accepted. Phase 3 is OWNER-accepted at MVP level. Phase 4 was in progress when this plan was prepared; finish any current work safely, inspect the actual latest branch/commit, and avoid repeating completed tasks. The last reported Phase 4 live-provider baseline was `mc/phase4-narrative` at `46a98f2` (549 passing tests), but later work may already exist. The repository is the source of truth, not this historical checkpoint.
+Phase 1 and Phase 2 are OWNER-accepted. Phase 3 is OWNER-accepted at MVP level. Phase 4 was in progress when this plan was prepared; finish any current work safely, inspect the actual latest branch/commit, and avoid repeating completed tasks. The latest reported technical baseline is `mc/phase4-narrative` at `2faf516` (607/607 tests). OWNER testing revealed the corrections in section 4A. Earlier GetXAPI live evidence remains valid only for the actual tested samples. Later work may already exist. The repository is the source of truth, not this historical checkpoint.
 
 Final objective: a fast, useful, English-only Telegram community bot with trustworthy token scanning, narrative, risk, calls, alerts, PnL and internal group rankings, ready for OWNER testing and subsequent GitHub handoff.
 
@@ -32,7 +32,7 @@ Use existing code, docs, skills and worktrees. Do not rebuild the project or cha
 ## 3. Autonomous execution and checkpoints
 
 1. Recover actual local state: branch, working tree, pending tasks, tests, dependency scripts, current storage schema and existing documents. Preserve any work in progress. Do not reset, force-push, delete worktrees or discard owner changes.
-2. Finish Phase 4, then implement Phase 5, Phase 6 and Phase 7 sequentially. Reuse completed functions. Local branches and commits are allowed; each phase must be based on the integrated previous phase, not an unrelated old baseline.
+2. Complete the mandatory OWNER feedback gate in section 4A and remaining Phase 4 work, then implement Phase 5, Phase 6 and Phase 7 sequentially. Reuse completed functions. Local branches and commits are allowed; each phase must be based on the integrated previous phase, not an unrelated old baseline.
 3. At each checkpoint, run focused end-to-end handler tests plus the appropriate offline regression suite. Confirm tests exercise the actual runtime path and not only an isolated renderer. Inspect generated images when visual output changes. Fix critical defects before integrating dependent work.
 4. Record progress in `docs/MASTER-PROGRESS.md`: phase, status, branch/commit, completed work, test command/result, provider coverage, limitations, blockers and next action. Update after each phase. A resumed session must read this file and the current Git state before doing more work.
 5. Continue automatically when the checkpoint passes internally. Mark `TECHNICAL PASS`, `PARTIAL` or `BLOCKED`; never mark an untested feature as accepted by the OWNER. Noncritical coverage gaps may remain in a documented backlog. If a feature is blocked by credentials, an unsupported provider or an external dependency, isolate it, provide a truthful fallback and continue independent tasks. Stop only the affected work if proceeding would be unsafe, destructive or materially misleading. Do not work around credential or spending limits.
@@ -40,13 +40,61 @@ Use existing code, docs, skills and worktrees. Do not rebuild the project or cha
 
 ## 4. Non-negotiable product baseline
 
-- Preserve the approved STANDARD Variant A card, actual project image with safe text fallback, custom emoji, copyable CA, market and security sections, basic narrative, project links, First Call attribution and Meme Checker branding. Keep Add to Group. A premium CTA may be added only with a verified/configured destination; otherwise show concise text. Do not restore removed generic disclaimers or Chart button. Retain real risk warnings. Do not redesign the main card or shorten away useful fields.
+- Preserve the approved STANDARD Variant A card, actual project image with safe text fallback, custom emoji, copyable CA, market and security sections, basic narrative, project links, First Call attribution and Meme Checker branding. Keep Add to Group and add the Refresh button specified in section 4A. A premium CTA may be added only with a verified/configured destination; otherwise show concise text. Do not restore removed generic disclaimers or Chart button. Retain real risk warnings. Do not redesign the main card or shorten away useful fields.
 - All bot-facing output is English. Respect Telegram photo-caption and message limits; preserve fields or use the approved text fallback. Escape untrusted HTML and URLs.
 - Call Tracking: one canonical active real call per group + chain + contract. Preserve original caller, message identity, timestamp and entry market cap. Manual/Auto modes and Just Scanning remain supported. Respect sender_chat identity for anonymous admins/channels. Exclude synthetic, cancelled and superseded records consistently.
-- Clickable First Caller opens a group-scoped private Caller Profile with working 1D/1W/2W/1M filters and unique calls. Never leak another group's private records. No caller identity based solely on display names.
+- Clickable First Caller opens a group-scoped private Caller Profile with working 1D/1W/2W/1M filters, default 1D on every new First Caller deep-link opening, and unique calls. Never leak another group's private records. No caller identity based solely on display names.
 - `/pnl CA`: exactly one captionless photo for a recorded call in the current group; otherwise `No recorded call for this token in this group.` Missing arguments get usage help. Resolve recorded chain automatically; ask only for genuine ambiguity. No scanner fallback and no insertion from PnL.
 - Current and observed peak ROI are distinct. Never substitute FDV for missing MC or historic ATH for post-call peak. Entry MC is immutable; legitimate extreme returns require corroboration, not arbitrary rejection. Missing and stale data must remain distinguishable from zero. Token return is not realized trading PnL.
 - Smart Alerts: preserve shared adaptive observer, multiplier, Dex Paid, verified migration, movement alerts, `/alerts` settings and isolated OWNER `/alerttest`. Respect budgets, durable deduplication and correct reply context. Do not emit fabricated live alerts or re-send ambiguous deliveries blindly.
+
+## 4A. Mandatory OWNER feedback — finish before Phase 5
+
+This section is the latest OWNER instruction from real Telegram testing on 24 November 2026. It takes precedence over conflicting UI details elsewhere in this plan. Complete these corrections, run focused full-handler regressions, make a local checkpoint, and then continue autonomously through Phase 5–7. Do not require an intermediate OWNER acceptance. If a narrative source is genuinely unavailable, document that gap and continue; do not fabricate data or spend on paid X to fill it.
+
+### A. Improve remaining narrative coverage
+
+- Latest reported live sample: prose on Solana, Ethereum, Base, Arbitrum, Optimism, HyperEVM, Berachain, Abstract and MegaETH; facts-only on BNB Chain, Polygon, Avalanche, Monad, Unichain and Story; no narrative source on Robinhood Chain. These are individual probe outcomes, not proof of comprehensive chain coverage. Story is outside the original 15-chain market baseline unless its market support has separately been demonstrated.
+- Prioritize Robinhood and the facts-only in-scope chains (BNB, Polygon, Avalanche, Monad, Unichain). Investigate token/launchpad metadata, official sites, GeckoTerminal and safe free/keyless sources or compatible open-source adapters. Reuse current code. Distinguish provider throttling from genuine absence of information. Validate exact chain and contract. Do not undertake another exhaustive sweep merely to restate previous results.
+- Meaningful prose about a token's story, origin, theme, purpose or utility is the goal; contract facts are a separate fallback, not a successful narrative. Some tokens publish no usable narrative. Keep unavailable states truthful. Report improvements and residual gaps without implying every token is covered. No paid GetXAPI calls or paid runtime LLM requests.
+
+### B. Reply to the original CA message (including chain selection)
+
+- Normal token scan cards, EVM chain-selection prompts and the final card after selection must reply to the original user's CA/command message in the correct group/topic (not the callback button message and not a standalone message). Preserve original chat ID, message ID, topic/thread where applicable, original sender identity, original timestamp, and action intent in callback state. Never assign a call to the person who merely selects a chain.
+- Resolve an EVM chain automatically when reliable evidence uniquely identifies the chain; reuse verified canonical identity/cached results for repeat scans (e.g. the same ANT address) when appropriate. Do not ask again unnecessarily, default silently to BSC, or guess when multiple actual candidates remain. A previously recorded call is useful context, not proof that an address cannot exist on another chain. If ambiguity genuinely remains, offer relevant chain selection and preserve the original action.
+- Prefer editing/replacing the picker in a manner compatible with Telegram message types and original reply context, without duplicate result cards. If the original message was deleted or cannot be replied to, send one safe fallback in the same authorized chat/topic. Handle expired callbacks gracefully. Preserve separate /pnl and /call routing.
+
+### C. Clean Narrative and Premium X/KOL UI
+
+- Remove the verbose source line from the standard scan card: `Source: Project's own description — unverified claim · Project description (GeckoTerminal)` and equivalent long source footers. Keep full source/evidence attribution in `/narrative CA`. Preserve epistemic accuracy in the card itself with natural language such as `The project describes itself as...` for self-reported claims; do not turn a claim into an independently verified fact by removing the footer.
+- Keep the main narrative concise and meaningful, ideally 25–45 English words where evidence permits; no arbitrary mid-sentence cutoffs, filler or invented details. Preserve the existing Variant A layout and real risk warnings.
+- Replace the main card's technical `No X research cached for this token yet...` text with a clean locked Premium teaser. Example (English):
+
+  ```text
+  🔒 X & KOL INTELLIGENCE
+  KOL Activity: •••••• (Locked)
+  Unlock full X & KOL insights on Meme Checker Premium.
+  ```
+
+  The dots are a visual lock placeholder, not actual hidden results or a claim that KOL calls exist. Do not fabricate KOL names, counts or returns. A verified/configured website link may accompany the invitation; omit a clickable destination if unknown. Preserve existing cache-only `/x` and `/kol` policy and OWNER research restrictions. Ordinary scans, refresh and normal commands must spend zero paid X requests. Do not implement the premium website or payment flow.
+
+### D. Add a working Refresh button to token scan cards
+
+- Add `🔄 Refresh` at the bottom alongside or below the existing `Add to Group` button on scan cards (including photo and text fallback). Do not add it to the approved image-only `/pnl` response.
+- On click, resolve the same canonical chain + contract and fetch updated market data through existing bounded/shared provider infrastructure. Refresh relevant available price, MC, liquidity, volume, change and security fields with honest freshness/unknown states. Reuse valid narrative/cache evidence; do not spend paid X or trigger unbounded expensive research.
+- Edit the existing scan card in place (caption for photo, text for text card), preserving project image, original reply context, buttons, First Caller and original entry MC. Handle message-not-modified, expired/deleted messages, caption overflow and provider errors safely. If an edit is impossible, use at most one clear replacement or concise callback response; avoid duplicate cards and spam.
+- Refresh is a read-only scan action: never insert another call, modify caller attribution, reset entry MC or fabricate performance. Existing validated market observation rules may update current/peak performance only through the correct pipeline. Apply cooldown, in-flight deduplication, bounded concurrency, callback validation and correct chat scope. A failed refresh keeps the last valid values, not zeros; clearly indicate unavailable/stale data where relevant.
+
+### E. Default Caller Profile period to 1D
+
+- Clicking the clickable First Caller name opens the group-scoped DM Caller Profile with **1D** selected by default, every new deep-link opening, including after restart. Do not use 1W as default or inherit a previous selected filter on a new opening.
+- Retain 1D / 1W / 2W / 1M buttons and pagination. Explicit filter clicks edit the existing message and use the same originating group and caller. Keep existing authorization, deep-link compatibility, unique calls and real recorded performance.
+
+### F. Security metric sanity check — Top 10 > 100%
+
+- The OWNER's FIONA screenshot showed `Top 10: 111.1%`. Trace the actual provider normalization, denominator, percentage units, duplicate accounts and possible overlapping balances. Fix the underlying cause when evidence permits. A concentration percentage above 100% is invalid for a consistent non-overlapping supply denominator; do not blindly clamp it to 100% or show it as a genuine risk reading. If inconsistent data cannot be reconciled, display Unknown/Unavailable and retain diagnostic evidence. Preserve accurate results for other tokens and distinguish provider-reported vs independently verified concentration. Carry the broader holder analysis into Phase 5.
+
+**Pre-Phase-5 checkpoint:** exercise actual command/callback routing with mocked Telegram updates: same original reply IDs for CA scan + picker + result, repeat verified EVM scan, explicit ambiguous selection, correct original caller, in-place photo/text refresh and failure/cooldown/zero-paid-X behavior, clean Narrative/Premium rendering, fresh deep-link defaults to 1D and all filters work, and invalid Top 10 never renders as valid. Preserve real records and existing Phase 1–3 functions. Record results and commit locally; no live bot launch, no automatic Telegram messages, no GitHub push. Then continue Phase 5–7 automatically.
 
 ## 5. Phase 4 — Basic Narrative and Premium X/KOL Preview
 
@@ -79,7 +127,7 @@ Produce approximately 25–45 English words on the main card where evidence perm
 
 ### X/KOL access and costs
 
-Retain the working GetXAPI adapter and separate public X call history. The owner already configured `GETXAPI_KEY`; do not print it. Ordinary scans, `/check`, `/narrative`, `/x`, `/kol` and the observer must cause **zero billable X requests**. `/x` and `/kol` return limited cached previews or an honest unavailable state and a premium invitation. Preview only real counts, relevant accounts and evidence; mentions and announcements are not public calls. Do not invent historical entry MC, win rates or claims about comprehensive KOL performance. Distinguish no cache, no relevant results, provider unconfigured, provider unavailable and budget exhausted.
+Retain the working GetXAPI adapter and separate public X call history. The owner already configured `GETXAPI_KEY`; do not print it. Ordinary scans, `/check`, `/narrative`, `/x`, `/kol` and the observer must cause **zero billable X requests**. `/x` and `/kol` return limited cached previews or an honest unavailable state and a premium invitation. The main card uses the locked premium teaser in section 4A; dedicated cached previews may show only real counts, relevant accounts and evidence. Mentions and announcements are not public calls. Do not invent historical entry MC, win rates or claims about comprehensive KOL performance. Distinguish no cache, no relevant results, provider unconfigured, provider unavailable and budget exhausted.
 
 Keep an explicit OWNER-only controlled research path, disabled for public use and subject to a persistent global budget (20/day staging default). Reserve atomically before each outbound request; count retries, pagination and failures; pace requests and handle 429. Cache hits cost zero. Restart must not reset the budget. No raw script bypass. During this plan, keep all billable X requests disabled unless the OWNER separately authorizes an exact additional cap.
 
@@ -127,8 +175,8 @@ Integrate all completed phases into a single local branch/commit and a single st
 Run an integrated offline acceptance suite covering:
 
 - Startup configuration and storage migrations with backups; real owner records remain intact.
-- CA scanning and chain selection, correct original sender/command intent, narrative and security cards, image/text fallback and malicious metadata escaping.
-- Manual/Auto Call, Just Scanning, duplicate and cross-instance protection, First Caller links, filters, persistence and image-only PnL.
+- CA scanning and chain selection, correct original message reply and sender/command intent, in-place Refresh, narrative and locked Premium teaser, valid security metrics, image/text fallback and malicious metadata escaping.
+- Manual/Auto Call, Just Scanning, duplicate and cross-instance protection, First Caller links, default 1D and explicit filters, persistence and image-only PnL.
 - Observer request caps, shared market data across groups, no overlapping cycles, cancellation, 429/backoff, pending/ambiguous alert handling, retry and deduplication.
 - Zero paid X requests from ordinary scans/commands/observer, cached preview and OWNER authorization, persistent budget across restarts.
 - Risk evidence and unknown states, leaderboard eligibility and group isolation, settings permissions and callback routing.
@@ -142,7 +190,7 @@ Prepare README and user/developer documentation: setup on Windows, sanitized `.e
 
 ## 9. Final OWNER handoff (the only manual acceptance gate)
 
-Deliver one integrated release candidate and one concise Telegram summary. In the repo create `docs/OWNER-ACCEPTANCE.md` with exact current startup steps, a practical checklist grouped by feature, example commands (one per line), expected output, whether testing uses real or isolated simulated data, and what to record when it fails. Include cold restart, old call/profile links, recorded/unrecorded PnL, all alert types via existing isolated `/alerttest`, basic narrative on fresh and established tokens, cached/uncached premium preview, risk, group leaderboard, settings and shutdown. Tests requiring a second human account or admin permission must be identified, not faked. No live GetXAPI acceptance requests without separately authorized cap.
+Deliver one integrated release candidate and one concise Telegram summary. In the repo create `docs/OWNER-ACCEPTANCE.md` with exact current startup steps, a practical checklist grouped by feature, example commands (one per line), expected output, whether testing uses real or isolated simulated data, and what to record when it fails. Include cold restart, old call/profile links, recorded/unrecorded PnL, all alert types via existing isolated `/alerttest`, basic narrative on fresh and established tokens, remaining chain coverage, CA/chain-picker reply behavior, in-place Refresh, clean locked premium teaser, 1D default profile, cached/uncached premium preview, valid Top 10 readings, risk, group leaderboard, settings and shutdown. Tests requiring a second human account or admin permission must be identified, not faked. No live GetXAPI acceptance requests without separately authorized cap.
 
 Create `docs/FINAL-HANDOFF.md` containing:
 
@@ -181,4 +229,4 @@ After handoff, stop feature development. Do not claim OWNER PASS or production r
 - Preserve existing work, genuine calls, approved UI and English-only product output.
 - Use local commits and honest internal checkpoint results; distinguish implementation, technical verification and OWNER acceptance.
 
-**START / RESUME:** Read this file, current Git state and `docs/MASTER-PROGRESS.md` if it exists. Finish Phase 4, then proceed through 5, 6 and 7 without waiting for intermediate OWNER approval. Deliver the integrated candidate and acceptance documents, then stop. Quality and actual working behavior take priority over token-count minimization and artificial test-count targets.
+**START / RESUME:** Read this file, current Git state and `docs/MASTER-PROGRESS.md` if it exists. Complete section 4A and finish Phase 4, then proceed through 5, 6 and 7 without waiting for intermediate OWNER approval. Deliver the integrated candidate and acceptance documents, then stop. Quality and actual working behavior take priority over token-count minimization and artificial test-count targets.

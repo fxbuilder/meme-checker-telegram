@@ -57,6 +57,110 @@ function sumPercent(rows) {
 }
 
 /**
+ * Addresses that are holders on paper but do not represent a real concentration risk.
+ * Excluding them is what keeps a Top-10 figure meaningful; the LP pool in particular
+ * can hold most of the supply and would otherwise dominate the number.
+ */
+const BURN_ADDRESSES = new Set([
+  '0x0000000000000000000000000000000000000000',
+  '0x000000000000000000000000000000000000dead',
+  // Solana incinerator
+  '1incinertwvfzyqtqkgnrf8dhprwmhzwjmtuwzqhrs',
+]);
+
+function isBurnAddress(addr) {
+  const a = String(addr ?? '').trim().toLowerCase();
+  return a.length > 0 && BURN_ADDRESSES.has(a);
+}
+
+/**
+ * Holder concentration over the top N REAL holders.
+ *
+ * WHY THIS IS NOT A SIMPLE SUM. The OWNER saw `Top 10: 111.1%` on a real token, which
+ * is an impossible figure for a consistent, non-overlapping denominator. Three
+ * distinct causes produce it, and each needs its own handling:
+ *
+ *   1. DUPLICATE ROWS - the provider can list the same address twice. A duplicate
+ *      inflates the sum while adding no information, so rows are de-duplicated by
+ *      address.
+ *   2. NON-HOLDER ACCOUNTS - the LP pool, burn addresses and the token contract itself
+ *      hold balances that are not "someone controlling supply". The LP share in
+ *      particular can be the single largest line.
+ *   3. INCONSISTENT DENOMINATORS - some providers report a holder's share of
+ *      circulating supply while others use total supply, so rows are not guaranteed to
+ *      be mutually comparable.
+ *
+ * After 1 and 2 the total is normally < 100%. If it is STILL above 100%, the rows
+ * cannot be reconciled into a concentration reading and the honest answer is null
+ * ("unknown"), never a clamped 100% - clamping would present an invalid measurement as
+ * a genuine risk score.
+ *
+ * @returns {{percentage:number|null, counted:number, excluded:number, reason?:string}}
+ */
+export function holderConcentration(rows, { top = 10, exclude = [], excludeBurn = true } = {}) {
+  if (!Array.isArray(rows) || !rows.length) {
+    return { percentage: null, counted: 0, excluded: 0, reason: 'no-holder-rows' };
+  }
+
+  // Normalise the exclusion set: pools, the token contract, any caller-supplied
+  // non-holder account. Case-insensitive because EVM addresses are.
+  const excluded = new Set(
+    [...exclude].filter(Boolean).map((a) => String(a).trim().toLowerCase()),
+  );
+
+  const seen = new Set();
+  const kept = [];
+  let excludedCount = 0;
+
+  // Rows may legitimately lack an address: GoPlus does not always include one, and
+  // dropping those rows silently deleted real concentration data (a valid 60% became
+  // "unknown"). An address-less row can still be EXCLUDED by position - when a caller
+  // names the LP pool - but it must otherwise be counted. It simply cannot be
+  // de-duplicated, because we have no identity to compare.
+  rows.forEach((r, index) => {
+    const p = Number(r?.percent);
+    if (!Number.isFinite(p) || p < 0) { excludedCount += 1; return; }
+
+    const addr = String(r?.address ?? '').trim().toLowerCase();
+    if (!addr) {
+      kept.push({ addr: null, percent: p, index });
+      return;
+    }
+    if (excluded.has(addr)) { excludedCount += 1; return; }
+    if (excludeBurn && isBurnAddress(addr)) { excludedCount += 1; return; }
+    // Cause 1: the same account listed twice.
+    if (seen.has(addr)) { excludedCount += 1; return; }
+    seen.add(addr);
+    kept.push({ addr, percent: p, index });
+  });
+
+  const topRows = kept.slice(0, top);
+  if (!topRows.length) {
+    return { percentage: null, counted: 0, excluded: excludedCount, reason: 'all-rows-excluded' };
+  }
+
+  const total = topRows.reduce((acc, r) => acc + r.percent, 0) * 100;
+
+  // Cause 3: even after cleaning, an impossible total means the rows are mutually
+  // inconsistent. Report unknown and keep the diagnostic rather than inventing a value.
+  if (!Number.isFinite(total) || total > 100.5) {
+    return {
+      percentage: null,
+      counted: topRows.length,
+      excluded: excludedCount,
+      reason: 'inconsistent-denominator',
+      rawTotal: Number.isFinite(total) ? Number(total.toFixed(2)) : null,
+    };
+  }
+
+  return {
+    percentage: Number(Math.max(0, total).toFixed(2)),
+    counted: topRows.length,
+    excluded: excludedCount,
+  };
+}
+
+/**
  * LP lock: GoPlus gives lp_holders rows for the LP token itself.
  * "Locked" means the row is marked is_locked=1 (burned or time-locked).
  * We report the share of LP held by locked/burned holders.
@@ -109,13 +213,30 @@ export function normalizeRisk(chainId, row) {
   const isSolana = chain?.kind === 'solana';
 
   const holdersRows = Array.isArray(row.holders) ? row.holders : [];
-  const top10 = holdersRows.length ? holdersRows.slice(0, 10) : [];
+
+  // The LP pool and the token contract itself appear in holder lists but are not
+  // accounts "controlling" supply. Excluding them is what makes a concentration
+  // figure meaningful, and it is also the main reason a raw sum could exceed 100%.
+  const lpAddresses = Array.isArray(row.lp_holders)
+    ? row.lp_holders.map((r) => r?.address).filter(Boolean)
+    : [];
+
+  const concentration = holderConcentration(holdersRows, {
+    top: 10,
+    exclude: [row.owner_address, row.creator_address, ...lpAddresses],
+  });
 
   const out = {
     holders: {
       total: numOrNull(row.holder_count),
-      top10Percentage: top10.length ? sumPercent(top10) : null,
+      // null means "cannot be reconciled", which the card renders as unknown rather
+      // than as a percentage. A clamped 100% would be a fabricated reading.
+      top10Percentage: concentration.percentage,
       largestHolderPercentage: holdersRows.length ? pct(holdersRows[0]?.percent) : null,
+      // Diagnostic kept so an operator can see WHY a figure was withheld.
+      concentrationReason: concentration.reason ?? null,
+      concentrationCounted: concentration.counted,
+      concentrationExcluded: concentration.excluded,
     },
     // Tax genuinely does not exist as a concept in the Solana payload.
     tax: isSolana ? null : (() => {

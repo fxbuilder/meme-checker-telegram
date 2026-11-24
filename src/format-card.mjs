@@ -207,26 +207,106 @@ function buildSecurity(result, e) {
 }
 
 /** NARRATIVE — concise evidence-based summary, or one clean unavailable line. */
+/**
+ * Narrative lines for the card.
+ *
+ * OWNER requirement (4A/C): the standard card must not carry a technical source footer
+ * like `Source: Project's own description — unverified claim · Project description
+ * (GeckoTerminal)`. It is noise on a phone, and it repeated the same string on every
+ * scan.
+ *
+ * Epistemic accuracy is preserved IN THE PROSE instead: a self-reported description is
+ * introduced with wording that attributes it to the project, so removing the footer
+ * does not silently promote a claim to a verified fact. Full attribution stays in
+ * `/narrative CA`, which is where someone auditing evidence will look.
+ *
+ * The prose is also kept to roughly 25-45 words: a card is not an article, and a
+ * mid-sentence truncation reads as a bug.
+ */
 function buildNarrative(result, e, mode = 'standard') {
   const n = result?.narrative;
-  if (n?.summary && n?.source) {
-    // The evidence class must reach the reader. A project describing itself is a
-    // CLAIM, and a bare "Source: ..." line reads as corroboration. This label is
-    // the difference between reporting what a project says and asserting it.
-    const label = n.evidence === 'project-claim'
-      ? "Project's own description — unverified claim"
-      : n.evidence === 'reported'
-        ? 'Reported by a third party — unverified'
-        : n.evidence === 'inferred'
-          ? 'Inferred from available evidence'
-          : null;
-    const src = label ? `${label} · ${n.source}` : n.source;
-    return [esc(n.summary), `<i>Source: ${esc(src)}</i>`];
+  if (n?.summary) {
+    const body = narrativeProse(n);
+    if (!body) {
+      return [mode === 'detailed'
+        ? '<i>Narrative unavailable</i>'
+        : '<i>No reliable narrative available.</i>'];
+    }
+    return [body];
   }
   // Detailed keeps the documented §4.1 sentence; standard uses plainer wording.
   return [mode === 'detailed'
     ? '<i>Narrative unavailable</i>'
-    : '<i>No verified narrative available.</i>'];
+    : '<i>No reliable narrative available.</i>'];
+}
+
+/**
+ * Trim prose to a word budget without cutting mid-clause.
+ *
+ * Preference order: a complete sentence that fits; otherwise the last comma/semicolon
+ * boundary that fits; otherwise drop trailing words until the budget is met. Never
+ * leaves a dangling preposition or an ellipsis glued to a half word.
+ */
+export function clipWords(text, { min = 25, max = 45 } = {}) {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const words = clean.split(' ');
+  if (words.length <= max) {
+    // Already short: keep it whole. Upstream already rejects stub text, so a brief
+    // sentence here is a genuinely brief description - dropping it would turn a real
+    // narrative into "No reliable narrative available".
+    return words.length >= 4 ? clean : '';
+  }
+
+  const head = words.slice(0, max).join(' ');
+
+  // 1. A sentence end inside the budget is ideal.
+  const sentenceEnd = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '));
+  if (sentenceEnd > 0) {
+    const cut = head.slice(0, sentenceEnd + 1);
+    if (cut.split(' ').length >= min) return cut;
+  }
+  // 2. A clause boundary reads much better than an arbitrary word cut.
+  const clauseEnd = Math.max(head.lastIndexOf(', '), head.lastIndexOf('; '), head.lastIndexOf(' — '));
+  if (clauseEnd > 0) {
+    const cut = head.slice(0, clauseEnd);
+    if (cut.split(' ').length >= Math.min(min, 15)) return `${cut}.`;
+  }
+  // 3. Last resort: the budget itself, with no ellipsis mid-sentence.
+  return head.replace(/[,;:\-—]$/, '') + '.';
+}
+
+/**
+ * Attribute a description to the project in natural language.
+ *
+ * A claim rendered as a bare sentence reads as fact. This keeps the card honest
+ * without a footer.
+ */
+export function narrativeProse(n) {
+  const raw = clipWords(n.summary);
+  if (!raw) return '';
+
+  if (n.evidence === 'project-claim') {
+    // Avoid stacking two attributions.
+    if (/^(the project|its team|the team|according to|we |our )/i.test(raw)) return esc(raw);
+
+    // "The project describes itself as Bonk is a dog coin" is ungrammatical. A
+    // description that already opens with its own subject is introduced with a
+    // separate sentence clause instead of an "as ..." continuation.
+    const opensWithSubject = /^[A-Z][\w$.'’\-]*\s+(is|was|are|were)\b/.test(raw);
+    if (opensWithSubject) return esc(`The project describes itself in these terms. ${raw}`);
+    // "describes itself as A community-driven token" needs the article lowered, or the
+    // sentence reads like a heading pasted mid-line.
+    const lowered = raw.replace(/^(A|An|The)\b/, (m) => m.toLowerCase());
+    return esc(`The project describes itself as ${lowered}`);
+  }
+  if (n.evidence === 'reported') {
+    return esc(`Third-party descriptions report: ${raw}`);
+  }
+  if (n.evidence === 'verified') {
+    return esc(raw);
+  }
+  return esc(raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -454,20 +534,38 @@ export function formatCard(result, {
   // prints NOTHING here — not a zero, not "0 posts" — because an empty count
   // would assert that we looked and found nothing.
   //
-  // PHASE 4 STRATEGY: deep X/KOL research is a premium WEBSITE feature. The card
-  // therefore renders a PREVIEW (counts, up to two accounts, short narrative) plus a
-  // website CTA. `research.previewLines` is produced by premium-preview.mjs, which
-  // only states what cached evidence supports and omits anything it cannot prove.
-  // `research.xLine`/`kolLine` are the staging-only detailed form.
-  const previewLines = Array.isArray(research?.previewLines) ? research.previewLines : null;
-  const detailLines = [research?.xLine, research?.kolLine].filter(Boolean);
-
-  if (previewLines?.length || detailLines.length) {
+  // PHASE 4 STRATEGY + 4A/C: deep X/KOL research is a premium WEBSITE feature.
+  //
+  // The card no longer prints technical status text like "No X research cached for
+  // this token yet". That reads as a system error on a product card. It now shows a
+  // clean LOCKED TEASER instead: a visual lock placeholder plus an invitation.
+  //
+  // The dots are a placeholder for the locked section, NOT hidden results. No count,
+  // name, call or return is implied. When a verified premium destination exists it
+  // becomes a link; otherwise the invitation is plain text, never a dead button.
+  //
+  // OWNER staging keeps the detailed lines so research can be verified while testing.
+  if (research?.premiumTeaser) {
     lines.push('');
-    lines.push(sectionTitle(e('𝕏'), 'X INTELLIGENCE'));
+    lines.push(sectionTitle(e('🔒'), 'X & KOL INTELLIGENCE'));
     lines.push('');
-    if (previewLines?.length) lines.push(...previewLines);
-    else lines.push(...detailLines.map(esc));
+    lines.push('KOL Activity: •••••• (Locked)');
+    lines.push('');
+    if (research.premiumUrl) {
+      lines.push(`<a href="${esc(research.premiumUrl)}">Unlock full X & KOL insights on Meme Checker Premium.</a>`);
+    } else {
+      lines.push('Unlock full X & KOL insights on Meme Checker Premium.');
+    }
+  } else {
+    const previewLines = Array.isArray(research?.previewLines) ? research.previewLines : null;
+    const detailLines = [research?.xLine, research?.kolLine].filter(Boolean);
+    if (previewLines?.length || detailLines.length) {
+      lines.push('');
+      lines.push(sectionTitle(e('𝕏'), 'X INTELLIGENCE'));
+      lines.push('');
+      if (previewLines?.length) lines.push(...previewLines);
+      else lines.push(...detailLines.map(esc));
+    }
   }
 
   // ===== PROJECT LINKS ====================================================
