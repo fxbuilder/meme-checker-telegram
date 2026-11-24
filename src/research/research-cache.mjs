@@ -47,11 +47,21 @@ export class ResearchCache {
     this.misses = 0;
   }
 
+  /**
+   * Read an entry. Returns `undefined` for a miss so that a legitimately cached
+   * `null` is still a HIT — using null for both made every null-valued load run
+   * again on every scan, which defeats the cache entirely.
+   */
   get(key) {
     const e = this.entries.get(key);
-    if (!e) return null;
-    if (e.expiresAt <= this.now()) { this.entries.delete(key); return null; }
+    if (!e) return undefined;
+    if (e.expiresAt <= this.now()) { this.entries.delete(key); return undefined; }
     return e.value;
+  }
+
+  /** Has this key, and is the entry still fresh? */
+  has(key) {
+    return this.get(key) !== undefined;
   }
 
   set(key, value, ttlMs) {
@@ -71,7 +81,7 @@ export class ResearchCache {
    */
   async cached(key, ttlMs, fn, { ttlOnFailure = TTL_MS.failure } = {}) {
     const hit = this.get(key);
-    if (hit !== null) { this.hits += 1; return hit; }
+    if (hit !== undefined) { this.hits += 1; return hit; }
 
     const pending = this.inflight.get(key);
     if (pending) { this.hits += 1; return pending; }

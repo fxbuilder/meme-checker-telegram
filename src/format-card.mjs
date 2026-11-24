@@ -210,7 +210,18 @@ function buildSecurity(result, e) {
 function buildNarrative(result, e, mode = 'standard') {
   const n = result?.narrative;
   if (n?.summary && n?.source) {
-    return [esc(n.summary), `<i>Source: ${esc(n.source)}</i>`];
+    // The evidence class must reach the reader. A project describing itself is a
+    // CLAIM, and a bare "Source: ..." line reads as corroboration. This label is
+    // the difference between reporting what a project says and asserting it.
+    const label = n.evidence === 'project-claim'
+      ? "Project's own description — unverified claim"
+      : n.evidence === 'reported'
+        ? 'Reported by a third party — unverified'
+        : n.evidence === 'inferred'
+          ? 'Inferred from available evidence'
+          : null;
+    const src = label ? `${label} · ${n.source}` : n.source;
+    return [esc(n.summary), `<i>Source: ${esc(src)}</i>`];
   }
   // Detailed keeps the documented §4.1 sentence; standard uses plainer wording.
   return [mode === 'detailed'

@@ -79,7 +79,12 @@ export async function researchToken({
     return out;
   }
 
-  if (!budget.spend(1)) {
+  const postsKey = cacheKey('x-posts', chain, address);
+
+  // Spend budget only when a request will actually happen. Checking the cache
+  // first matters: a cached hit was consuming allowance while making no request,
+  // so a busy group could burn the daily X budget on data it already had.
+  if (!cache.has(postsKey) && !cache.inflight.has(postsKey) && !budget.spend(1)) {
     out.x = {
       available: false,
       status: { available: false, reason: 'budget-exhausted', detail: 'The X request allowance for this window is used up.' },
@@ -88,7 +93,6 @@ export async function researchToken({
     return out;
   }
 
-  const postsKey = cacheKey('x-posts', chain, address);
   const postsRes = await cache.cached(
     postsKey,
     TTL_MS.posts,

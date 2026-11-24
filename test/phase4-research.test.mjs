@@ -347,3 +347,78 @@ test('an EVM address is flagged ambiguous instead of silently defaulting', () =>
   assert.equal(t.ambiguous, true, 'a 0x address must not be assumed to be on the group default');
   assert.ok(t.evmLikely.includes('ethereum'));
 });
+
+// ---- regressions found in self-review ------------------------------------
+
+test('a cached null is a HIT, not a miss (null is a legitimate value)', async () => {
+  let calls = 0;
+  const cache = new ResearchCache();
+  const load = async () => { calls += 1; return null; };
+  await cache.cached('k', 60_000, load);
+  await cache.cached('k', 60_000, load);
+  await cache.cached('k', 60_000, load);
+  assert.equal(calls, 1, 'null must be cached; treating it as a miss defeats the cache');
+  assert.equal(cache.has('k'), true);
+});
+
+test('a throwing loader becomes a cached provider-error, not a poison entry', async () => {
+  let calls = 0;
+  const cache = new ResearchCache();
+  const load = async () => { calls += 1; throw new Error('down'); };
+  const a = await cache.cached('k', 60_000, load);
+  assert.equal(a.status, 'provider-error');
+  const b = await cache.cached('k', 60_000, load);
+  assert.equal(b.status, 'provider-error');
+  assert.equal(calls, 1, 'the failure is cached on the short TTL, not retried immediately');
+});
+
+test('a cache hit must not spend X request budget', async () => {
+  const prev = process.env.SORSA_API_KEY;
+  process.env.SORSA_API_KEY = 'test-key';
+  let providerCalls = 0;
+  const fakeFetch = async (url) => {
+    if (String(url).includes('sorsa')) {
+      providerCalls += 1;
+      return { ok: true, status: 200, json: async () => ({ tweets: [{ id_str: '1', full_text: 'hi', user: { screen_name: 'a' }, created_at: '2026-01-01T00:00:00Z' }] }) };
+    }
+    return { ok: false, status: 404 };
+  };
+  const { RequestBudget } = await import('../src/research/research-cache.mjs');
+  const cache = new ResearchCache();
+  const budget = new RequestBudget({ limit: 10 });
+  const args = { chain: 'solana', address: SOL, symbol: 'BONK', cache, budget, fetchImpl: fakeFetch };
+
+  await researchToken(args);
+  await researchToken(args);
+  await researchToken(args);
+  assert.equal(providerCalls, 1, 'one provider call');
+  assert.equal(budget.stats().used, 1, 'budget charged once, not per cache hit');
+  if (prev === undefined) delete process.env.SORSA_API_KEY; else process.env.SORSA_API_KEY = prev;
+});
+
+test('the card labels project prose as an unverified claim', async () => {
+  const { formatCard } = await import('../src/format-card.mjs');
+  const result = {
+    status: 'ok', mockLabel: false,
+    token: { chain: 'solana', address: SOL, name: 'Bonk', symbol: 'BONK' },
+    market: { priceUsd: 1, marketCapUsd: 1_000_000, liquidityUsd: 100_000 },
+    holders: null, risk: null, project: {}, media: {},
+    narrative: { summary: 'A real summary sentence from the project.', source: 'Project description (CoinGecko)', evidence: 'project-claim' },
+  };
+  const { text } = formatCard(result, { view: 'standard' });
+  const seg = text.split('NARRATIVE')[1]?.split('PROJECT LINKS')[0] ?? '';
+  assert.match(seg, /unverified claim/i, 'the evidence class must reach the reader');
+  assert.match(seg, /project's own description/i);
+});
+
+test('/kol never invents an entry market cap or a win rate', async () => {
+  const { renderKolProfile } = await import('../src/research/research-commands.mjs');
+  const entries = [
+    { symbol: 'A', observedAt: Date.now() - 1000, entryMarketCapUsd: 1_000_000 },
+    { symbol: 'B', observedAt: Date.now() - 2000, entryMarketCapUsd: null },
+  ];
+  const text = renderKolProfile({ handle: 'x', entries });
+  assert.ok(!/win ?rate/i.test(text), 'no win rate may be computed from a sample');
+  assert.match(text, /not verifiable/i, 'an unmeasurable entry must say so');
+  assert.match(text, /Sample of 2 recorded calls/);
+});
