@@ -291,3 +291,39 @@ test('/justscan confirms a scan-only post', async () => {
   await handleJustScan(ctx);
   assert.match(out[0].text, /not recorded as a call/);
 });
+
+// ---- Settings authority is owner-only during staging ---------------------
+
+test('an ordinary member cannot change call settings', async () => {
+  const store = tmpStore();
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '42', ALLOWED_CHAT_IDS: String(CHAT) });
+
+  const { ctx, out } = makeCtx({ text: '/callsettings autocall on', userId: 777 });
+  await handleCallSettings(ctx, { store, policy });
+
+  assert.match(out[0].text, /only the bot owner/);
+  assert.equal(store.groupSettings(CHAT).autoCall, 'manual', 'setting must not change');
+});
+
+test('the owner can change call settings', async () => {
+  const store = tmpStore();
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '42', ALLOWED_CHAT_IDS: String(CHAT) });
+
+  const { ctx, out } = makeCtx({ text: '/callsettings autocall on', userId: 42 });
+  await handleCallSettings(ctx, { store, policy });
+
+  assert.match(out[0].text, /Auto call ON/);
+  assert.equal(store.groupSettings(CHAT).autoCall, 'auto');
+});
+
+test('reading settings is allowed for everyone', async () => {
+  const store = tmpStore();
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '42', ALLOWED_CHAT_IDS: String(CHAT) });
+
+  const { ctx, out } = makeCtx({ text: '/callsettings', userId: 777 });
+  await handleCallSettings(ctx, { store, policy });
+  assert.match(out[0].text, /Call settings/, 'read-only view is not gated');
+});

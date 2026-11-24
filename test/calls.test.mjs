@@ -170,12 +170,52 @@ test('a peak can only move upward', () => {
   assert.equal(up.peakMarketCapUsd, 4_000_000);
 });
 
-test('an implausible jump is not trusted as a peak', () => {
+test('an extreme jump is HELD for confirmation, not rejected outright', () => {
+  // 900x is a legitimate memecoin outcome; it must not be discarded on sight.
   const call = { entryMarketCapUsd: 1_000_000, peakMarketCapUsd: 1_000_000, calledAt: 0 };
-  const r = nextPeak(call, 900_000_000, { now: 100 }); // 900x in one tick
-  assert.equal(r.changed, false);
-  assert.match(r.rejected, /implausible jump/);
-  assert.equal(r.peakMarketCapUsd, 1_000_000);
+  const first = nextPeak(call, 900_000_000, { now: 100 });
+
+  assert.equal(first.changed, false, 'a single sighting does not set the trusted peak');
+  assert.equal(first.pending, true);
+  assert.equal(first.candidate, 900_000_000, 'the candidate is reported, not hidden');
+  assert.equal(first.peakMarketCapUsd, 1_000_000, 'trusted peak unchanged');
+  assert.equal(first.confirmations, 1);
+  assert.equal(first.required, 2);
+
+  // A second, independently observed reading in the same cluster confirms it.
+  const call2 = { ...call, pendingPeak: { marketCapUsd: first.candidate, firstSeenAt: 100, confirmations: 1 } };
+  const second = nextPeak(call2, 950_000_000, { now: 200 });
+  assert.equal(second.changed, true, 'confirmed extreme becomes the peak');
+  assert.equal(second.confirmedExtreme, true);
+  assert.equal(second.peakMarketCapUsd, 950_000_000);
+});
+
+test('a wild disagreement between sightings does not confirm', () => {
+  const call = { entryMarketCapUsd: 1_000_000, peakMarketCapUsd: 1_000_000, calledAt: 0 };
+  // First sighting 60x (above the 50x gate, so held), second 900x — the two are
+  // 15x apart, which is not corroboration, so confirmation restarts at 1.
+  const held = nextPeak(call, 60_000_000, { now: 10 });
+  assert.equal(held.changed, false, '60x also needs confirmation');
+  assert.equal(held.pending, true);
+  const call2 = { ...call, pendingPeak: { marketCapUsd: held.candidate, firstSeenAt: 10, confirmations: 1 } };
+  const disagree = nextPeak(call2, 900_000_000, { now: 20, agreementTolerance: 3 });
+  assert.equal(disagree.changed, false, 'a 15x-apart reading is not corroboration');
+  assert.equal(disagree.confirmations, 1);
+});
+
+test('ordinary multiples are still accepted immediately', () => {
+  const call = { entryMarketCapUsd: 1_000_000, peakMarketCapUsd: 1_000_000, calledAt: 0 };
+  const r = nextPeak(call, 30_000_000, { now: 5 });  // 30x, below the 50x gate
+  assert.equal(r.changed, true);
+  assert.equal(r.peakMarketCapUsd, 30_000_000);
+  assert.equal(r.pending, undefined);
+});
+
+test('a verified extreme can be admitted with one confirmation', () => {
+  const call = { entryMarketCapUsd: 1_000_000, peakMarketCapUsd: 1_000_000, calledAt: 0 };
+  const r = nextPeak(call, 400_000_000, { now: 5, requiredConfirmations: 1 });
+  assert.equal(r.changed, true);
+  assert.equal(r.peakMarketCapUsd, 400_000_000);
 });
 
 test('a drawdown below entry never becomes a peak', () => {
@@ -452,7 +492,7 @@ test('observePass updates calls and emits a milestone event once', async () => {
   const rec = await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1000 });
 
   const scan = async () => okScan({ market: { ...okScan().market, marketCapUsd: 11_000_000 } }); // 2.2x
-  const pass = await observePass({ store: s, scan, now: 2000, perCallCooldownMs: 0 });
+  const pass = await observePass({ store: s, scan, now: 2000, perCallCooldownMs: 0, force: true });
 
   assert.equal(pass.observed, 1);
   assert.ok(pass.events.some((e) => e.type === 'milestone' && e.milestone === 2));
@@ -464,7 +504,7 @@ test('observePass writes nothing when the provider fails', async () => {
   const { observePass } = await import('../src/call-observer.mjs');
   const s = tmpStore();
   await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1000 });
-  const pass = await observePass({ store: s, scan: async () => ({ status: 'api-error' }), now: 2000, perCallCooldownMs: 0 });
+  const pass = await observePass({ store: s, scan: async () => ({ status: 'api-error' }), now: 2000, perCallCooldownMs: 0, force: true });
   assert.equal(pass.observed, 0);
   assert.equal(pass.failed, 1);
   assert.equal(s.callsForChat(CHAT)[0].lastMarketCapUsd, 5_000_000, 'last good value preserved');
@@ -488,7 +528,7 @@ test('observePass observes one token once even with several calls on it', async 
 
   let calls = 0;
   const scan = async () => { calls += 1; return okScan({ market: { ...okScan().market, marketCapUsd: 6_000_000 } }); };
-  const pass = await observePass({ store: s, scan, now: 2000, perCallCooldownMs: 0 });
+  const pass = await observePass({ store: s, scan, now: 2000, perCallCooldownMs: 0, force: true });
 
   assert.equal(calls, 1, 'one provider request for the shared token');
   assert.equal(pass.observed, 2, 'but both call records are updated');
@@ -508,4 +548,131 @@ test('observePass ignores synthetic and cancelled calls', async () => {
   });
   const pass = await observePass({ store: s, scan: async () => okScan(), now: 2000, perCallCooldownMs: 0 });
   assert.equal(pass.observed, 0);
+});
+
+// ---- Adaptive polling horizons -------------------------------------------
+
+test('old calls are never retired, only polled less often', async () => {
+  const { pollIntervalFor, pollTierFor, HOT_WINDOW_MS, WARM_WINDOW_MS, MAX_PEAK_AGE_MS } = await import('../src/calls.mjs');
+
+  assert.equal(MAX_PEAK_AGE_MS, Number.POSITIVE_INFINITY, 'tracking must not expire');
+  assert.equal(pollTierFor(3600_000), 'hot');
+  assert.equal(pollTierFor(HOT_WINDOW_MS + 1), 'warm');
+  assert.equal(pollTierFor(WARM_WINDOW_MS + 1), 'cold');
+
+  const hot = pollIntervalFor(3600_000);
+  const warm = pollIntervalFor(HOT_WINDOW_MS + 1);
+  const cold = pollIntervalFor(WARM_WINDOW_MS + 1);
+  assert.ok(hot < warm, 'hot polls more often than warm');
+  assert.ok(warm < cold, 'warm polls more often than cold');
+  assert.ok(Number.isFinite(cold), 'cold still polls');
+});
+
+test('a year-old call is still observed (no 7-day cut-off)', async () => {
+  const { observePass } = await import('../src/call-observer.mjs');
+  const s = tmpStore();
+  const yearAgo = Date.now() - 365 * 24 * 3600_000;
+  await s.addCall({
+    chatId: String(CHAT), callerId: '1', chain: 'bsc', address: CA,
+    entryMarketCapUsd: 1_000_000, peakMarketCapUsd: 1_000_000, lastMarketCapUsd: 1_000_000,
+    status: 'active', source: 'manual', calledAt: yearAgo, lastObservedAt: yearAgo,
+  });
+  const pass = await observePass({
+    store: s, scan: async () => okScan(), now: Date.now(), force: true,
+  });
+  assert.equal(pass.observed, 1, 'an old call is still monitored');
+  assert.equal(pass.tiers.cold, 1);
+});
+
+test('the pending extreme candidate survives a restart and cannot be re-earned by one reading', async () => {
+  const s = tmpStore();
+  const rec = await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, now: 1000 });
+  const huge = okScan({ market: { ...okScan().market, marketCapUsd: 400_000_000 } }); // 80x
+  const first = await observeCall({ store: s, call: rec.call, scanResult: huge, now: 2000 });
+  assert.equal(first.peakChanged, false, 'held for confirmation');
+  assert.ok(first.call.pendingPeak, 'candidate persisted');
+  assert.equal(first.call.pendingPeak.confirmations, 1);
+
+  // New process, same file.
+  const reloaded = new (await import('../src/store.mjs')).CallStore(s.filePath);
+  const call2 = reloaded.callsForChat(CHAT)[0];
+  assert.ok(call2.pendingPeak, 'candidate survives restart');
+  assert.equal(call2.peakMarketCapUsd, 5_000_000, 'trusted peak still untouched');
+
+  // A second agreeing observation confirms it.
+  const second = await observeCall({ store: reloaded, call: call2, scanResult: huge, now: 3000 });
+  assert.equal(second.peakChanged, true);
+  assert.equal(second.call.peakMarketCapUsd, 400_000_000);
+});
+
+// ---- Extreme-return corroboration ----------------------------------------
+
+test('an extreme observation confirms only when a second source agrees', async () => {
+  const { verifyExtremeObservation } = await import('../src/extreme-verify.mjs');
+  const okSource = { name: 'test', fn: async () => ({ ok: true, marketCapUsd: 390_000_000, liquidityUsd: 900_000 }) };
+
+  const agree = await verifyExtremeObservation(
+    { chain: 'bsc', address: CA, observedMcap: 400_000_000 }, { sources: [okSource] });
+  assert.equal(agree.confirm, true);
+  assert.equal(agree.source, 'test');
+
+  const far = { name: 'test', fn: async () => ({ ok: true, marketCapUsd: 4_000_000, liquidityUsd: 900_000 }) };
+  const disagree = await verifyExtremeObservation(
+    { chain: 'bsc', address: CA, observedMcap: 400_000_000 }, { sources: [far] });
+  assert.equal(disagree.confirm, false, 'a 100x disagreement is not corroboration');
+  assert.match(disagree.reason, /disagrees/);
+});
+
+test('an unavailable source is not treated as a refutation', async () => {
+  const { verifyExtremeObservation } = await import('../src/extreme-verify.mjs');
+  const down = { name: 'down', fn: async () => ({ ok: false, detail: 'timeout' }) };
+  const r = await verifyExtremeObservation(
+    { chain: 'bsc', address: CA, observedMcap: 400_000_000 }, { sources: [down] });
+  assert.equal(r.confirm, false);
+  assert.match(r.reason, /down: timeout/, 'the reason names the source failure, not a false claim about the token');
+});
+
+test('a market cap on a dead pool cannot corroborate', async () => {
+  const { verifyExtremeObservation } = await import('../src/extreme-verify.mjs');
+  const thin = { name: 'thin', fn: async () => ({ ok: true, marketCapUsd: 400_000_000, liquidityUsd: 50 }) };
+  const r = await verifyExtremeObservation(
+    { chain: 'bsc', address: CA, observedMcap: 400_000_000 }, { sources: [thin] });
+  assert.equal(r.confirm, false);
+  assert.match(r.reason, /too thin/);
+});
+
+test('the verifier falls through sources and uses the first that agrees', async () => {
+  const { verifyExtremeObservation } = await import('../src/extreme-verify.mjs');
+  const sources = [
+    { name: 'first', fn: async () => ({ ok: false, detail: 'not indexed' }) },
+    { name: 'second', fn: async () => ({ ok: true, marketCapUsd: 410_000_000, liquidityUsd: 5e5 }) },
+  ];
+  const r = await verifyExtremeObservation(
+    { chain: 'bsc', address: CA, observedMcap: 400_000_000 }, { sources });
+  assert.equal(r.confirm, true);
+  assert.equal(r.source, 'second');
+});
+
+test('geckoTerminalToken rejects a payload about a different contract', async () => {
+  const { geckoTerminalToken } = await import('../src/extreme-verify.mjs');
+  const fetchImpl = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ data: { attributes: { address: '0xDEADBEEF', market_cap_usd: '5000000' } } }),
+  });
+  const r = await geckoTerminalToken('bsc', CA, { fetchImpl });
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /identity mismatch/);
+});
+
+test('geckoTerminalToken distinguishes 404 from a transport error', async () => {
+  const { geckoTerminalToken } = await import('../src/extreme-verify.mjs');
+  const notFound = await geckoTerminalToken('bsc', CA, {
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+  });
+  assert.match(notFound.detail, /not indexed/);
+
+  const broken = await geckoTerminalToken('bsc', CA, {
+    fetchImpl: async () => { throw Object.assign(new Error('boom'), { name: 'TimeoutError' }); },
+  });
+  assert.match(broken.detail, /timeout/);
 });

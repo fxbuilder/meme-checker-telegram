@@ -19,8 +19,45 @@
 
 import { normaliseAddress } from './store.mjs';
 
-/** Observation windows. Peak tracking stops after MAX_PEAK_AGE_MS. */
-export const MAX_PEAK_AGE_MS = 7 * 24 * 3600_000;
+/**
+ * Observation horizons.
+ *
+ * A call is NEVER retired or deleted because it is old: history and recorded
+ * performance are permanent. What changes with age is polling FREQUENCY, so a
+ * long tail of old calls cannot burn API budget.
+ *
+ * `MAX_PEAK_AGE_MS` used to stop observation entirely at 7 days, which silently
+ * froze the peak of a perfectly valid call. It is now the boundary of the
+ * "hot" tier only.
+ */
+export const HOT_WINDOW_MS = 7 * 24 * 3600_000;        // first week: poll often
+export const WARM_WINDOW_MS = 30 * 24 * 3600_000;      // first month: poll less
+export const COLD_POLL_MS = 24 * 3600_000;             // older: once a day
+export const MAX_PEAK_AGE_MS = Number.POSITIVE_INFINITY; // never stop tracking
+
+/**
+ * Adaptive polling interval for a call, by age.
+ * Younger calls move fast and matter most; older ones still get tracked, just
+ * cheaply. Returns milliseconds between observations.
+ */
+export function pollIntervalFor(ageMs, {
+  hot = 5 * 60_000,
+  warm = 30 * 60_000,
+  cold = COLD_POLL_MS,
+} = {}) {
+  if (!Number.isFinite(ageMs) || ageMs < 0) return hot;
+  if (ageMs <= HOT_WINDOW_MS) return hot;
+  if (ageMs <= WARM_WINDOW_MS) return warm;
+  return cold;
+}
+
+/** Which tier a call is in, for reporting and for Phase 3 scheduling. */
+export function pollTierFor(ageMs) {
+  if (!Number.isFinite(ageMs) || ageMs < 0) return 'hot';
+  if (ageMs <= HOT_WINDOW_MS) return 'hot';
+  if (ageMs <= WARM_WINDOW_MS) return 'warm';
+  return 'cold';
+}
 
 /**
  * Is this scan result good enough to persist as an ENTRY?
@@ -97,9 +134,44 @@ export function multipleToPercent(mult) {
  *    more than 50x the entry is far more likely a provider glitch (wrong pair,
  *    post-migration units) than a real move inside one refresh window
  */
-export function nextPeak(call, currentMcap, { now = Date.now(), maxJumpMultiple = 50 } = {}) {
+/**
+ * How many independent confirmations an extreme observation needs before it is
+ * admitted to the trusted peak. Two: the first sighting plus one more.
+ */
+export const EXTREME_CONFIRMATIONS = 2;
+
+/**
+ * Decide whether an observation should update the stored peak.
+ *
+ * EXTREME RETURNS ARE LEGITIMATE
+ * A memecoin can genuinely do 50x, 100x, 1000x. Rejecting a large multiple
+ * outright would make the tracker wrong about the best calls, which is the
+ * opposite of its purpose. So a large jump is not discarded — it is HELD.
+ *
+ * An observation above `extremeMultiple` (default 50x entry) is parked as a
+ * candidate and only enters the trusted peak once EXTREME_CONFIRMATIONS separate
+ * observations agree within `agreementTolerance` (default 3x of each other).
+ * Until then it is reported as `pending` with the candidate value visible, so an
+ * operator can see what is awaiting confirmation rather than a silent gap.
+ *
+ * Everything below the threshold behaves as before: monotonic, and a value at or
+ * below the current peak never moves it.
+ *
+ * @returns {{
+ *   peakMarketCapUsd:number|null, peakAt:number|null, changed:boolean,
+ *   rejected?:string, pending?:boolean, candidate?:number,
+ *   confirmations?:number, required?:number, reason?:string
+ * }}
+ */
+export function nextPeak(call, currentMcap, {
+  now = Date.now(),
+  extremeMultiple = 50,
+  agreementTolerance = 3,
+  requiredConfirmations = EXTREME_CONFIRMATIONS,
+} = {}) {
   const prevPeak = Number.isFinite(call?.peakMarketCapUsd) ? call.peakMarketCapUsd : call?.entryMarketCapUsd;
   const entry = call?.entryMarketCapUsd;
+
   if (!Number.isFinite(currentMcap) || !Number.isFinite(entry)) {
     return { peakMarketCapUsd: prevPeak ?? null, peakAt: call?.peakAt ?? null, changed: false, rejected: 'no numeric market cap' };
   }
@@ -109,11 +181,51 @@ export function nextPeak(call, currentMcap, { now = Date.now(), maxJumpMultiple 
   if (currentMcap <= prevPeak) {
     return { peakMarketCapUsd: prevPeak, peakAt: call?.peakAt ?? call?.calledAt ?? now, changed: false };
   }
-  // Reliability gate: a jump this large in one observation is not a peak.
-  if (currentMcap > entry * maxJumpMultiple) {
-    return { peakMarketCapUsd: prevPeak, peakAt: call?.peakAt ?? null, changed: false, rejected: 'implausible jump vs entry' };
+
+  const multiple = currentMcap / entry;
+  if (multiple <= extremeMultiple) {
+    // Ordinary move: accept immediately.
+    return { peakMarketCapUsd: currentMcap, peakAt: now, changed: true };
   }
-  return { peakMarketCapUsd: currentMcap, peakAt: now, changed: true };
+
+  // ---- Extreme observation: verify rather than reject or trust blindly ------
+  const cand = call?.pendingPeak;
+  const sameCluster = cand
+    && Number.isFinite(cand.marketCapUsd)
+    && currentMcap <= cand.marketCapUsd * agreementTolerance
+    && currentMcap >= cand.marketCapUsd / agreementTolerance;
+
+  const confirmations = sameCluster ? (Number(cand.confirmations) || 1) + 1 : 1;
+  const clusterValue = sameCluster
+    ? Math.max(cand.marketCapUsd, currentMcap)   // keep the highest confirmed
+    : currentMcap;
+  const clusterFirstSeenAt = sameCluster ? (cand.firstSeenAt ?? now) : now;
+
+  if (confirmations >= requiredConfirmations) {
+    // Confirmed by independent observations: admit it as a real peak.
+    return {
+      peakMarketCapUsd: clusterValue,
+      peakAt: clusterFirstSeenAt,
+      changed: true,
+      confirmedExtreme: true,
+      confirmations,
+      required: requiredConfirmations,
+      multiple,
+    };
+  }
+
+  // Not yet confirmed: hold it, do not touch the trusted peak.
+  return {
+    peakMarketCapUsd: prevPeak,
+    peakAt: call?.peakAt ?? null,
+    changed: false,
+    pending: true,
+    candidate: clusterValue,
+    confirmations,
+    required: requiredConfirmations,
+    multiple,
+    reason: `extreme ${multiple.toFixed(0)}x needs ${requiredConfirmations} confirmations`,
+  };
 }
 
 /** Pool migration / identity drift check between an entry and a later scan. */

@@ -16,7 +16,7 @@
  */
 
 import { observeCall } from './call-service.mjs';
-import { MAX_PEAK_AGE_MS, callMetrics } from './calls.mjs';
+import { MAX_PEAK_AGE_MS, callMetrics, pollIntervalFor, pollTierFor } from './calls.mjs';
 import { normaliseAddress, isSynthetic } from './store.mjs';
 
 export const MILESTONES = [2, 3, 5, 10, 25, 50, 100];
@@ -45,11 +45,20 @@ export async function observePass({
   maxCalls = 8,
   perCallCooldownMs = 5 * 60_000,
   maxAgeMs = MAX_PEAK_AGE_MS,
+  force = false,
 }) {
+  // maxAgeMs defaults to Infinity: old calls stay tracked, just less often.
   const open = store.openCalls({ maxAgeMs, now }).filter((c) => !isSynthetic(c));
 
-  // Respect a per-call cooldown so a busy group cannot cause a fetch storm.
-  const due = open.filter((c) => !c.lastObservedAt || (now - c.lastObservedAt) >= perCallCooldownMs);
+  // Adaptive cadence: each call is due when its age-based interval has elapsed.
+  // A hot call polls every few minutes; a month-old call polls daily. This is the
+  // Phase 3 scheduler's cost model, expressed here so it can be tested now.
+  const due = force ? open : open.filter((c) => {
+    const age = now - c.calledAt;
+    const interval = pollIntervalFor(age);
+    const last = c.lastObservedAt ?? c.calledAt;
+    return (now - last) >= Math.max(interval, perCallCooldownMs);
+  });
 
   // One provider call per distinct token per run.
   const seen = new Set();
@@ -119,7 +128,10 @@ export async function observePass({
     }
   }
 
-  return { observed, skipped, failed, events };
+  const tiers = { hot: 0, warm: 0, cold: 0 };
+  for (const c of open) tiers[pollTierFor(now - c.calledAt)] += 1;
+
+  return { observed, skipped, failed, events, open: open.length, tiers };
 }
 
 /** Remaining open calls that this pass did not touch, for reporting. */

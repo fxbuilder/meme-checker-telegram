@@ -20,6 +20,8 @@ import { timeSince } from './calls.mjs';
 import { isSynthetic } from './store.mjs';
 import { getChain } from './chains.mjs';
 import { renderPnlPng } from './pnl-render.mjs';
+import { canChangeSettings } from './access.mjs';
+import { verifyExtremeObservation } from './extreme-verify.mjs';
 
 /** Age labels read naturally: "just now", not "just now ago". */
 function ageLabel(label) {
@@ -254,7 +256,7 @@ export async function handlePnl(ctx, deps) {
   // Refresh the observation so the card is not misleadingly stale.
   try {
     const fresh = await scan({ chain: call.chain, address: call.address });
-    const obs = await observeCall({ store, call, scanResult: fresh });
+    const obs = await observeCall({ store, call, scanResult: fresh, verifyExtreme: verifyExtremeObservation });
     if (obs.updated) call = obs.call;
   } catch (err) {
     console.warn('[pnl] refresh failed, using stored values:', err?.message ?? err);
@@ -296,11 +298,22 @@ export async function handlePnl(ctx, deps) {
  * limitation, not a silent privilege escalation).
  */
 export async function handleCallSettings(ctx, deps) {
-  const { store } = deps;
+  const { store, policy } = deps;
   if (ctx.from?.is_bot) return;
   if (!isGroupChat(ctx)) {
     await ctx.reply('ℹ️ Call settings apply to groups.');
     return;
+  }
+
+  // Reading the settings is harmless; CHANGING them is owner-only during staging.
+  const wantsChange = String(ctx.message?.text ?? '')
+    .replace(/^\/\w+(@\w+)?\s*/i, '').trim().length > 0;
+  if (wantsChange && policy) {
+    const gate = canChangeSettings(policy, { userId: ctx.from?.id });
+    if (!gate.allowed) {
+      await ctx.reply(`🔒 ${esc(gate.reason)}`, { parse_mode: 'HTML' });
+      return;
+    }
   }
 
   const args = String(ctx.message?.text ?? '').replace(/^\/\w+(@\w+)?\s*/i, '').trim().split(/\s+/).filter(Boolean);

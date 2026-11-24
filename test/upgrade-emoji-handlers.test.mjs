@@ -43,6 +43,11 @@ process.env.TELEGRAM_BOT_TOKEN = 'offline-only';
 process.env.TOKEN_PAGE_BASE_URL = '';
 process.env.PREMIUM_URL = '';
 process.env.EMOJI_THEME = '';
+// The staging allowlist is active in bot.mjs. These handler tests exercise the
+// owner path, so identify as the owner; the allowlist itself is covered by
+// test/access.test.mjs.
+process.env.OWNER_USER_IDS = '99';
+process.env.ALLOWED_CHAT_IDS = '1,50,51,60,70,99,200,300,401,402,403,404,405,406,407,408';
 globalThis.uh = {};
 
 // Solana fixture address — used where a test needs a scan to actually run,

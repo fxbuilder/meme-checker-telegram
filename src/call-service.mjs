@@ -99,7 +99,7 @@ export async function recordCall({
  * Apply a fresh observation to one call.
  * Used by /pnl (refresh) and by the periodic observer.
  */
-export async function observeCall({ store, call, scanResult, now = Date.now() }) {
+export async function observeCall({ store, call, scanResult, now = Date.now(), extremeMultiple = 50, verifyExtreme = null }) {
   if (!call) return { updated: false, reason: 'no call' };
   if (scanResult?.status !== 'ok') {
     // A failed scan is not a price of zero; record nothing.
@@ -109,7 +109,19 @@ export async function observeCall({ store, call, scanResult, now = Date.now() })
   if (!Number.isFinite(mcap)) return { updated: false, reason: 'no market cap in observation' };
 
   const migration = detectMigration(call, scanResult);
-  const peak = nextPeak(call, mcap, { now });
+
+  // Independent-evidence check for an extreme observation. A single provider
+  // reporting a 200x jump could be a wrong pair or a unit error; a second
+  // source agreeing on the same order of magnitude is what makes it real.
+  let corroboration = null;
+  if (typeof verifyExtreme === 'function') {
+    const mult = mcap / call.entryMarketCapUsd;
+    if (mult > extremeMultiple) {
+      corroboration = await verifyExtreme({ chain: call.chain, address: call.address, observedMcap: mcap }).catch(() => null);
+    }
+  }
+
+  const peak = nextPeak(call, mcap, { now, extremeMultiple, ...(corroboration?.confirm ? { requiredConfirmations: 1 } : {}) });
 
   const patch = {
     lastMarketCapUsd: mcap,
@@ -117,6 +129,21 @@ export async function observeCall({ store, call, scanResult, now = Date.now() })
     peakMarketCapUsd: peak.peakMarketCapUsd,
     peakAt: peak.peakAt,
   };
+
+  // Persist or clear the pending extreme candidate so confirmation survives a
+  // restart and cannot be re-earned by the same single reading.
+  if (peak.pending) {
+    patch.pendingPeak = {
+      marketCapUsd: peak.candidate,
+      firstSeenAt: call.pendingPeak?.firstSeenAt ?? now,
+      confirmations: peak.confirmations,
+      required: peak.required,
+      lastSeenAt: now,
+    };
+  } else if (peak.changed) {
+    patch.pendingPeak = null;
+  }
+  if (corroboration) patch.extremeCorroboration = corroboration;
   if (migration.migrated) {
     patch.notes = [call.notes, migration.liquidityCollapsed ? 'liquidity collapsed' : null,
       migration.pairChanged ? 'primary pool changed' : null].filter(Boolean).join('; ');

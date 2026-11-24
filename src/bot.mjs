@@ -18,6 +18,8 @@ import { formatCard } from './format-card.mjs';
 import { deliverCard } from './delivery.mjs';
 import { resolveTokenImage } from './media.mjs';
 import { CallStore } from './store.mjs';
+import { loadPolicy, isChatAllowed, isOwner, describePolicy } from './access.mjs';
+import { verifyExtremeObservation } from './extreme-verify.mjs';
 import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
 import {
@@ -36,6 +38,19 @@ const PREMIUM_URL  = (process.env.PREMIUM_URL ?? '').trim();
 const SCAN_MODE    = process.env.SCAN_MODE ?? 'mock';
 const EMOJI_THEME  = loadEnvTheme();
 const DEFAULT_EVM  = resolveChainAlias(process.env.DEFAULT_EVM_CHAIN ?? '') ?? DETECT_DEFAULT_EVM;
+
+/**
+ * Durable call history. Created once at startup; the file path comes from
+ * CALLS_DB_PATH so tests and future deployments can point it elsewhere.
+ */
+export const callStore = new CallStore();
+
+/**
+ * Staging access policy: which chats the bot may act in, and who may change
+ * group settings. Configured by env; refuses by default rather than acting
+ * everywhere when unset.
+ */
+export const accessPolicy = loadPolicy();
 
 /**
  * Bot-level card mode. STANDARD is the product default: information-rich and
@@ -397,6 +412,16 @@ bot.on('message', async ctx => {
   // Skip other bots (loop guard)
   if (ctx.from?.is_bot) return;
 
+  // STAGING ALLOWLIST: the bot only acts in explicitly allowed chats. Any other
+  // group is ignored completely — no scan, no reply, no call record.
+  if (!isOwner(accessPolicy, ctx.from?.id)) {
+    const gate = isChatAllowed(accessPolicy, ctx.chat?.id);
+    if (!gate.allowed) {
+      console.warn(`[bot] ignoring message: ${gate.reason}`);
+      return;
+    }
+  }
+
   const msg = ctx.message;
   const msgText = msg?.text ?? msg?.caption ?? '';
   const isPrivate = ctx.chat?.type === 'private';
@@ -541,6 +566,7 @@ function callDeps() {
   return {
     store: callStore,
     scan,
+    policy: accessPolicy,
     defaultEvmChain: DEFAULT_EVM,
     renderPng: renderPnlPng,
     sendPhoto: async (chatId, filePath, opts) => {
