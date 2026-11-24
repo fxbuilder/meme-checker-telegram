@@ -55,6 +55,10 @@ async function send(payload) {
   };
 }
 
+// Node's default test discovery includes *-test.mjs under qa too. This is a
+// manual LIVE sender, never an automated test: do not contact providers or post
+// to the owner's DM from a test worker, even when credentials are inherited.
+if (!process.env.NODE_TEST_CONTEXT) {
 clearLiveCache(); clearRiskCache(); clearDexPaidCache();
 
 const report = [];
@@ -117,4 +121,5 @@ console.log('\n===== STANDARD CARD TEXTS (for visual review) =====');
 for (const row of report.filter((x) => x.sample)) {
   console.log(`\n----- ${row.case} -----`);
   console.log(row.sample);
+}
 }
