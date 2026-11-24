@@ -472,7 +472,7 @@ test('time-since formatting', () => {
 
 // ---- Synthetic isolation -------------------------------------------------
 
-test('synthetic records are tagged and filterable from real stats', async () => {
+test('synthetic records are tagged and excluded from real stats by default', async () => {
   const { isSynthetic, SYNTHETIC_FLAG } = await import('../src/store.mjs');
   const s = tmpStore();
   await recordCall({ store: s, scanResult: okScan(), caller, chatId: CHAT, source: 'manual' });
@@ -480,7 +480,16 @@ test('synthetic records are tagged and filterable from real stats', async () => 
     chatId: CHAT, callerId: 'sim', chain: 'bsc', address: `0x${'c'.repeat(40)}`,
     entryMarketCapUsd: 1, status: 'active', source: SYNTHETIC_FLAG, calledAt: Date.now(),
   });
-  const all = s.callsForChat(CHAT, { limit: 50 });
+
+  // DEFAULT: synthetic rows are excluded. This used to filter by chatId only, so the
+  // owner's three Phase-3 test rows (symbol SIM, 6x peak) were returned as genuine
+  // calls and would have inflated /gpnl and /lb.
+  const eligible = s.callsForChat(CHAT, { limit: 50 });
+  assert.equal(eligible.length, 1, 'only the real call is eligible');
+  assert.ok(eligible.every((c) => !isSynthetic(c)));
+
+  // The raw set is still reachable, explicitly, for diagnostics.
+  const all = s.callsForChat(CHAT, { limit: 50, includeIneligible: true });
   assert.equal(all.length, 2);
   assert.equal(all.filter((c) => !isSynthetic(c)).length, 1);
 });

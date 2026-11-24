@@ -258,11 +258,24 @@ export class CallStore {
    * Calls for one group. Newest first.
    * `address` matching is chain-aware: EVM is case-insensitive, Solana is not.
    */
-  callsForChat(chatId, { limit = 20 } = {}) {
+  /**
+   * Calls for one chat.
+   *
+   * ELIGIBILITY IS FILTERED BY DEFAULT. This used to filter only by chatId, so the
+   * owner's store - which still contains three `source: 'synthetic'` rows (symbol SIM,
+   * 6x peak) from Phase 3 testing - was returned as if those were genuine calls.
+   * `/gpnl` would have reported a 6x group performance built from test rows, and `/lb`
+   * would have listed them under an "unknown" caller.
+   *
+   * Synthetic, cancelled and superseded records are therefore excluded unless the
+   * caller explicitly asks for the raw set.
+   */
+  callsForChat(chatId, { limit = 20, includeIneligible = false } = {}) {
     this.load();
     const key = String(chatId);
     return this.doc.calls
       .filter((c) => c.chatId === key)
+      .filter((c) => (includeIneligible ? true : (isActive(c) && !isSynthetic(c))))
       .sort((a, b) => b.calledAt - a.calledAt)
       .slice(0, limit);
   }
