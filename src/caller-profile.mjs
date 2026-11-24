@@ -55,9 +55,11 @@ export function aggregateCaller(calls, { period = '7d', now = Date.now(), hitThr
   const cutoff = now - p.ms;
   const inPeriod = (calls ?? []).filter((c) => Number.isFinite(c.calledAt) && c.calledAt >= cutoff);
 
+  // A call is measurable once it HAS a peak value. `peakIsObserved` is a
+  // different fact (did it rise above entry) and must not gate the statistics.
   const withPeak = inPeriod
     .map((c) => ({ call: c, m: callMetrics(c, now) }))
-    .filter((x) => Number.isFinite(x.m.peakMultiple));
+    .filter((x) => x.m.peakMeasured && Number.isFinite(x.m.peakMultiple));
 
   const peaks = withPeak.map((x) => x.m.peakMultiple).sort((a, b) => a - b);
   const hits = withPeak.filter((x) => x.m.peakMultiple >= hitThreshold);
@@ -151,7 +153,7 @@ export function renderCallerProfile({
     const sym = c.symbol ? `$${c.symbol}` : (c.name ?? 'token');
     // Current vs peak are labelled separately on purpose.
     const cur = m.currentMultiple != null ? fmtMultiple(m.currentMultiple) : '—';
-    const peak = m.peakIsObserved ? fmtMultiple(m.peakMultiple) : 'not observed';
+    const peak = m.peakMeasured ? fmtMultiple(m.peakMultiple) : 'not observed';
     lines.push(
       `• <b>${esc(clip(sym, 18))}</b> — now ${esc(cur)} · peak ${esc(peak)} · ${esc(m.ageLabel ?? '')} ago`,
     );

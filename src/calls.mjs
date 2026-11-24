@@ -326,7 +326,14 @@ export function callMetrics(call, now = Date.now()) {
     peakPercent: multipleToPercent(peakMult),
     ageMs: Number.isFinite(call?.calledAt) ? now - call.calledAt : null,
     ageLabel: timeSince(call?.calledAt, now),
-    // Peak is only "post-call" if we actually observed something after entry.
+    // Two distinct facts, kept separate so a display never contradicts a metric:
+    //   peakMeasured — we have a peak value at all (peak is seeded to entry, so this
+    //                  is true as soon as the call exists)
+    //   peakIsObserved — the token actually rose above entry at some point
+    // Statistics must use peakMeasured; narrative copy about "rose above entry"
+    // uses peakIsObserved. Conflating them produced a card that said both
+    // "peak 1.00x" and "peak not observed".
+    peakMeasured: Boolean(peak && entry),
     peakIsObserved: Boolean(peak && entry && peak > entry),
     drawdownFromPeak: (Number.isFinite(peak) && Number.isFinite(current) && peak > 0)
       ? ((current - peak) / peak) * 100

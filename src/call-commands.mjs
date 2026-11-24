@@ -12,6 +12,7 @@
  * pasted CA back into a pure scan for the rest of that message's handling.
  */
 
+import { Markup } from 'telegraf';
 import { parseChainHint, detectAll, DEFAULT_EVM_CHAIN } from './detect-ca.mjs';
 import { recordCall, observeCall, resolveCall, pnlText, CALL_STATUS } from './call-service.mjs';
 import { callMetrics, fmtMultiple, fmtSignedPercent } from './calls.mjs';
@@ -252,70 +253,65 @@ export async function handlePnl(ctx, deps) {
     return;
   }
 
-  const parsed = parseCallArgs(ctx.message?.text, defaultEvmChain);
+  // Parse the ADDRESS only. No network call, no chain detection that could reach
+  // a market provider: an unrecorded token must be answered from our own records.
+  const parsed = parseCallArgs(raw, defaultEvmChain);
+
+  // ---- RECORD-FIRST RESOLUTION -------------------------------------------
+  // The address is resolved against this group's own recorded calls BEFORE
+  // anything else happens. A 0x address that was never called must produce the
+  // no-call sentence, not a chain picker and not a scan.
   if (!parsed.address) {
     await ctx.reply('❌ That does not look like a contract address.', { parse_mode: 'HTML' });
     return;
   }
 
-  // ---- resolve against THIS group only ----------------------------------
-  let call = null;
-  let ambiguous = null;
+  const recorded = store.recordedCallsForAddress(ctx.chat.id, parsed.address);
+  // A chain hint narrows the records; it never widens the search.
+  const scoped = parsed.chainHint
+    ? recorded.filter((c) => c.chain === parsed.chainHint)
+    : recorded;
 
-  if (parsed.candidates.length > 1) {
-    // An EVM string is valid on several chains. Prefer the one this group
-    // actually recorded; if several match, ask rather than guess.
-    const hits = parsed.candidates
-      .map((c) => store.firstCall(ctx.chat.id, c.chain, c.address))
-      .filter(Boolean);
-    if (hits.length === 1) call = hits[0];
-    else if (hits.length > 1) ambiguous = hits;
-  }
-
-  if (!call && !ambiguous) {
-    // A Solana address has one possible chain; an EVM one defaults to the group
-    // default, but we check every EVM chain the group has recorded for this
-    // address before concluding there is no call.
-    const addr = parsed.address;
-    const knownChains = new Set(store.callsForChat(ctx.chat.id, { limit: 500 }).map((c) => c.chain));
-    const matches = [];
-    for (const chain of knownChains) {
-      const hit = store.firstCall(ctx.chat.id, chain, addr);
-      if (hit) matches.push(hit);
-    }
-    if (matches.length === 1) call = matches[0];
-    else if (matches.length > 1) ambiguous = matches;
-  }
-
-  if (ambiguous) {
-    const opts = ambiguous.map((c) => `${c.chain}`).join(', ');
-    await ctx.reply(
-      `⚠️ This address is recorded on more than one chain in this group (${esc(opts)}).
-` +
-      'Use <code>/pnl &lt;chain&gt; &lt;address&gt;</code> to choose.',
-      { parse_mode: 'HTML' },
-    );
-    return;
-  }
-
-  if (!call) {
-    // Exactly one clean sentence, and nothing is created.
+  if (!scoped.length) {
+    // Exactly one sentence. Nothing is created, nothing is scanned.
     await ctx.reply('No recorded call for this token in this group.');
     return;
   }
 
-  if (call.status === 'cancelled') {
-    await ctx.reply('That call was cancelled with /justscan, so there is no PnL to show.');
+  const chains = [...new Set(scoped.map((c) => c.chain))];
+
+  if (chains.length > 1) {
+    // Genuinely recorded on more than one chain: offer ONLY those chains, and
+    // carry the PnL action in the callback so choosing a chain continues /pnl
+    // rather than falling through to a scan.
+    const rows = chains.map((ch) => [
+      Markup.button.callback(getChain(ch)?.name ?? ch, `pnl:${ch}:${parsed.address}`),
+    ]);
+    rows.push([Markup.button.callback('✖️ Cancel', 'pnl:cancel')]);
+    await ctx.reply(
+      '<b>This token was called on more than one chain here.</b>\n\n' +
+      '<i>Pick the chain to show PnL for.</i>',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
+    );
     return;
   }
 
-  // ---- refresh, then one photo -------------------------------------------
-  let freshLogo = null;
+  await sendPnlFor(ctx, { call: scoped[0], store, scan, renderPng, sendPhoto, groupTitle });
+}
+
+/**
+ * Render and send the PnL card for one already-resolved call.
+ * Image only: no caption, no keyboard, no follow-up text.
+ */
+export async function sendPnlFor(ctx, { call, store, scan, renderPng, sendPhoto, groupTitle = null }) {
+  // Refresh the observation so current/peak are as fresh as the data allows. A
+  // failed refresh keeps the stored values; it never blocks the card.
+  let logoUrl = null;
   try {
     const fresh = await scan({ chain: call.chain, address: call.address });
     // Scan results are nested: identity in `token`, art in `media`. The logo is
     // only ever taken from the identity-matched pair, never re-guessed here.
-    freshLogo = fresh?.media?.logo ? { image: fresh.media.logo } : null;
+    if (fresh?.media?.logo && /^https:\/\//i.test(fresh.media.logo)) logoUrl = fresh.media.logo;
     const obs = await observeCall({
       store, call, scanResult: fresh, verifyExtreme: verifyExtremeObservation,
     });
@@ -324,35 +320,20 @@ export async function handlePnl(ctx, deps) {
     console.warn('[pnl] refresh failed, using stored values:', err?.message ?? err);
   }
 
-  // The logo must belong to THIS chain+contract. `image` on the refreshed scan is
-  // already resolved from the identity-checked pair, so it is safe to use; when
-  // the refresh failed we pass nothing rather than reusing a guessed URL.
-  let logoUrl = null;
-  try {
-    if (freshLogo?.image && /^https:\/\//i.test(freshLogo.image)) logoUrl = freshLogo.image;
-  } catch (_) { /* non-fatal */ }
-
   let png = null;
   try {
-    png = await renderPng(call, {
-      tokenName: call.name,
-      groupTitle,
-      logoUrl,
-    });
+    png = await renderPng(call, { tokenName: call.name, groupTitle, logoUrl });
   } catch (err) {
     console.warn('[pnl] render failed:', err?.message ?? err);
     png = null;
   }
 
   if (!png) {
-    // Be explicit: the image is the deliverable, so an unavailable renderer is an
-    // error to report, not something to paper over with a text card.
     await ctx.reply('⚠️ Could not generate the PnL image. Please try again shortly.');
     return;
   }
 
   try {
-    // No caption, no keyboard. Image only.
     await sendPhoto(ctx.chat.id, png, {
       reply_to_message_id: ctx.message?.message_id ?? undefined,
     });
@@ -362,12 +343,6 @@ export async function handlePnl(ctx, deps) {
   }
 }
 
-/**
- * /callsettings [autocall on|off] [minmc <usd>]
- * Per-group call-tracking settings. Admin-gated when Telegram tells us who is an
- * admin; when that is unavailable we fall back to allowing any member (documented
- * limitation, not a silent privilege escalation).
- */
 export async function handleCallSettings(ctx, deps) {
   const { store, policy } = deps;
   if (ctx.from?.is_bot) return;
@@ -453,6 +428,8 @@ export { renderPnlPng };
 
 // ---- Caller profile (Phase 2, NOT the leaderboard) -----------------------
 
+// ---- Caller profile (Phase 2, NOT the leaderboard) -----------------------
+
 /**
  * Show a caller's history within ONE group.
  *
@@ -461,9 +438,17 @@ export { renderPnlPng };
  * Phase 6 concern (documented in docs/phase2-caller-profile.md).
  */
 export async function handleCallerProfile(ctx, deps) {
-  const { store, callerKey, groupTitle, period = '7d', page = 0, policy, isOwnerCheck } = deps;
+  // `chatId` is the ORIGINATING GROUP the profile is about — never ctx.chat.id.
+  // A profile link is opened in the bot DM, so ctx.chat.id there is the owner's
+  // private chat. Querying it returned zero calls and produced an empty profile.
+  const { store, callerKey, chatId, groupTitle, period = '7d', page = 0, policy, isOwnerCheck } = deps;
   if (!callerKey) {
     await ctx.reply('No caller specified.');
+    return;
+  }
+  const scopeId = String(chatId ?? '');
+  if (!scopeId) {
+    await ctx.reply('That link is missing its group. Ask for a fresh First Call link.');
     return;
   }
   const owner = isOwnerCheck ? isOwnerCheck(ctx.from?.id) : true;
@@ -476,18 +461,23 @@ export async function handleCallerProfile(ctx, deps) {
     return;
   }
 
-  const all = store.callsForTokenAnyChain
-    ? store.callsForTokenAnyChain(ctx.chat?.id, callerKey)
-    : store.callsForChat(ctx.chat?.id, { limit: 500 }).filter((c) => c.callerKey === callerKey || c.callerId === callerKey.replace(/^u:/, ''));
+  // Records are keyed by the group, and a caller may appear under either the
+  // canonical callerKey ("u:42") or a legacy numeric callerId ("42").
+  const bare = String(callerKey).replace(/^u:/, '');
+  const all = store.callsForChat(scopeId, { limit: 1000 })
+    .filter((c) => c.callerKey === callerKey || String(c.callerId) === bare
+      || String(c.callerId) === callerKey);
 
   const visible = all.filter((c) => c.status !== 'cancelled' && !isSynthetic(c));
   const { text, page: safePage, pages } = renderCallerProfile({
     callerKey, calls: visible, groupTitle, period, page,
   });
 
-  const token = mintCallerToken(ctx.chat?.id, callerKey, period);
+  // The token is minted for the GROUP scope, so the period buttons keep working
+  // from the DM without ever touching another group's records.
+  const token = mintCallerToken(scopeId, callerKey, period);
   const keyboard = profileKeyboard({ callerToken: token, period, page: safePage, pages });
-  return { text, keyboard, callerKey, period: safePage === page ? period : period };
+  return { text, keyboard, callerKey, period, chatId: scopeId };
 }
 
 /** Resolve a start payload to { chatId, callerKey, period } for the DM profile. */

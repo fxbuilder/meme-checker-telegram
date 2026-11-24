@@ -26,7 +26,7 @@ import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
 import {
   handleCall, handleCalls, handleFirstCall, handlePnl, handleCallSettings, handleJustScan,
-  handleCallerProfile, resolveStartPayload, callerKeysInGroup,
+  handleCallerProfile, resolveStartPayload, callerKeysInGroup, sendPnlFor,
   isGroupChat,
 } from './call-commands.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
@@ -61,6 +61,39 @@ export const accessPolicy = loadPolicy();
  * Time-boxed so a stale flag cannot silently suppress a later legitimate call.
  */
 const justScanRequested = new Set();
+
+/**
+ * Context for a chain picker that is waiting for a tap.
+ *
+ * callback_data is capped at 64 bytes, and `c:<chain>:<0xaddress>` already uses
+ * ~50, so the original message context cannot travel in the button. It is stashed
+ * here instead, keyed by chat+address, and consumed when the chain is chosen.
+ *
+ * This exists so the chain choice RESUMES the original action with the ORIGINAL
+ * author: the person who taps the button is often not the person who pasted the
+ * contract, and attributing the call to the tapper would be wrong.
+ */
+const pendingScans = new Map();
+const PENDING_TTL_MS = 10 * 60_000;
+
+function stashPendingScan(autoCallBlock) {
+  const { chatId, address } = autoCallBlock;
+  const key = `${chatId}:${String(address).toLowerCase()}`;
+  pendingScans.set(key, { ...autoCallBlock, at: Date.now() });
+  // Bound the map: this is short-lived interaction state, not storage.
+  for (const [k, v] of pendingScans) {
+    if (Date.now() - v.at > PENDING_TTL_MS) pendingScans.delete(k);
+  }
+  return key;
+}
+
+function takePendingScan(chatId, address) {
+  const key = `${chatId}:${String(address).toLowerCase()}`;
+  const hit = pendingScans.get(key) ?? null;
+  if (hit) pendingScans.delete(key);
+  if (hit && Date.now() - hit.at > PENDING_TTL_MS) return null;
+  return hit;
+}
 
 /**
  * Bot-level card mode. STANDARD is the product default: information-rich and
@@ -209,6 +242,9 @@ bot.start(async ctx => {
       const out = await handleCallerProfile(ctx, {
         store: callStore,
         callerKey: hit.callerKey,
+        // The ORIGINATING GROUP, resolved from the signed payload — not ctx.chat,
+        // which here is the DM and holds no calls.
+        chatId: hit.chatId,
         groupTitle: chat?.title ?? hit.chatId,
         period: hit.period,
         policy: accessPolicy,
@@ -570,6 +606,15 @@ bot.on('message', async ctx => {
   // ---- CA auto-detection (groups and DMs) ---------------------------------
   if (!msgText) return;
 
+  // COMMANDS ARE NOT CONTRACTS.
+  // Telegraf runs `on('message')` for command messages too, and this listener is
+  // registered before several bot.command() handlers. Without this guard a command
+  // that carries an address argument — `/pnl 0x…`, `/call <CA>`, `/justscan <CA>` —
+  // is consumed here as a pasted contract and replaced with a scan or chain picker,
+  // so the real command handler never runs. Verified: an owner `/pnl 0x…` returned
+  // the chain picker and then a token card.
+  if (/^\/\w/.test(msgText.trim())) return;
+
   const det = detectAll(msgText, { defaultEvmChain: DEFAULT_EVM });
   if (!det.candidates.length) return;
 
@@ -577,7 +622,26 @@ bot.on('message', async ctx => {
   // request and shows the wrong token, so offer the chains instead of guessing.
   // The default is still one tap away and is first in the list.
   if (det.kind === 'evm' && det.ambiguous && det.hasOwnProperty('evmChains')) {
-    await sendChainPicker(ctx, det.candidates[0].address);
+    // Carry the original author and message through the picker so the eventual
+    // call is attributed to whoever pasted the contract, not whoever tapped.
+    let pending = null;
+    if (isGroupChat(ctx)) {
+      try {
+        const settings = callStore.groupSettings(ctx.chat.id, { title: ctx.chat.title ?? null });
+        if (settings.autoCall === 'auto' && !justScanRequested.has(String(ctx.chat.id))) {
+          const identity = resolveCaller(ctx.message, ctx.chat);
+          if (isAttributable(identity)) {
+            pending = {
+              identity,
+              messageId: ctx.message?.message_id ?? null,
+              messageDate: ctx.message?.date ?? null,
+              autoCall: true,
+            };
+          }
+        }
+      } catch (_) { /* picker still works without call recording */ }
+    }
+    await sendChainPicker(ctx, det.candidates[0].address, pending);
     return;
   }
 
@@ -752,6 +816,8 @@ bot.command('profile', async ctx => {
   const out = await handleCallerProfile(ctx, {
     store: callStore,
     callerKey,
+    // Inside a group, ctx.chat.id IS the group; make that explicit.
+    chatId: ctx.chat.id,
     groupTitle: callStore.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? 'this group',
     period: '7d',
     policy: accessPolicy,
@@ -777,18 +843,16 @@ bot.action(/^c[pg]:cp_[A-Za-z0-9_-]+/, async ctx => {
     await ctx.answerCbQuery('Link expired');
     return;
   }
-  const out = await handleCallerProfile(
-    { ...ctx, chat: { id: resolved.chatId, title: callStore.doc.groups?.[resolved.chatId]?.title ?? '' } },
-    {
-      store: callStore,
-      callerKey: resolved.callerKey,
-      groupTitle: callStore.doc.groups?.[resolved.chatId]?.title ?? resolved.chatId,
-      period: period ?? resolved.period,
-      page: Number(pageRaw ?? 0) || 0,
-      policy: accessPolicy,
-      isOwnerCheck: (id) => isOwner(accessPolicy, id),
-    },
-  );
+  const out = await handleCallerProfile(ctx, {
+    store: callStore,
+    callerKey: resolved.callerKey,
+    chatId: resolved.chatId,
+    groupTitle: callStore.doc.groups?.[resolved.chatId]?.title ?? resolved.chatId,
+    period: period ?? resolved.period,
+    page: Number(pageRaw ?? 0) || 0,
+    policy: accessPolicy,
+    isOwnerCheck: (id) => isOwner(accessPolicy, id),
+  });
   await ctx.answerCbQuery();
   if (out) {
     await ctx.editMessageText(out.text, {
@@ -796,6 +860,58 @@ bot.action(/^c[pg]:cp_[A-Za-z0-9_-]+/, async ctx => {
       reply_markup: { inline_keyboard: out.keyboard },
     });
   }
+});
+
+/**
+ * /pnl chain disambiguation.
+ *
+ * When a contract is genuinely recorded on more than one chain, the picker from
+ * handlePnl carries `pnl:<chain>:<address>`. This handler CONTINUES the PnL
+ * action — it must never fall through to a token scan, which is what the generic
+ * `c:<chain>:<address>` callback does.
+ */
+bot.action(/^pnl:(.+)$/, async ctx => {
+  const data = ctx.match[1];
+  if (data === 'cancel') {
+    await ctx.answerCbQuery('Cancelled');
+    await ctx.deleteMessage().catch(() => {});
+    return;
+  }
+  const sep = data.indexOf(':');
+  const chain = data.slice(0, sep);
+  const address = data.slice(sep + 1);
+  if (!chain || !address) {
+    await ctx.answerCbQuery('Bad request');
+    return;
+  }
+
+  if (!isGroupChat(ctx)) {
+    await ctx.answerCbQuery('Run /pnl in the group');
+    return;
+  }
+
+  const call = callStore.firstCall(ctx.chat.id, chain, address);
+  if (!call) {
+    // The record vanished (cancelled between taps). Answer honestly, scan nothing.
+    await ctx.answerCbQuery();
+    await ctx.deleteMessage().catch(() => {});
+    await ctx.reply('No recorded call for this token in this group.');
+    return;
+  }
+
+  await ctx.answerCbQuery('Rendering…');
+  await ctx.deleteMessage().catch(() => {});
+
+  const deps = callDeps();
+  deps.sendPhoto = async (chatId, filePath, opts) => {
+    try {
+      return await ctx.telegram.sendPhoto(chatId, { source: filePath }, opts);
+    } finally {
+      cleanupPng(filePath);
+    }
+  };
+  deps.groupTitle = callStore.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? null;
+  await sendPnlFor(ctx, { call, ...deps });
 });
 
 bot.command('pnl', async ctx => {
@@ -817,7 +933,7 @@ bot.command('pnl', async ctx => {
  * Ask which chain a bare 0x… address belongs to.
  * Callback data stays well under Telegram's 64-byte limit: "c:<chain>:<addr>".
  */
-async function sendChainPicker(ctx, address) {
+async function sendChainPicker(ctx, address, pending = null) {
   const chains = Object.values(CHAINS).filter((c) => c.kind === 'evm' && c.market);
   // 2 per row keeps labels readable on mobile.
   const rows = [];
@@ -828,6 +944,7 @@ async function sendChainPicker(ctx, address) {
     }));
   }
   rows.push([Markup.button.callback('✖️ Cancel', 'c:cancel')]);
+  if (pending) stashPendingScan({ ...pending, chatId: ctx.chat.id, address });
 
   await ctx.reply(
     `<b>Which chain is this address on?</b>\n\n<code>${escHtml(address)}</code>\n\n` +
@@ -857,9 +974,32 @@ bot.action(/^c:(.+)$/, async ctx => {
     await ctx.answerCbQuery('Unknown chain');
     return;
   }
+  // Resume the ORIGINAL message's intent, if one was stashed for this address.
+  const pending = isGroupChat(ctx) ? takePendingScan(ctx.chat.id, address) : null;
+
   await ctx.answerCbQuery(`Scanning ${def.name}…`);
   // Remove the picker so the chat is not left with a dead keyboard.
   await ctx.deleteMessage().catch(() => {});
+
+  if (pending?.autoCall && isAttributable(pending.identity)) {
+    // Record against the ORIGINAL author and message — the tapper only chose a
+    // chain, so crediting them would misattribute the call.
+    try {
+      const result = await scan({ chain, address: address.toLowerCase() });
+      await recordCall({
+        store: callStore,
+        scanResult: result,
+        caller: pending.identity,
+        chatId: ctx.chat.id,
+        source: 'auto',
+        messageId: pending.messageId,
+        messageDate: pending.messageDate,
+      });
+    } catch (err) {
+      console.warn('[bot] auto-call after chain pick failed (scan continues):', err?.message ?? err);
+    }
+  }
+
   await runScan(ctx, chain, address.toLowerCase());
 });
 
@@ -882,7 +1022,32 @@ bot.catch((err, ctx) => {
   ctx?.reply?.('⚠️ An unexpected error occurred. Please try again.').catch(() => {});
 });
 
+// ---- Exports for tests ------------------------------------------------------
+// The handler graph is exported so regression tests can drive the REAL routing
+// (middleware order included) with a fake context instead of calling renderers in
+// isolation, which is what let two routing bugs reach the owner.
+export { bot };
+export const internals = {
+  pendingScans, takePendingScan, stashPendingScan, justScanRequested,
+  detectAll, runScan, sendChainPicker,
+};
+
 // ---- Launch ----------------------------------------------------------------
+
+/**
+ * Importing this module must not start polling.
+ *
+ * Without this guard, `node -e "await import('./src/bot.mjs')"` (or any test that
+ * imports the handler graph) launches a second poller and Telegram terminates the
+ * running instance with 409 Conflict. That is exactly what happened once during
+ * development. Set BOT_NO_LAUNCH=1 to import the handlers without side effects.
+ */
+const SHOULD_LAUNCH = process.env.BOT_NO_LAUNCH !== '1'
+  && process.env.NODE_ENV !== 'test';
+
+if (!SHOULD_LAUNCH) {
+  console.log('[bot] BOT_NO_LAUNCH set — handlers registered, polling NOT started.');
+}
 
 console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
 // Startup order (all before polling begins):
@@ -890,7 +1055,7 @@ console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
 //  2) setMyCommands → command menu live from the first update (not after polling stops)
 //  3) launch() → Telegraf v4 launch() resolves on stop, so it stays last
 // /upgrade is always registered; PREMIUM_URL only controls the card button, not the command.
-Promise.resolve(bot.telegram?.getMe?.())
+if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
   .then(async me => {
     BOT_USERNAME = me?.username ?? '';
     const who = BOT_USERNAME ? `@${BOT_USERNAME}` : 'Telegram';

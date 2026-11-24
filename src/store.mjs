@@ -191,14 +191,47 @@ export class CallStore {
       .slice(0, limit);
   }
 
+  /**
+   * Real, non-cancelled calls recorded for ONE address in ONE group, across
+   * chains. Used to resolve `/pnl <address>` from our own records BEFORE any
+   * chain detection, so an unrecorded address never reaches a market provider or
+   * a chain picker. Synthetic records are excluded: a simulated call must never
+   * be reachable as a PnL card.
+   */
+  recordedCallsForAddress(chatId, address) {
+    this.load();
+    const key = String(chatId);
+    const addr = String(address ?? '').trim();
+    if (!addr) return [];
+    // EVM addresses are case-insensitive; Solana base58 is not. Match on the
+    // normalised form for the chain the record was written with.
+    return this.doc.calls.filter((c) => {
+      if (c.chatId !== key) return false;
+      if (c.status === 'cancelled') return false;
+      if (isSynthetic(c)) return false;
+      return normaliseAddress(c.chain, c.address) === normaliseAddress(c.chain, addr);
+    }).sort((a, b) => b.calledAt - a.calledAt);
+  }
+
+  /** Distinct chains among the recorded calls for one address in one group. */
+  recordedChainsForAddress(chatId, address) {
+    return [...new Set(this.recordedCallsForAddress(chatId, address).map((c) => c.chain))];
+  }
+
   /** The call that owns first-caller attribution for (chat, chain, address). */
   firstCall(chatId, chain, address) {
     this.load();
     const key = String(chatId);
     const norm = normaliseAddress(chain, address);
-    return this.doc.calls.find(
-      (c) => c.chatId === key && c.chain === chain && normaliseAddress(chain, c.address) === norm,
-    ) ?? null;
+    // Attribution must come from a live, real record. A cancelled call was
+    // withdrawn by the caller, and a synthetic one was never a real call, so
+    // neither may own attribution.
+    return this.doc.calls
+      .filter((c) => c.chatId === key && c.chain === chain
+        && normaliseAddress(chain, c.address) === norm
+        && c.status !== 'cancelled'
+        && !isSynthetic(c))
+      .sort((a, b) => a.calledAt - b.calledAt)[0] ?? null;
   }
 
   /** All calls for one (chat, chain, address), newest first. */
@@ -230,6 +263,12 @@ export class CallStore {
     return this.callsForToken(chatId, chain, address)
       .find((c) => {
         if (!(c.calledAt > cutoff)) return false;
+        // A synthetic record must never suppress a genuine call: a simulated
+        // acceptance run would otherwise block the real member from being
+        // recorded for the rest of the dedup window.
+        if (isSynthetic(c)) return false;
+        // A cancelled call was withdrawn, so it must not block a fresh one.
+        if (c.status === 'cancelled') return false;
         const keys = [c.callerKey, c.callerId].filter(Boolean).map(String);
         return keys.includes(want) || keys.includes(wantBare);
       }) ?? null;
