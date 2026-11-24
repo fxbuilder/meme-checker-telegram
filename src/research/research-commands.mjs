@@ -123,14 +123,39 @@ export function renderNarrative({ target, research, chainName }) {
 
   const n = research.narrative;
   if (!n.available) {
+    // A token with no published prose is not necessarily a token with nothing to
+    // say. Verified on-chain facts and project links are still evidence, and showing
+    // them beats a bare "unavailable" - especially for a fresh launch, where the
+    // contract facts are often all that exists.
+    const hasFacts = (n.claims?.length ?? 0) > 0;
     const why = n.reason === 'not-found' || n.reason === 'empty-description' || n.reason === 'no-published-description'
-      ? 'No published project description exists for this contract, so there is nothing evidence-based to summarise.'
+      ? 'No published project description exists for this contract.'
       : n.reason === 'unsupported-chain'
-        ? `No verified narrative source is available for ${esc(chainName)}.`
+        ? `No verified narrative source covers ${esc(chainName)} yet.`
         : n.reason === 'rate-limited'
           ? 'The description provider is rate-limiting right now. Try again shortly.'
-          : 'The description provider could not be reached, so the narrative is unavailable right now.';
-    L.push(`<i>${why}</i>`);
+          : 'The description provider could not be reached right now.';
+
+    if (!hasFacts) {
+      L.push(`<i>${why} Nothing evidence-based can be summarised.</i>`);
+      return L.join('\n');
+    }
+
+    // State the absence plainly, then give the verified substitute.
+    L.push(`<i>${why} Showing verified contract facts instead.</i>`);
+    L.push('');
+    L.push('<b>Verified facts</b>');
+    for (const c of n.claims.slice(0, 5)) L.push(`• ${esc(c.text)} <i>(${esc(c.source)})</i>`);
+
+    const l = n.links ?? {};
+    const rows = [];
+    if (l.website) rows.push(`<a href="${esc(l.website)}">Website</a>`);
+    if (l.twitter) rows.push(`<a href="${esc(l.twitter)}">X</a>`);
+    if (l.telegram) rows.push(`<a href="${esc(l.telegram)}">Telegram</a>`);
+    if (rows.length) {
+      L.push('');
+      L.push(rows.join(' · '));
+    }
     return L.join('\n');
   }
 

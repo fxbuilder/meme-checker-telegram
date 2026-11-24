@@ -27,6 +27,7 @@
  */
 
 import { buildNarrative, firstUsefulParagraph, sanitiseText, MAX_DESCRIPTION_CHARS } from './narrative-source.mjs';
+import { mintFacts } from './onchain-metadata.mjs';
 
 /** Known launchpads, recognised from pair/dex identity rather than guessed. */
 const LAUNCHPAD_HINTS = [
@@ -123,7 +124,9 @@ export function detectLaunchpad(result) {
 export function chooseSummary(candidates) {
   const usable = candidates.filter((c) => c && c.text && !isBoilerplate(c.text));
   if (!usable.length) return null;
-  const rank = { coingecko: 0, website: 1, market: 2 };
+  // GeckoTerminal first: broadest coverage, and the most current for new tokens.
+  // CoinGecko is now SUPPLEMENTARY, not the backbone.
+  const rank = { geckoterminal: 0, metaplex: 1, coingecko: 2, website: 3, market: 4 };
   return usable.sort((a, b) => (rank[a.source] ?? 9) - (rank[b.source] ?? 9))[0];
 }
 
@@ -136,10 +139,41 @@ export function chooseSummary(candidates) {
  * @param {string|null} args.websiteText  extracted prose from the official site
  * @returns {{available:boolean, summary?:string, summaryClass?:string, summarySource?:string, claims?:Array, launchpad?:object, reason?:string}}
  */
-export function composeNarrative({ result, profile = null, websiteText = null } = {}) {
+export function composeNarrative({
+  result,
+  profile = null,
+  websiteText = null,
+  /** GeckoTerminal token info — the PRIMARY source across 15/16 chains. */
+  gtToken = null,
+  /** Verified on-chain mint facts (Solana). */
+  mint = null,
+  /** Metaplex off-chain JSON, when reachable. */
+  metaplex = null,
+} = {}) {
   const candidates = [];
 
-  if (profile?.description) {
+  // PRIMARY: GeckoTerminal's description. It is the project's own prose, so it is a
+  // claim - but it covers chains and freshly launched tokens CoinGecko does not list.
+  if (gtToken?.description) {
+    candidates.push({
+      text: gtToken.description,
+      source: 'geckoterminal',
+      evidence: 'project-claim',
+      label: 'Project description (GeckoTerminal)',
+    });
+  }
+
+  // Metaplex on-chain JSON is also the project describing itself.
+  if (metaplex?.description && !gtToken?.description) {
+    candidates.push({
+      text: metaplex.description,
+      source: 'metaplex',
+      evidence: 'project-claim',
+      label: 'Project description (token metadata)',
+    });
+  }
+
+  if (profile?.description && !gtToken?.description) {
     candidates.push({ text: profile.description, source: 'coingecko', evidence: 'project-claim', label: 'Project description (CoinGecko)' });
   }
 
@@ -182,6 +216,18 @@ export function composeNarrative({ result, profile = null, websiteText = null } 
     });
   }
 
+  // Verified on-chain facts. These hold even when nothing off-chain describes the
+  // token, which is exactly the fresh-launch case.
+  for (const f of mintFacts(mint)) claims.push(f);
+
+  // Links are evidence too, and the only ones we can ground.
+  const links = {
+    website: gtToken?.website ?? metaplex?.website ?? result?.project?.website ?? null,
+    twitter: gtToken?.twitter ?? metaplex?.twitter ?? null,
+    telegram: gtToken?.telegram ?? metaplex?.telegram ?? null,
+  };
+  const hasAnyLink = Object.values(links).some(Boolean);
+
   if (!chosen) {
     return {
       available: false,
@@ -189,6 +235,11 @@ export function composeNarrative({ result, profile = null, websiteText = null } 
       reason: 'no-published-description',
       launchpad,
       claims,
+      links,
+      // A token with no prose but verified on-chain facts is not "unknown" - the
+      // card should say what it can support rather than nothing.
+      hasVerifiedFacts: claims.some((c) => c.class === 'verified'),
+      hasLinks: hasAnyLink,
     };
   }
 
@@ -199,6 +250,9 @@ export function composeNarrative({ result, profile = null, websiteText = null } 
     summarySource: chosen.label,
     claims,
     launchpad,
+    links,
+    hasVerifiedFacts: claims.some((c) => c.class === 'verified'),
+    hasLinks: hasAnyLink,
     // How many independent sources produced usable evidence, for the UI to state.
     sourcesUsed: [...new Set(candidates.filter((c) => c.text).map((c) => c.source))],
   };

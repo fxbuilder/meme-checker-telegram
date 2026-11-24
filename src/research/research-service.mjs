@@ -15,6 +15,8 @@
 import { getChain } from '../chains.mjs';
 import { fetchContractProfile, buildNarrative } from './narrative-source.mjs';
 import { composeNarrative, htmlToText, isBoilerplate } from './narrative-pipeline.mjs';
+import { fetchTokenInfo, gtSupportsChain } from './geckoterminal.mjs';
+import { readSolanaMint } from './onchain-metadata.mjs';
 import { fetchWebsiteText } from './website-fetch.mjs';
 import {
   searchTokenPosts, summariseKols, xDiscoveryStatus, coverageNote,
@@ -70,23 +72,57 @@ export async function researchToken({
   if (!chain || !address) return out;
 
   // ---- narrative (keyless) ------------------------------------------------
-  const profKey = cacheKey('cg-profile', chain, address);
-  const before = cache.stats();
-  const prof = await cache.cached(profKey, TTL_MS.description, () => fetchContractProfile(chain, address, { fetchImpl }));
-  out.fromCache = cache.stats().misses === before.misses;
+  // PRIMARY: GeckoTerminal. It covers 15 of our 16 chains and describes newly
+  // launched tokens that CoinGecko has not listed, which is the whole point of a
+  // memecoin scanner's narrative. CoinGecko is kept as a SUPPLEMENTARY source.
+  const gtKey = cacheKey('gt-info', chain, address);
+  const gtBefore = cache.stats();
+  const gt = gtSupportsChain(chain)
+    ? await cache.cached(gtKey, TTL_MS.description, () => fetchTokenInfo(chain, address, { fetchImpl }))
+    : { status: 'unsupported-chain' };
+  const gtFromCache = cache.stats().misses === gtBefore.misses;
+  if (!gtFromCache) out.requests += 1;
 
-  if (!out.fromCache) out.requests += 1;
+  // SUPPLEMENTARY: CoinGecko, only when GeckoTerminal did not already describe it.
+  // Skipping it is not just cheaper - it avoids a second paid-adjacent dependency on
+  // the critical path for the common case.
+  let prof = null;
+  let profFromCache = true;
+  if (!(gt?.status === 'ok' && gt.token?.description)) {
+    const profKey = cacheKey('cg-profile', chain, address);
+    const before = cache.stats();
+    prof = await cache.cached(profKey, TTL_MS.description, () => fetchContractProfile(chain, address, { fetchImpl }));
+    profFromCache = cache.stats().misses === before.misses;
+    if (!profFromCache) out.requests += 1;
+  } else {
+    // Still learn the CoinGecko id when available, without a request.
+    prof = { status: 'skipped', detail: 'geckoterminal described this token' };
+  }
+  out.fromCache = gtFromCache && profFromCache;
 
-  // A chain with no CoinGecko slug AND no website to read has no prose source at
-  // all. Say that plainly instead of the generic "no description" state, because the
-  // two mean different things: one is a coverage gap, the other is an empty project.
+  // Verified on-chain facts. Solana only, and only when nothing off-chain described
+  // the token - otherwise the mint read is an extra request for no benefit.
+  let mint = null;
+  if (chain === 'solana' && !(gt?.status === 'ok' && gt.token?.description)) {
+    const mKey = cacheKey('sol-mint', chain, address);
+    const mBefore = cache.stats();
+    const mRes = await cache.cached(mKey, TTL_MS.description, () => readSolanaMint(address, { fetchImpl }));
+    if (cache.stats().misses !== mBefore.misses) out.requests += 1;
+    if (mRes?.status === 'ok') mint = mRes.mint;
+  }
+
+  // A chain with no metadata source at all AND no website to read has no prose
+  // source. Say that plainly rather than the generic state: one is a coverage gap,
+  // the other is an empty project.
   const hasWebsiteFromScan = Boolean(scanResult?.project?.website);
-  if (prof?.status === 'unsupported-chain' && !hasWebsiteFromScan) {
+  const gtMissing = !gtSupportsChain(chain);
+  if (gtMissing && prof?.status === 'unsupported-chain' && !hasWebsiteFromScan && !mint) {
     out.narrative = {
       available: false,
       reason: 'unsupported-chain',
-      detail: prof.detail ?? null,
+      detail: 'No narrative source covers this chain yet.',
       claimable: false,
+      coverage: { primary: null, geckoterminal: false },
     };
     return out;
   }
@@ -96,7 +132,8 @@ export async function researchToken({
   // the website fetch entirely. For a fresh memecoin with no listing, the website is
   // usually the only prose that exists, so it is worth one bounded request.
   let websiteText = null;
-  const websiteUrl = scanResult?.project?.website
+  const websiteUrl = gt?.status === 'ok' ? (gt.token?.website ?? null) : null
+    ?? scanResult?.project?.website
     ?? (prof?.status === 'ok' ? prof.data?.homepage : null)
     ?? null;
 
@@ -126,6 +163,8 @@ export async function researchToken({
       : { token: { chain, address, symbol, name } },
     profile: prof?.status === 'ok' ? prof.data : null,
     websiteText,
+    gtToken: gt?.status === 'ok' ? gt.token : null,
+    mint,
   });
 
   out.narrative = {
@@ -135,8 +174,14 @@ export async function researchToken({
     chainName: getChain(chain)?.name ?? chain,
     // Provider status is kept separately so the UI can distinguish "no description
     // was published" from "the provider failed".
-    providerStatus: prof?.status ?? 'provider-error',
-    providerDetail: prof?.detail ?? null,
+    providerStatus: gt?.status === 'ok' ? 'ok' : (prof?.status ?? 'provider-error'),
+    providerDetail: gt?.detail ?? prof?.detail ?? null,
+    // Which providers were consulted, so the UI can be precise about coverage.
+    coverage: {
+      geckoterminal: gt?.status ?? 'not-consulted',
+      coingecko: prof?.status ?? 'not-consulted',
+      onchain: mint ? 'ok' : (chain === 'solana' ? 'not-read' : 'unsupported-chain'),
+    },
   };
 
   // Keep the CoinGecko-declared links available for the X section's project handle.
