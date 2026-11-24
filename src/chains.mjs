@@ -67,23 +67,24 @@ export const CHAINS = {
   },
   monad: {
     id: 'monad', name: 'Monad', short: 'MON', kind: 'evm', ds: 'monad',
-    market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '🟪',
+    // GoPlus id verified live (GET /api/v1/supported_chains).
+    market: true, goplus: 'evm', goplusId: '143', dexPaid: false, emoji: '🟪',
   },
   robinhood: {
     id: 'robinhood', name: 'Robinhood Chain', short: 'RH', kind: 'evm', ds: 'robinhood',
-    market: true, goplus: null, goplusId: null, dexPaid: true, emoji: '🟩',
+    market: true, goplus: 'evm', goplusId: '4663', dexPaid: true, emoji: '🟩',
   },
   unichain: {
     id: 'unichain', name: 'Unichain', short: 'UNI', kind: 'evm', ds: 'unichain',
-    market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '🦄',
+    market: true, goplus: 'evm', goplusId: '130', dexPaid: false, emoji: '🦄',
   },
   berachain: {
     id: 'berachain', name: 'Berachain', short: 'BERA', kind: 'evm', ds: 'berachain',
-    market: true, goplus: null, goplusId: null, dexPaid: true, emoji: '🐻',
+    market: true, goplus: 'evm', goplusId: '80094', dexPaid: true, emoji: '🐻',
   },
   abstract: {
     id: 'abstract', name: 'Abstract', short: 'ABS', kind: 'evm', ds: 'abstract',
-    market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '⬜',
+    market: true, goplus: 'evm', goplusId: '2741', dexPaid: false, emoji: '⬜',
   },
   megaeth: {
     id: 'megaeth', name: 'MegaETH', short: 'MEGA', kind: 'evm', ds: 'megaeth',

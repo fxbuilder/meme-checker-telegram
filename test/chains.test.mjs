@@ -42,13 +42,24 @@ test('every scannable chain has a DexScreener slug and an address kind', () => {
   }
 });
 
-test('GoPlus coverage is exactly the 8 EVM chains + Solana that were verified', () => {
+test('GoPlus coverage matches the live supported-chains list', () => {
+  // Verified against GET /api/v1/supported_chains (46 chains). Monad, Robinhood,
+  // Unichain, Berachain and Abstract were previously marked null in this registry,
+  // which made their security fields render "n/a" and made the chains look unsupported.
   const withGoplus = ALL_CHAIN_IDS.filter((id) => CHAINS[id].goplus);
-  assert.deepEqual(withGoplus.sort(),
-    ['arbitrum', 'avalanche', 'base', 'bsc', 'ethereum', 'optimism', 'polygon', 'solana'].sort());
+  assert.deepEqual(withGoplus.sort(), [
+    'abstract', 'arbitrum', 'avalanche', 'base', 'berachain', 'bsc',
+    'ethereum', 'monad', 'optimism', 'polygon', 'robinhood', 'solana', 'unichain',
+  ].sort());
+
   // Every goplus:'evm' chain must carry a chain id.
   for (const id of ALL_CHAIN_IDS) {
     if (CHAINS[id].goplus === 'evm') assert.ok(CHAINS[id].goplusId, `${id} needs goplusId`);
+  }
+
+  // These are genuinely absent from GoPlus and must stay null rather than guessed.
+  for (const id of ['hyperevm', 'megaeth', 'story']) {
+    assert.equal(CHAINS[id].goplus, null, `${id} has no GoPlus coverage`);
   }
 });
 
