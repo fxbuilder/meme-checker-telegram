@@ -87,7 +87,31 @@ const FOOTER = '⚡️ <i>Powered by MEME CHECKER</i>';
  * Every figure comes from stored values: entry market cap is the original call
  * entry, current is the validated observation that triggered this.
  */
-export function renderMilestoneAlert({ call, milestone, currentMarketCapUsd, groupTitle = null, now = Date.now() }) {
+/**
+ * Render the caller name, linked to their group-scoped Caller Profile when a signed
+ * token is available.
+ *
+ * WHY A DEEP LINK AND NOT JUST A NAME. Every alert already names who called the token;
+ * making that name actionable is the difference between an attribution and a path to
+ * the caller's record. The link reuses the existing signed payload (chat + caller +
+ * period), so it cannot be forged into another group's profile and opens on the 1D
+ * default like every other First Caller link.
+ *
+ * A missing token degrades to a plain bold name rather than a dead link.
+ */
+function callerHtml(call, { botUsername = '', callerToken = null, maxLen = 24 } = {}) {
+  const label = esc(clip(callerLabel(call), maxLen));
+  if (callerToken && botUsername) {
+    const url = `https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(callerToken)}`;
+    return `<a href="${esc(url)}">${label}</a>`;
+  }
+  return `<b>${label}</b>`;
+}
+
+export function renderMilestoneAlert({
+  call, milestone, currentMarketCapUsd, groupTitle = null, now = Date.now(),
+  botUsername = '', callerToken = null,
+}) {
   const entry = call.entryMarketCapUsd;
   const multiple = entry > 0 ? currentMarketCapUsd / entry : null;
   const L = [];
@@ -98,9 +122,8 @@ export function renderMilestoneAlert({ call, milestone, currentMarketCapUsd, gro
   L.push(`Current MC: <b>${esc(fmtUsd(currentMarketCapUsd) ?? '—')}</b>`);
   if (multiple != null) L.push(`Return: <b>${multiple.toFixed(2)}x</b>`);
   L.push('');
-  const who = callerLabel(call);
   const age = timeAgo(call.calledAt, now);
-  L.push(`Called by <b>${esc(clip(who, 24))}</b>${age ? ` · ${esc(age)}` : ''}`);
+  L.push(`Called by ${callerHtml(call, { botUsername, callerToken })}${age ? ` · ${esc(age)}` : ''}`);
   if (groupTitle) L.push(`<i>${esc(clip(groupTitle, 32))}</i>`);
   L.push('');
   L.push(FOOTER);
@@ -124,13 +147,13 @@ const DEX_PAID_HEADLINE = {
  * A token that was already paid when first observed records that state silently —
  * announcing it would claim a payment that may have happened before the call.
  */
-export function renderDexPaidAlert({ call, status, detail = null, now = Date.now() }) {
+export function renderDexPaidAlert({ call, status, detail = null, now = Date.now(), botUsername = '', callerToken = null }) {
   const headline = DEX_PAID_HEADLINE[status] ?? '🔔 <b>DEX PAID UPDATE</b>';
   const L = [headline, ''];
   L.push(`${esc(clip(tokenLabel(call), 24))} on ${esc(getChain(call.chain)?.name ?? call.chain)}`);
   if (detail) L.push(`<i>${esc(clip(detail, 90))}</i>`);
   L.push('');
-  L.push(`Called by <b>${esc(clip(callerLabel(call), 24))}</b>`);
+  L.push(`Called by ${callerHtml(call, { botUsername, callerToken })}`);
   L.push('');
   L.push(FOOTER);
   return L.join('\n');
@@ -145,7 +168,7 @@ export function renderDexPaidAlert({ call, status, detail = null, now = Date.now
  * line names the evidence, so a reader can tell a verified migration from a
  * heuristic guess.
  */
-export function renderMigrationAlert({ call, evidence, now = Date.now() }) {
+export function renderMigrationAlert({ call, evidence, now = Date.now(), botUsername = '', callerToken = null }) {
   const L = [];
   L.push(`🔄 <b>${esc(clip(tokenLabel(call), 24))} MIGRATED</b>`);
   L.push('');
@@ -154,7 +177,7 @@ export function renderMigrationAlert({ call, evidence, now = Date.now() }) {
   if (evidence?.note) L.push(`<i>${esc(clip(evidence.note, 90))}</i>`);
   L.push('');
   L.push(`Entry MC: <b>${esc(fmtUsd(call.entryMarketCapUsd) ?? '—')}</b>`);
-  L.push(`Called by <b>${esc(clip(callerLabel(call), 24))}</b>`);
+  L.push(`Called by ${callerHtml(call, { botUsername, callerToken })}`);
   L.push('');
   L.push(FOOTER);
   return L.join('\n');
@@ -168,7 +191,10 @@ export function renderMigrationAlert({ call, evidence, now = Date.now() }) {
  * Deliberately factual: it reports a measured move, not a cause. Calling an
  * ordinary sell-off a rug or manipulation is a claim we cannot support.
  */
-export function renderMovementAlert({ call, kind, changePercent, windowLabel, currentMarketCapUsd, peakMarketCapUsd = null, now = Date.now() }) {
+export function renderMovementAlert({
+  call, kind, changePercent, windowLabel, currentMarketCapUsd, peakMarketCapUsd = null, now = Date.now(),
+  botUsername = '', callerToken = null,
+}) {
   const icon = kind === 'pump' ? '📈' : kind === 'dump' ? '📉' : '🔻';
   const verb = kind === 'pump' ? 'UP' : kind === 'dump' ? 'DOWN' : 'OFF PEAK';
   const L = [];
@@ -185,7 +211,7 @@ export function renderMovementAlert({ call, kind, changePercent, windowLabel, cu
     L.push(`Current MC: <b>${esc(fmtUsd(currentMarketCapUsd) ?? '—')}</b>`);
   }
   L.push('');
-  L.push(`Called by <b>${esc(clip(callerLabel(call), 24))}</b>`);
+  L.push(`Called by ${callerHtml(call, { botUsername, callerToken })}`);
   L.push('');
   L.push('<i>Measured price movement, not trading advice.</i>');
   L.push(FOOTER);

@@ -174,7 +174,11 @@ test('card First Call text and signed token come from active group record only',
   const scan = scanFor(1);
   const first = callStore.firstCall(GROUP, 'bsc', scan.token.address);
   const token = mintCallerToken(GROUP, first.callerKey, '7d');
-  const card = formatCard(scan, { view: 'standard', firstCall: first, callerToken: token, botUsername: 'RuntimeAuditBot' });
+  // The First Call LABEL belongs to the card that records the call.
+  const card = formatCard(scan, {
+    view: 'standard', firstCall: first, callerToken: token, botUsername: 'RuntimeAuditBot',
+    isFirstCallCard: true,
+  });
   const line = card.text.split('\n').find((s) => s.includes('First Call'));
   assert.match(line, /First Call.*Runtime Caller.*\$100\.00K/);
   const payload = /start=([^"&]+)/.exec(line)[1];
@@ -190,6 +194,9 @@ test('card First Call text and signed token come from active group record only',
   }
   assert.doesNotMatch(formatCard(scan, { view: 'standard' }).text, /First Call/);
   // Also drive the registered message middleware, not just formatCard.
+  // A later /check of an already-tracked token shows live performance, not the label.
   await bot.handleUpdate(textUpdate(`/check bsc ${records[0].address}`));
-  assert.match(texts().join('\n'), /First Call.*Runtime Caller/);
+  const card2 = texts().join('\n');
+  assert.doesNotMatch(card2, /First Call/, 'a repeat scan must not re-announce attribution');
+  assert.match(card2, /Runtime Caller/, 'the caller still appears, on the performance line');
 });

@@ -377,6 +377,85 @@ export function renderFirstCallLine(firstCall, e = (x) => x, { botUsername = '',
   return `${e('🔥')} First Call ${nameHtml}${at}`;
 }
 
+/**
+ * Compact elapsed format: `3h 8m`, `4h`, `12m`, `2d 3h`.
+ * Minutes are dropped once the call is days old — the precision is noise by then.
+ */
+export function elapsedLabel(calledAt, now = Date.now()) {
+  if (!Number.isFinite(calledAt)) return null;
+  const ms = Math.max(0, now - calledAt);
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) {
+    const rem = min % 60;
+    return rem ? `${hr}h ${rem}m` : `${hr}h`;
+  }
+  const d = Math.floor(hr / 24);
+  const remH = hr % 24;
+  return remH ? `${d}d ${remH}h` : `${d}d`;
+}
+
+/**
+ * The compact live call-performance line.
+ *
+ *   🔥 Foxy @ $2.04M [+144.6%] (3h 8m)
+ *   📉 Foxy @ $2.04M [-25%] (4h)
+ *      Foxy @ $2.04M [0%] (4h)
+ *
+ * WHY THIS REPLACES "First Call" ON REPEAT SCANS: "First Call" is a statement about
+ * RECORDING — it is true once, on the card that first attributed the call. Printing it
+ * on every later scan and every Refresh turns a one-time event into a permanent label
+ * and hides the number a reader actually wants: how the call is doing.
+ *
+ * CURRENT RETURN, NOT PEAK. The figure is
+ *   (currentMarketCap / entryMarketCap - 1) * 100
+ * Peak ROI is a different question ("how high did it go") and is answered elsewhere.
+ * Mixing them would make a token that pumped and retraced look like a live winner.
+ *
+ * The return is OMITTED rather than shown as 0% when the current market cap is
+ * unverified — a fabricated 0% reads as "flat" when the truth is "unknown".
+ */
+export function renderCallPerformanceLine(call, e = (x) => x, {
+  botUsername = '', callerToken = null, currentMarketCapUsd = null, now = Date.now(),
+} = {}) {
+  const name = clipText(callerLabel(call), 24);
+  const nameHtml = (callerToken && botUsername)
+    ? `<a href="https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(callerToken)}">${esc(name)}</a>`
+    : `<b>${esc(name)}</b>`;
+
+  const entry = Number(call?.entryMarketCapUsd);
+  const entryHtml = Number.isFinite(entry) && entry > 0 ? ` @ <b>${esc(fmtUsd(entry))}</b>` : '';
+
+  const age = elapsedLabel(call?.calledAt, now);
+  const ageHtml = age ? ` (${esc(age)})` : '';
+
+  const current = Number(currentMarketCapUsd);
+
+  // Entry unverified → we cannot make a return claim at all.
+  if (!Number.isFinite(entry) || entry <= 0) {
+    return `${e('🔥')} ${nameHtml}${entryHtml}${ageHtml}`;
+  }
+  // Current unverified → state that, never invent 0%.
+  if (!Number.isFinite(current) || current <= 0) {
+    return `${e('🔥')} ${nameHtml}${entryHtml} [<i>return unavailable</i>]${ageHtml}`;
+  }
+
+  const pct = (current / entry - 1) * 100;
+  // Sign and magnitude. 0% is legitimate only when it is actually flat.
+  // One decimal up to 1000%, because "144.6%" is more informative than "145%" and the
+  // owner's reference format keeps the decimal. Beyond 1000% the decimal is noise.
+  const abs = Math.abs(pct);
+  const shown = abs < 0.05
+    ? '0%'
+    : `${pct > 0 ? '+' : '-'}${abs >= 1000 ? abs.toFixed(0) : abs.toFixed(1)}%`;
+
+  const icon = pct > 0.05 ? e('🔥') : pct < -0.05 ? e('📉') : '';
+  const prefix = icon ? `${icon} ` : '';
+  return `${prefix}${nameHtml}${entryHtml} [<b>${esc(shown)}</b>]${ageHtml}`;
+}
+
 function clipText(v, n) {
   const chars = [...String(v ?? '')];
   return chars.length <= n ? chars.join('') : `${chars.slice(0, n - 1).join('')}…`;
@@ -391,6 +470,16 @@ export function formatCard(result, {
   emojiTheme  = noTheme,
   firstCall   = null,
   callerToken = null,
+  /**
+   * True only on the card that FIRST records the call. On every later scan and on
+   * Refresh this is false, so the line becomes live performance instead of repeating
+   * a one-time "First Call" label.
+   */
+  isFirstCallCard = false,
+  /** Verified current market cap, used for the live return. null = unverified. */
+  currentMarketCapUsd = null,
+  /** Timestamp of this observation, for the elapsed label and freshness. */
+  observedAt = null,
   research    = null,
   // Library default stays 'detailed' so the documented §4.1 contract and every
   // existing caller are unchanged. The BOT passes 'standard' explicitly, so the
@@ -619,7 +708,16 @@ export function formatCard(result, {
   // message. Only present in group mode when a call exists for this token.
   if (firstCall) {
     lines.push('');
-    lines.push(renderFirstCallLine(firstCall, e, { botUsername, callerToken }));
+    if (isFirstCallCard) {
+      // The one card that establishes attribution keeps the label.
+      lines.push(renderFirstCallLine(firstCall, e, { botUsername, callerToken }));
+    } else {
+      // Every later card shows how the call is doing right now.
+      const mcap = currentMarketCapUsd ?? result?.market?.marketCapUsd ?? null;
+      lines.push(renderCallPerformanceLine(firstCall, e, {
+        botUsername, callerToken, currentMarketCapUsd: mcap, now: observedAt ?? Date.now(),
+      }));
+    }
   }
 
   // ===== Footer ===========================================================

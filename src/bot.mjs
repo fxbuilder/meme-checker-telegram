@@ -161,6 +161,12 @@ function buildKeyboard(buttons) {
 async function runScan(ctx, chain, address, {
   view = CARD_VIEW,
   /**
+   * The recordCall() outcome from THIS scan, when the scan was the one that created
+   * the call. Only then does the card carry the "First Call" label; every later scan
+   * and every Refresh shows live performance instead.
+   */
+  justRecorded = null,
+  /**
    * The message the card must reply to.
    *
    * On a chain-picker callback, `ctx.message` is the PICKER, not the user's original
@@ -288,6 +294,13 @@ async function runScan(ctx, chain, address, {
     result.refreshData = `r:${chain}:${address}`;
   }
 
+  // A card is a "First Call" card only when THIS scan is what recorded the call.
+  // `justRecorded` is the recordCall() result: present and newly created means the
+  // attribution is being announced for the first time.
+  // recordCall() reports status 'recorded' when it CREATED the call; a re-scan of an
+  // already-tracked token returns 'duplicate' and must not re-announce attribution.
+  const isFirstCallCard = justRecorded?.status === 'recorded';
+
   const { text, buttons } = formatCard(result, {
     mockLabel:   SCAN_MODE === 'mock',
     websiteBase: WEBSITE_BASE,
@@ -297,6 +310,10 @@ async function runScan(ctx, chain, address, {
     view,
     firstCall,
     callerToken,
+    isFirstCallCard,
+    // Verified current market cap drives the live return; never the peak.
+    currentMarketCapUsd: result?.market?.marketCapUsd ?? null,
+    observedAt: Date.now(),
     research: researchLines,
   });
 
@@ -1389,6 +1406,10 @@ bot.action(/^r:(.+)$/, async ctx => {
       view: CARD_VIEW,
       firstCall,
       callerToken,
+      // A refresh is never the first call: it re-renders live performance.
+      isFirstCallCard: false,
+      currentMarketCapUsd: result?.market?.marketCapUsd ?? null,
+      observedAt: Date.now(),
       research: researchLines,
     });
 
@@ -1586,6 +1607,8 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
         intervalMs: OBSERVER_INTERVAL_MS,
         maxCalls: OBSERVER_MAX_TOKENS,
         concurrency: OBSERVER_CONCURRENCY,
+        // So alert caller names link to their Caller Profile.
+        botUsername: BOT_USERNAME,
       });
     } else {
       console.log('[observer] disabled (OBSERVER=off)');

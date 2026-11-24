@@ -123,6 +123,8 @@ async function runCycleUnlocked({
   signal = null,
   /** Called before each alert send; returning true aborts the rest of the cycle. */
   shouldStop = null,
+  /** Bot username, so alerts can link the caller name to their Caller Profile. */
+  botUsername = '',
 }) {
   const cancelled = () => Boolean(signal?.aborted) || (typeof shouldStop === 'function' && shouldStop());
   // Market-only observations cost at most one HTTP request; card enrichment is
@@ -165,6 +167,7 @@ async function runCycleUnlocked({
         replyToMessageId: call.messageId ?? null,
         now,
         enabled: s.milestones ?? [],
+        botUsername,
       });
       milestones += out.filter((o) => o.announced).length;
     } catch (err) {
@@ -203,6 +206,7 @@ async function runCycleUnlocked({
     for (const call of calls) {
       if (cancelled()) break;
       const out = await processDexPaid({
+        botUsername,
         store, call, status: res?.status ?? 'unknown', detail: res?.detail, send, now,
       });
       if (out.announced) announced += 1;
@@ -235,6 +239,7 @@ async function runCycleUnlocked({
       const mv = detectMovement(call, { now, settings: s, store });
       if (!mv) continue;
       const out = await processMovement({
+        botUsername,
         store, call,
         kind: mv.kind,
         changePercent: mv.changePercent,
@@ -333,6 +338,8 @@ export function startObserver({
   log = console,
   signal = null,
   runCycleFn = runCycle,
+  /** Bot username so alerts can deep-link the caller name. */
+  botUsername = '',
 } = {}) {
   const controller = new AbortController();
   let stopped = false;
@@ -362,6 +369,7 @@ export function startObserver({
           store, scan, send, maxCalls, maxRequests, concurrency, dexPaid, fetchImpl, log, now: startedAt,
           signal: controller.signal,
           shouldStop: () => stopped,
+          botUsername,
         });
         lastSummary = summary;
         consecutiveFailures = 0;

@@ -19,6 +19,7 @@
  * the request was written is 'ambiguous' and is not retried.
  */
 
+import { mintCallerToken, DEFAULT_PERIOD } from './deep-link.mjs';
 import { isSynthetic } from './store.mjs';
 import {
   eventId, renderMilestoneAlert, renderDexPaidAlert, renderMigrationAlert,
@@ -116,6 +117,23 @@ export async function deliverAlert({
  * newly reached enabled milestone. The others are recorded as delivered so they
  * can never fire later — the group already knows the token passed them.
  */
+/**
+ * Mint the signed Caller Profile token for this call's caller, scoped to the call's own
+ * group. Returns null when the call has no usable caller identity, so the alert renders
+ * a plain name instead of a link that would open the wrong profile.
+ *
+ * The period is the shared DEFAULT_PERIOD (1D), so an alert link behaves exactly like a
+ * First Caller link: same scope, same default window, same authorisation.
+ */
+export function callerTokenFor(store, call) {
+  try {
+    if (!call?.callerKey) return null;
+    return mintCallerToken(String(call.chatId), call.callerKey, DEFAULT_PERIOD);
+  } catch {
+    return null;
+  }
+}
+
 export async function processMilestoneEvents({
   store,
   call,
@@ -125,6 +143,8 @@ export async function processMilestoneEvents({
   replyToMessageId,
   now = Date.now(),
   enabled = DEFAULT_MILESTONES,
+  /** Bot username needed to build a t.me deep link. Empty disables linking. */
+  botUsername = '',
 }) {
   const entry = call.entryMarketCapUsd;
   if (!Number.isFinite(entry) || entry <= 0) return [];
@@ -157,7 +177,10 @@ export async function processMilestoneEvents({
   // a rejected announcement left 2x/5x marked delivered while the group received
   // nothing at all — every milestone silently lost.
   const topId = eventId.milestone(call.id, reached);
-  const topText = renderMilestoneAlert({ call, milestone: reached, currentMarketCapUsd, groupTitle, now });
+  const topText = renderMilestoneAlert({
+    call, milestone: reached, currentMarketCapUsd, groupTitle, now,
+    botUsername, callerToken: callerTokenFor(store, call),
+  });
   const top = await deliverAlert({ store, call, id: topId, text: topText, send, groupTitle, replyToMessageId, now });
   outcomes.push({ milestone: reached, announced: top.sent, reason: top.reason });
 
@@ -191,7 +214,7 @@ export async function processMilestoneEvents({
 }
 
 /** Dex Paid transition. Only a transition INTO 'paid' is announced. */
-export async function processDexPaid({ store, call, status, detail, send, now = Date.now() }) {
+export async function processDexPaid({ store, call, status, detail, send, now = Date.now(), botUsername = '' }) {
   const id = eventId.dexPaid(call.id);
   const prev = store.alertState(id);
   const confirmedStatus = prev?.lastStatus ?? null;
@@ -248,7 +271,7 @@ export async function retryPendingDexPaid({ store, calls, send, now = Date.now()
 }
 
 /** Migration. Only verified evidence is announced, once per call. */
-export async function processMigration({ store, call, evidence, send, now = Date.now() }) {
+export async function processMigration({ store, call, evidence, send, now = Date.now(), botUsername = '' }) {
   const id = eventId.migration(call.id);
   const prev = store.alertState(id);
   if (prev?.state === 'delivered') return { announced: false, reason: 'already announced' };
@@ -262,13 +285,19 @@ export async function processMigration({ store, call, evidence, send, now = Date
 }
 
 /** Price movement / drawdown, with a per-window bucket id so re-arms are bounded. */
-export async function processMovement({ store, call, kind, changePercent, windowLabel, currentMarketCapUsd, peakMarketCapUsd, send, now = Date.now(), bucketMs = 15 * 60_000 }) {
+export async function processMovement({
+  store, call, kind, changePercent, windowLabel, currentMarketCapUsd,
+  peakMarketCapUsd, send, now = Date.now(), bucketMs = 15 * 60_000, botUsername = '',
+}) {
   const bucket = Math.floor(now / bucketMs);
   const id = kind === 'drawdown'
     ? eventId.drawdown(call.id, Math.round(changePercent))
     : (kind === 'pump' ? eventId.pump(call.id, bucket) : eventId.dump(call.id, bucket));
 
-  const text = renderMovementAlert({ call, kind, changePercent, windowLabel, currentMarketCapUsd, peakMarketCapUsd, now });
+  const text = renderMovementAlert({
+    call, kind, changePercent, windowLabel, currentMarketCapUsd, peakMarketCapUsd, now,
+    botUsername, callerToken: callerTokenFor(store, call),
+  });
   const res = await deliverAlert({ store, call, id, text, send, now });
   return { announced: res.sent, reason: res.reason };
 }

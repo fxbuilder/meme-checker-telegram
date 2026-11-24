@@ -31,13 +31,32 @@ const CALL = {
   chain: 'solana', address: RESULT.address, symbol: 'BONK', status: 'active',
 };
 
-test('the First Call line appears inside the card, before the footer', () => {
-  const { text } = formatCard(RESULT, { view: 'standard', firstCall: CALL, botUsername: 'MemeCheckerStagingBot', callerToken: 'cp_abc' });
+test('the First Call label appears only on the card that records the call', () => {
+  const { text } = formatCard(RESULT, {
+    view: 'standard', firstCall: CALL, botUsername: 'MemeCheckerStagingBot', callerToken: 'cp_abc',
+    // Only the recording card carries the label.
+    isFirstCallCard: true,
+  });
   assert.ok(text.includes('First Call'), 'line present');
   assert.ok(text.includes('$18.22M'), 'entry market cap present');
   const fi = text.indexOf('First Call');
   const footer = text.indexOf('Powered by MEME CHECKER');
   assert.ok(fi > -1 && footer > fi, 'First Call must come before the footer');
+});
+
+test('a later scan shows live performance instead of repeating First Call', () => {
+  const { text } = formatCard(RESULT, {
+    view: 'standard', firstCall: CALL, botUsername: 'MemeCheckerStagingBot', callerToken: 'cp_abc',
+    isFirstCallCard: false,
+    currentMarketCapUsd: 18_220_000 * 2.446,
+    observedAt: CALL.calledAt + 3 * 3600_000 + 8 * 60_000,
+  });
+  assert.ok(!text.includes('First Call'), 'the one-time label must not repeat');
+  const visible = text.replace(/<[^>]+>/g, '');
+  assert.match(visible, /\[\+144\.6%\]/, 'current return renders');
+  assert.ok(text.includes('$18.22M'), 'entry market cap is preserved, not replaced');
+  // The caller must still be clickable on the performance line.
+  assert.match(text, /t\.me\/MemeCheckerStagingBot\?start=cp_abc/);
 });
 
 test('no call means no First Call line at all', () => {
