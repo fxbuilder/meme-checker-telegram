@@ -527,3 +527,70 @@ test('the observer stops when its signal aborts', async () => {
   await obs.done;
   assert.ok(logs.some((l) => /stopped after/.test(l)), logs.join(' | '));
 });
+
+// ---- settings authorization ----------------------------------------------
+
+test('a non-owner cannot change alert settings', async () => {
+  const store = tmpStore();
+  store.groupSettings(GROUP, { title: 'A' });
+  await store.setGroupSetting(GROUP, { alerts: { multiplier: true, dexPaid: true, milestones: [2] } });
+
+  const { handleAlertsCallback } = await import('../src/alert-commands.mjs');
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '1307106746', ALLOWED_CHAT_IDS: GROUP });
+
+  const before = JSON.stringify(store.groupSettings(GROUP).alerts);
+  const answers = [];
+  const ctx = {
+    chat: { id: Number(GROUP), type: 'group', title: 'A' },
+    from: { id: 999, first_name: 'Stranger' },
+    callbackQuery: { data: 'al:dexPaid' },
+    async answerCbQuery(t) { answers.push(t ?? ''); },
+    async editMessageText() {},
+  };
+
+  await handleAlertsCallback(ctx, { store, policy });
+
+  const after = JSON.stringify(store.groupSettings(GROUP).alerts);
+  assert.equal(after, before, 'settings must be untouched');
+  assert.ok(answers.some((a) => /owner/i.test(a)), `expected an owner-only answer, got ${JSON.stringify(answers)}`);
+});
+
+test('the owner CAN change alert settings', async () => {
+  const store = tmpStore();
+  store.groupSettings(GROUP, { title: 'A' });
+  await store.setGroupSetting(GROUP, { alerts: { multiplier: true, dexPaid: true, milestones: [2] } });
+
+  const { handleAlertsCallback } = await import('../src/alert-commands.mjs');
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '1307106746', ALLOWED_CHAT_IDS: GROUP });
+
+  const ctx = {
+    chat: { id: Number(GROUP), type: 'group', title: 'A' },
+    from: { id: 1307106746, first_name: 'Foxy' },
+    callbackQuery: { data: 'al:dexPaid' },
+    async answerCbQuery() {},
+    async editMessageText() {},
+  };
+  await handleAlertsCallback(ctx, { store, policy });
+  assert.equal(store.groupSettings(GROUP).alerts.dexPaid, false, 'owner toggle applied');
+});
+
+test('the /alerts panel refuses to render switches for a non-owner', async () => {
+  const store = tmpStore();
+  store.groupSettings(GROUP, { title: 'A' });
+  const { handleAlerts } = await import('../src/alert-commands.mjs');
+  const { loadPolicy } = await import('../src/access.mjs');
+  const policy = loadPolicy({ OWNER_USER_IDS: '1307106746', ALLOWED_CHAT_IDS: GROUP });
+
+  const replies = [];
+  const ctx = {
+    chat: { id: Number(GROUP), type: 'group', title: 'A' },
+    from: { id: 999, first_name: 'Stranger' },
+    async reply(t, o) { replies.push({ t, o }); },
+  };
+  await handleAlerts(ctx, { store, policy });
+  const kb = replies[0]?.o?.reply_markup?.inline_keyboard;
+  assert.deepEqual(kb, [], 'no buttons for a non-owner');
+  assert.match(replies[0].t, /Only the bot owner can change/);
+});

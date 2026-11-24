@@ -88,6 +88,8 @@ export async function observePass({
   let failed = 0;
   let skipped = open.length - due.length;
   const events = [];
+  /** The exact records this pass wrote, so callers never infer it from timestamps. */
+  const updatedCalls = [];
 
   for (const t of targets) {
     const lead = t.calls[0];
@@ -112,6 +114,7 @@ export async function observePass({
       const obs = await observeCall({ store, call, scanResult: result, now });
       if (!obs.updated) { failed += 1; continue; }
       observed += 1;
+      updatedCalls.push(obs.call);
 
       const after = callMetrics(obs.call, now);
       const prevMultiple = before.get(call.id);
@@ -144,7 +147,7 @@ export async function observePass({
   const tiers = { hot: 0, warm: 0, cold: 0 };
   for (const c of open) tiers[pollTierFor(now - c.calledAt)] += 1;
 
-  return { observed, skipped, failed, events, open: open.length, tiers };
+  return { observed, skipped, failed, events, open: open.length, tiers, updatedCalls };
 }
 
 /** Remaining open calls that this pass did not touch, for reporting. */

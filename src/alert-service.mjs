@@ -130,7 +130,8 @@ export async function processMilestoneEvents({
   if (reached == null) return [];
 
   // Every enabled milestone at or below `reached` counts as crossed now.
-  const newlyCrossed = enabled
+  const list = Array.isArray(enabled) ? enabled : [];
+  const newlyCrossed = list
     .filter((m) => Number.isFinite(m) && m <= reached)
     .sort((a, b) => a - b);
 

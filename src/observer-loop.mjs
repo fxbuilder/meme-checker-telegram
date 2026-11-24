@@ -109,8 +109,10 @@ export async function runCycle({
   let movementAlerts = 0;
   const failures = [];
 
-  // Re-read the calls this pass touched.
-  const touched = store.openCalls({ now }).filter((c) => c.lastObservedAt && now - c.lastObservedAt < 60_000);
+  // Use exactly the records this pass wrote. Inferring "recently touched" from
+  // timestamps meant a long cycle could evaluate a call it had not observed, or
+  // miss one it had.
+  const touched = pass.updatedCalls ?? [];
 
   for (const call of touched) {
     const s = alertSettings(store, call.chatId);

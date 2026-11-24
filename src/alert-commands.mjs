@@ -102,7 +102,7 @@ export async function handleAlerts(ctx, deps) {
     return;
   }
   const settings = effectiveAlertSettings(store, ctx.chat.id);
-  const canEdit = canChangeSettings(policy, ctx.from?.id);
+  const canEdit = canChangeSettings(policy, { userId: ctx.from?.id }).allowed;
   await ctx.reply(renderAlertsPanel(settings, { groupTitle: ctx.chat.title, canEdit }), {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard(alertsKeyboard(settings, { canEdit })),
@@ -115,8 +115,11 @@ export async function handleAlertsCallback(ctx, deps) {
   const data = String(ctx.callbackQuery?.data ?? '');
   const key = data.slice(3); // strip "al:"
 
-  if (!canChangeSettings(policy, ctx.from?.id)) {
-    await ctx.answerCbQuery('Owner only during staging');
+  // canChangeSettings returns {allowed, reason} — a plain truthiness test on the
+  // object would always pass, which is how a stranger briefly toggled settings.
+  const gate = canChangeSettings(policy, { userId: ctx.from?.id });
+  if (!gate.allowed) {
+    await ctx.answerCbQuery(gate.reason ?? 'Owner only during staging');
     return;
   }
   const chatId = ctx.chat?.id;

@@ -30,8 +30,10 @@ export const DEFAULT_MILESTONES = [2, 5, 10, 20, 50, 100];
 /** The highest configured milestone a multiple has reached, or null. */
 export function highestReachedMilestone(multiple, enabled = DEFAULT_MILESTONES) {
   if (!Number.isFinite(multiple) || multiple < 2) return null;
+  // Defensive: a corrupted or hand-edited setting must not throw inside the loop.
+  const list = Array.isArray(enabled) ? enabled : DEFAULT_MILESTONES;
   let best = null;
-  for (const m of enabled) {
+  for (const m of list) {
     if (Number.isFinite(m) && multiple >= m && (best == null || m > best)) best = m;
   }
   return best;
