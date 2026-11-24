@@ -191,6 +191,9 @@ export function normalisePost(raw, { chain, address, symbol } = {}) {
       || (typeof raw.quotedTweetId === 'string' && raw.quotedTweetId.length > 0),
     containsContract: containsContract(text, address, chain),
     containsTicker: containsTicker(text, symbol),
+    // The contract this post was searched for. Carried so classification can tell a
+    // single-token post from a multi-token promo without re-deriving identity.
+    searchedAddress: address ?? null,
     // How strongly this post can be tied to the token. Only 'contract' is strong.
     match: containsContract(text, address, chain) ? 'contract' : (containsTicker(text, symbol) ? 'ticker' : 'none'),
   };
@@ -323,7 +326,52 @@ export async function verifyPostUrl(url, { expectHandle = null, fetchImpl = glob
  *   announcement  the account is the project itself
  *   repost        a quote/reply that forwards someone else's content
  */
-const CALL_LANGUAGE = /\b(ape|aped|aping|bought|buying|entry|entered|loading|loaded|accumulat\w*|bag|bags|long|call|target|sending|send it|moon|gem)\b/i;
+/**
+ * Language that indicates the author is claiming to have taken a position, or is
+ * telling readers to.
+ *
+ * MEASURED AGAINST LIVE POSTS. A flat keyword list produced false calls on real
+ * BONK data: "it will not mail you a target" matched `target`, and "all day long"
+ * matched `long`. Both were pure promotional prose with no position at all, and one
+ * of them was advertising an unaffiliated copy site.
+ *
+ * Two changes follow from that:
+ *   1. Ambiguous nouns (`target`, `call`, `gem`, `moon`, `bag`) are dropped. They
+ *      appear constantly in narrative copy that makes no claim.
+ *   2. Weak verbs must be FIRST PERSON. "I aped" is a call; "it aped" or "they aped"
+ *      is commentary about someone else.
+ *
+ * The cost of a false public-call is high: it credits an account with a call it never
+ * made and lets a promo post masquerade as KOL activity.
+ */
+const CALL_VERBS_FIRST_PERSON = /\b(i|we|i'm|im|we're|were)\s+(just\s+)?(aped|aped in|bought|buying|loaded|loading|accumulated|entered|adding|added)\b/i;
+const CALL_VERBS_IMPERATIVE = /\b(aped|bought|loading up|loaded up|sent it|sending it|aping in)\b/i;
+/** Explicit position statements, which are unambiguous. */
+const CALL_POSITION = /\b(my entry|my bag|my bags|entry at|in at \$?[\d.]+|bought at \$?[\d.]+|filled my|added to my)\b/i;
+/**
+ * Shill language. "buy these three coins" is a shill, but on a multi-token promo post
+ * it is NOT a call on the token being checked - live BONK data had a post promoting
+ * BONK, $GRUTA and $USD at once, which is an advertisement, not a BONK call.
+ *
+ * So a shill only counts when the post mentions exactly one contract, i.e. when the
+ * thing being pushed can only be this token.
+ */
+const CALL_SHILL = /\b(buy (these|this)|ape (this|it)|send it|don't miss|last chance to buy|sell a kidney)\b/i;
+
+/** How many distinct contract-shaped addresses the post contains. */
+function contractMentionCount(text, address) {
+  if (!text) return 0;
+  const s = String(text);
+  // EVM addresses, then base58 mint-like strings of Solana length.
+  const evm = s.match(/0x[a-fA-F0-9]{40}/g) ?? [];
+  const base58 = s.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) ?? [];
+  const set = new Set([...evm.map((x) => x.toLowerCase()), ...base58]);
+  // The searched address itself counts as one if present.
+  const hasTarget = address
+    ? set.has(address.toLowerCase()) || [...set].some((x) => x.toLowerCase() === String(address).toLowerCase())
+    : false;
+  return hasTarget ? set.size : set.size;
+}
 
 export function classifyPost(post, { projectHandle = null, authorHandle = null } = {}) {
   if (!post) return 'unknown';
@@ -332,7 +380,23 @@ export function classifyPost(post, { projectHandle = null, authorHandle = null }
   if (isProject) return 'announcement';
   if (post.isQuote || post.isReply) return 'repost';
   if (!post.containsContract) return 'mention';
-  return CALL_LANGUAGE.test(post.text ?? '') ? 'public-call' : 'mention';
+
+  const text = post.text ?? '';
+
+  // A multi-token promo is an advertisement, not a call on any one of them.
+  const multiToken = contractMentionCount(text, post.searchedAddress) > 1;
+
+  const assertsPosition = CALL_POSITION.test(text)
+    || CALL_VERBS_FIRST_PERSON.test(text)
+    || CALL_VERBS_IMPERATIVE.test(text)
+    // Shill language only counts for a single-token post.
+    || (!multiToken && CALL_SHILL.test(text));
+
+  // A stated position ("my entry", "bought at") is unambiguous, even in a post that
+  // also mentions other tokens. Weaker signals are suppressed on multi-token promos.
+  if (CALL_POSITION.test(text) || CALL_VERBS_FIRST_PERSON.test(text)) return 'public-call';
+  if (multiToken) return 'mention';
+  return assertsPosition ? 'public-call' : 'mention';
 }
 
 /**

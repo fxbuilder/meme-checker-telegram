@@ -138,14 +138,24 @@ export class ResearchCache {
  * when it is exhausted the caller reports `budget-exhausted` rather than silently
  * making the request.
  */
+/** Indirection so tests can stub waiting without faking timers globally. */
+const defaultSleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
 export class RequestBudget {
-  constructor({ limit, windowMs = 24 * 60 * 60_000, now = () => Date.now(), label = 'provider' } = {}) {
+  constructor({ limit, windowMs = 24 * 60 * 60_000, now = () => Date.now(), label = 'provider', minIntervalMs } = {}) {
     this.limit = Number.isFinite(limit) ? limit : 0;
     this.windowMs = windowMs;
     this.now = now;
     this.label = label;
     this.used = 0;
     this.windowStart = now();
+    this.lastSpendAt = 0;
+    /**
+     * Measured, not guessed: consecutive GetXAPI searches returned 200 then 429.
+     * 5000ms clears it in practice. Set to 0 to disable pacing (tests, or a provider
+     * with real rate-limit headers).
+     */
+    this.minIntervalMs = Number.isFinite(minIntervalMs) ? minIntervalMs : 5_000;
   }
 
   /** Roll the window if it has elapsed. */
@@ -166,6 +176,27 @@ export class RequestBudget {
     this.#roll();
     if (this.used + n > this.limit) return false;
     this.used += n;
+    return true;
+  }
+
+  /**
+   * Wait until this provider will accept another request, then reserve it.
+   *
+   * WHY THIS EXISTS. GetXAPI throttles bursts: two searches fired back to back
+   * returned 200 then 429, and the 429 was still billed. Counting requests without
+   * pacing them therefore wastes real money to learn nothing. Measured spacing that
+   * reliably clears the throttle is ~5s between searches, so that is the floor.
+   *
+   * Returns false when the budget is exhausted, in which case nothing is awaited.
+   */
+  async reserve({ minIntervalMs = this.minIntervalMs, sleep = globalThis.__researchSleep ?? defaultSleep } = {}) {
+    if (!this.spend(1)) return false;
+    if (minIntervalMs > 0) {
+      const since = this.now() - this.lastSpendAt;
+      const wait = this.lastSpendAt === 0 ? 0 : Math.max(0, minIntervalMs - since);
+      if (wait > 0) await sleep(wait);
+    }
+    this.lastSpendAt = this.now();
     return true;
   }
 
