@@ -190,3 +190,120 @@ silently making the request.
   recovered shape.
 - **NOT verified here:** that a live key works end to end. That requires the key.
   Until a real search returns real posts, X intelligence is not claimed to work.
+
+---
+
+# Product strategy: free Telegram + premium website
+
+**Decision (owner, Phase 4):** advanced X/KOL Intelligence is primarily a **premium
+website** feature. The Telegram bot is the free community tool and the acquisition
+channel that feeds it. The X/KOL implementation is unchanged in capability; only its
+**exposure** is gated.
+
+This supersedes the earlier assumption that the bot would surface full research.
+
+## Free in Telegram (unchanged, fully functional)
+
+Token scanning · market overview · basic security · **basic narrative** ·
+First Caller · call tracking · caller profile · PnL images · smart alerts ·
+future group leaderboard.
+
+## X/KOL preview in the standard card
+
+The card may show, from **already-cached** research only:
+
+- relevant X post count
+- unique account count
+- number of identified public callers
+- up to two relevant accounts, each labelled with what it actually did
+  (`Public call` / `Project account` / `Repost` / `Mention`)
+- a short narrative preview, tagged with its evidence class
+
+Rules enforced in `src/research/premium-preview.mjs`:
+
+| Situation | What renders |
+| --- | --- |
+| Cached evidence exists | counts + up to 2 accounts + CTA |
+| Searched, zero posts | "No public X posts matched this contract in the latest cached search" |
+| Never searched | "No X research cached for this token yet" |
+| No `PREMIUM_URL` set | invitation text, **no link** |
+
+Absent values are `null`, never `0`. `0` is printed only where the code genuinely
+classified a non-empty sample. A missing metric is not a zero.
+
+A CA scan **never** triggers a paid X request: the scan path uses `xCacheOnly`, and
+the card renderer consumes a preview object rather than fetching.
+
+## Premium website (not implemented here)
+
+Detailed X search results · full KOL discovery · public call history · historical
+performance · detailed social evidence · advanced narrative · future wallet and risk
+intelligence.
+
+**The website, subscriptions, payments and billing are explicitly out of scope for
+this repo.** The bot only holds a configurable CTA.
+
+### CTA configuration
+
+| Variable | Meaning | Current state |
+| --- | --- | --- |
+| `PREMIUM_URL` | absolute destination for the premium CTA | **unset** — preview degrades to invitation text, no link |
+| `TOKEN_PAGE_BASE_URL` | token-page origin for a token-specific destination | **unset** |
+
+Only an absolute `http(s)` URL is accepted. `javascript:`, `ftp:`, empty and malformed
+values are refused (`buildPreview` returns `premiumUrl: null`), so no broken or
+invented destination can reach a user.
+
+### Interface for the website/backend team
+
+The bot can hand a token-specific destination to the website once the routing contract
+is confirmed. Until then it is deliberately absent rather than guessed. What the
+website team needs to provide:
+
+1. The token page URL pattern (e.g. `https://…/token/{chain}/{address}`).
+2. Whether the bot should link the bare token page or a research sub-route.
+3. Any referral/attribution parameter they want carried.
+
+When that exists, set `TOKEN_PAGE_BASE_URL` (and/or `PREMIUM_URL`) and the CTA appears
+automatically — no code change.
+
+## Command behaviour
+
+| Command | OWNER (staging) | Ordinary user |
+| --- | --- | --- |
+| `/narrative CA` | full narrative | basic narrative + CTA |
+| `/x CA` | full post list, may spend 1 request | cached preview only, **never spends** |
+| `/kol @user` | full recorded call history | recorded sample + CTA |
+
+Entitlement is `isEntitledToFullResearch(policy, userId)`, which **fails closed**: no
+policy, a non-`Set` `ownerIds`, or a missing id all return `false`.
+
+## Cost protection
+
+| Control | State |
+| --- | --- |
+| Global daily budget | `RESEARCH_X_BUDGET`, default 20 |
+| **Persistent budget across restarts** | `data/research-budget.json` (or `RESEARCH_BUDGET_PATH`) |
+| Shared per-token cache | in-memory, split TTLs |
+| Negative caching | provider errors cached with a short TTL |
+| Concurrent dedupe | in-flight promise sharing |
+| Request pacing | 5s floor between paid calls |
+| Per-user / per-group cooldowns | existing `cooldown.mjs` on scans |
+| Bounded concurrency | observer + `mapBounded` |
+| No paid X from market observers | enforced |
+| No paid X from ordinary scans | enforced via `xCacheOnly` |
+| Default public behaviour | **cache-only** |
+
+The budget persists because an in-memory counter hands its allowance back on every
+restart: an operator restarting twice in an afternoon would silently get several times
+the intended daily budget.
+
+## Honest limitations
+
+- `PREMIUM_URL` and `TOKEN_PAGE_BASE_URL` are unset, so **no premium link renders
+  today** — by design, not by omission.
+- The live X sample produced **zero** genuine public calls across BONK and WIF, so
+  `/kol` retrieval is verified with seeded evidence, not with organic discovery.
+- EVM X coverage is unproven: PEPE and CAKE both returned 429 during acceptance.
+- The fresh-memecoin narrative path (website prose, no CoinGecko listing) is verified
+  by unit test and by a real BONK website fetch, not against a live fresh launch.
