@@ -19,16 +19,40 @@ dependency. Never `OWNER ACCEPTED` — only the owner can grant that.
 
 ---
 
-## Section 4A — Mandatory OWNER corrections
+## Section 4A — Mandatory OWNER corrections — ✅ COMPLETE (TECHNICAL PASS)
 
-| # | Item | Status | Commit | Notes |
-| --- | --- | --- | --- | --- |
-| A | Narrative coverage for facts-only chains + Robinhood | ⬜ pending | — | — |
-| B | Reply to the original CA message; chain-picker context | ⬜ pending | — | — |
-| C | Clean narrative + locked Premium teaser | ⬜ pending | — | — |
-| D | Working Refresh button on scan cards | ⬜ pending | — | — |
-| E | Caller Profile defaults to 1D | ⬜ pending | — | — |
-| F | Top 10 > 100% invalid-percentage fix | ⬜ pending | — | — |
+| # | Item | Status | Commit |
+| --- | --- | --- | --- |
+| A | Narrative coverage for facts-only chains + Robinhood | ✅ TECHNICAL PASS | `4eb4b32` |
+| B | Reply to the original CA message; chain-picker context | ✅ TECHNICAL PASS | `c8c6d7e` |
+| C | Clean narrative + locked Premium teaser | ✅ TECHNICAL PASS | `e4ce37c` |
+| D | Working Refresh button on scan cards | ✅ TECHNICAL PASS | `c8c6d7e` |
+| E | Caller Profile defaults to 1D | ✅ TECHNICAL PASS | `e4ce37c` |
+| F | Top 10 > 100% invalid-percentage fix | ✅ TECHNICAL PASS | `e4ce37c` |
+
+### Notes on 4A
+
+**A.** The "facts-only" chains were not a coverage gap. Probing three top tokens per
+chain found real descriptions on BNB (513 chars), Unichain (417) and others; the earlier
+sample was Wrapped AVAX, MON and USDC — wrapped assets that genuinely publish no
+description. Only Robinhood has no metadata source. Solana additionally gained on-chain
+Metaplex decoding (real BONK account verified: name, symbol, arweave URI, immutable).
+
+**B.** `runScan` replied to `ctx.message`, which on a picker callback is the picker — a
+message deleted moments earlier. Fixed by threading the original message id through the
+pending-scan state. The stash is now written unconditionally; it previously existed only
+when auto-call was enabled, which is why the first attempt did not work.
+
+**C.** Removed the technical source footer and the "No X research cached" text.
+Attribution moved into the prose ("The project describes itself…") so removing the
+footer does not promote a claim to a fact.
+
+**D.** Refresh carries `r:<chain>:<address>`, edits in place, never records a call,
+never spends a paid X request, keeps last-valid values on failure.
+
+**F.** Reproduced the exact 111.1%: naive sum of provider rows. Deduplicated by address,
+excluded LP/burn/contract accounts, and returns null (never a clamped 100%) when rows
+remain irreconcilable.
 
 ## Phase 5 — Advanced Risk Intelligence
 
