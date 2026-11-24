@@ -17,6 +17,13 @@ import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
 import { deliverCard } from './delivery.mjs';
 import { resolveTokenImage } from './media.mjs';
+import { CallStore } from './store.mjs';
+import { recordCall, CALL_STATUS } from './call-service.mjs';
+import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
+import {
+  handleCall, handleCalls, handleFirstCall, handlePnl, handleCallSettings, handleJustScan,
+  isGroupChat, callerIdentity,
+} from './call-commands.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
 import {
   loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
@@ -177,6 +184,11 @@ bot.help(async ctx => {
     '• <code>/check &lt;address&gt;</code> — Check a token',
     '• <code>/check &lt;chain&gt; &lt;address&gt;</code> — Check on a specific chain',
     '• <code>/chains</code> — Supported networks and what each can show',
+    '• <code>/call &lt;address&gt;</code> — Record a call (groups)',
+    '• <code>/calls</code> — Recent calls in this group',
+    '• <code>/fc &lt;address&gt;</code> — Who called it first',
+    '• <code>/pnl [n|address]</code> — Shareable PnL card',
+    '• <code>/callsettings</code> — Auto-call and minimum market cap',
     '• <code>/compact</code> — Compact card (default)',
     '• <code>/detail</code> — Detailed card',
     '• <code>/about</code> — About Meme Checker',
@@ -484,7 +496,85 @@ bot.on('message', async ctx => {
 
   // Process first detected candidate only (brief: one reply per message)
   const { chain, address } = det.candidates[0];
+
+  // ---- Auto-call (Phase 2) ------------------------------------------------
+  // Recorded BEFORE the card is sent so the call is persisted even if delivery
+  // fails, and only in groups with auto-call explicitly switched on. Scanning and
+  // calling stay distinct acts everywhere else.
+  let callOutcome = null;
+  if (isGroupChat(ctx)) {
+    try {
+      const settings = callStore.groupSettings(ctx.chat.id);
+      if (settings.autoCall === 'auto') {
+        const result = await scan({ chain, address });
+        callOutcome = await recordCall({
+          store: callStore,
+          scanResult: result,
+          caller: callerIdentity(ctx),
+          chatId: ctx.chat.id,
+          source: 'auto',
+          messageId: ctx.message?.message_id ?? null,
+        });
+      }
+    } catch (err) {
+      console.warn('[bot] auto-call failed (card continues):', err?.message ?? err);
+    }
+  }
+
   await runScan(ctx, chain, address);
+
+  // Confirm a recorded call so the group can see attribution happened.
+  if (callOutcome?.status === CALL_STATUS.RECORDED) {
+    const who = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name ?? 'caller');
+    const mcap = callOutcome.entryMarketCapUsd;
+    await ctx.reply(
+      `📌 Call recorded by <b>${who}</b>${callOutcome.isFirstCall ? ' · 🥇 first call' : ''} at <b>$${(mcap / 1e6).toFixed(2)}M</b>`,
+      { parse_mode: 'HTML', reply_to_message_id: ctx.message?.message_id ?? undefined },
+    ).catch(() => {});
+  }
+});
+
+// ---- Phase 2: call tracking commands --------------------------------------
+
+/** Shared dependency bundle for the call commands. */
+function callDeps() {
+  return {
+    store: callStore,
+    scan,
+    defaultEvmChain: DEFAULT_EVM,
+    renderPng: renderPnlPng,
+    sendPhoto: async (chatId, filePath, opts) => {
+      try {
+        // Telegraf accepts a path plus options; { source } is the documented form.
+        return await ctx_sendPhoto(chatId, filePath, opts);
+      } finally {
+        cleanupPng(filePath);
+      }
+    },
+  };
+}
+
+// Telegraf's sendPhoto is called through an indirection so the generated PNG is
+// always cleaned up, including on failure.
+let ctx_sendPhoto = async () => { throw new Error('sendPhoto not initialised'); };
+
+bot.command('call',    ctx => handleCall(ctx, callDeps()));
+bot.command('calls',   ctx => handleCalls(ctx, callDeps()));
+bot.command('fc',      ctx => handleFirstCall(ctx, callDeps()));
+bot.command('callsettings', ctx => handleCallSettings(ctx, callDeps()));
+bot.command('justscan', ctx => handleJustScan(ctx));
+
+bot.command('pnl', async ctx => {
+  // sendPhoto needs the ctx-scoped telegram client, so bind it per invocation.
+  const deps = callDeps();
+  deps.sendPhoto = async (chatId, filePath, opts) => {
+    try {
+      return await ctx.telegram.sendPhoto(chatId, { source: filePath }, opts);
+    } finally {
+      cleanupPng(filePath);
+    }
+  };
+  return handlePnl(ctx, deps);
 });
 
 // ---- Chain picker for ambiguous EVM addresses ------------------------------
@@ -580,6 +670,11 @@ Promise.resolve(bot.telegram?.getMe?.())
         { command: 'short',   description: 'Short summary card' },
         { command: 'detail',  description: 'Detailed card view' },
         { command: 'chains',  description: 'Supported chains and data coverage' },
+        { command: 'call',    description: 'Record a call: /call <address>' },
+        { command: 'calls',   description: 'Recent calls in this group' },
+        { command: 'fc',      description: 'Who called a token first' },
+        { command: 'pnl',     description: 'Shareable PnL card' },
+        { command: 'callsettings', description: 'Auto-call and minimum MC' },
         { command: 'about',   description: 'About Meme Checker' },
         { command: 'website', description: 'Open the Meme Checker website' },
         { command: 'upgrade', description: 'Unlock Premium analysis' },

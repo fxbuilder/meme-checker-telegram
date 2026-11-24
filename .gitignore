@@ -29,3 +29,8 @@ temp/
 emoji-theme.proposed.json
 emoji-theme.json
 emoji-theme.utility.proposed.json
+
+# Runtime state — durable call history and rendered PnL cards.
+# Never commit: this is live group data, not source.
+data/
+*.corrupt-*
