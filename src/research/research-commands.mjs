@@ -182,9 +182,51 @@ export function renderNarrative({ target, research, chainName }) {
     for (const c of n.claims.slice(0, 4)) L.push(`• ${esc(c.text)} <i>(${esc(c.source)})</i>`);
   }
 
+  // Links arrive as ABSOLUTE URLs from the research layer, but this renderer used to
+  // assume a bare handle and prefix x.com again - producing
+  // https://x.com/https://x.com/bonk_inu. Accept either form, and label with the
+  // handle when one can be extracted.
+  const handleFrom = (v) => {
+    const str = String(v ?? '').trim();
+    if (!str) return null;
+    // A full URL: take the last path segment minus any query.
+    if (/^https?:\/\//i.test(str)) {
+      try {
+        const u = new URL(str);
+        if (!/(^|\.)(x|twitter)\.com$/i.test(u.hostname)) return null;
+        const seg = u.pathname.split('/').filter(Boolean)[0];
+        return /^[A-Za-z0-9_]{1,15}$/.test(seg ?? '') ? seg : null;
+      } catch { return null; }
+    }
+    const h = str.replace(/^@/, '');
+    return /^[A-Za-z0-9_]{1,15}$/.test(h) ? h : null;
+  };
+
+  /**
+   * A link only reaches the card when it is an absolute http(s) URL.
+   *
+   * THIS IS A SECURITY BOUNDARY, not formatting. esc() escapes HTML entities but does
+   * not block a scheme, so `javascript:alert(1)` survived into an href - and these
+   * values come from third-party metadata, i.e. from an attacker. Only http and https
+   * are ever rendered.
+   */
+  const safeHttp = (v) => {
+    const str = String(v ?? '').trim();
+    if (!str) return null;
+    try {
+      const u = new URL(str);
+      return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
+    } catch { return null; }
+  };
+
   const links = [];
-  if (n.links?.homepage) links.push(`<a href="${esc(n.links.homepage)}">Website</a>`);
-  if (n.links?.twitter) links.push(`<a href="https://x.com/${esc(n.links.twitter)}">@${esc(n.links.twitter)}</a>`);
+  const site = safeHttp(n.links?.website ?? n.links?.homepage ?? null);
+  if (site) links.push(`<a href="${esc(site)}">Website</a>`);
+  const tw = handleFrom(n.links?.twitter);
+  if (tw) links.push(`<a href="https://x.com/${esc(tw)}">@${esc(tw)}</a>`);
+  const tg = safeHttp(n.links?.telegram);
+  if (tg) links.push(`<a href="${esc(tg)}">Telegram</a>`);
+
   if (links.length) {
     L.push('');
     L.push(`<b>Declared links</b>`);
