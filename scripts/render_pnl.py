@@ -213,7 +213,9 @@ def main():
     draw.text((64, 48), "MEME CHECKER", font=f_brand, fill=(255, 255, 255))
     draw.text((64, 84), "CALL PERFORMANCE", font=f_kicker, fill=ACCENT)
     if age:
-        t = f"{age} ago"
+        # timeSince() already returns "just now" for a fresh call, so appending
+        # "ago" unconditionally produced "just now ago" on the image.
+        t = age if age.lower() in ('just now', 'now') else f"{age} ago"
         w = draw.textlength(t, font=f_small)
         draw.text((W - 64 - w, 52), t, font=f_small, fill=MUTED)
 

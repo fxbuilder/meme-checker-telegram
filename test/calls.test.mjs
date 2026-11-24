@@ -687,3 +687,41 @@ test('geckoTerminalToken distinguishes 404 from a transport error', async () => 
   });
   assert.match(broken.detail, /timeout/);
 });
+
+test('timeAgo never produces "just now ago"', async () => {
+  const { timeAgo } = await import('../src/calls.mjs');
+  const now = Date.now();
+  assert.equal(timeAgo(now - 1000, now), 'just now');
+  assert.equal(timeAgo(now - 30_000, now), 'just now');
+  assert.equal(timeAgo(now - 26 * 60_000, now), '26m ago');
+  assert.equal(timeAgo(now - 5 * 3600_000, now), '5h 0m ago');
+  assert.equal(timeAgo(null, now), '', 'unknown time renders nothing');
+});
+
+test('the PnL renderer handles the "just now" case explicitly', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../scripts/render_pnl.py', import.meta.url), 'utf8');
+  const ageLines = src.split(/\r?\n/).filter((l) => l.includes('ago'));
+  assert.ok(
+    ageLines.some((l) => /just now/.test(l)),
+    `the renderer must special-case "just now"; age lines: ${ageLines.join(' / ')}`,
+  );
+});
+
+test('the profile never renders "just now ago"', async () => {
+  const { renderCallerProfile } = await import('../src/caller-profile.mjs');
+  const now = Date.now();
+  const { text } = renderCallerProfile({
+    callerKey: 'u:1',
+    groupTitle: 'g',
+    period: '7d',
+    now,
+    calls: [{
+      id: 'a', callerKey: 'u:1', callerName: 'Foxy', chain: 'solana',
+      address: 'So11111111111111111111111111111111111111112', symbol: 'BONK',
+      entryMarketCapUsd: 1e6, peakMarketCapUsd: 1e6, calledAt: now - 1000, status: 'active',
+    }],
+  });
+  assert.ok(!/just now ago/i.test(text), `bad copy: ${text}`);
+  assert.match(text, /just now/);
+});

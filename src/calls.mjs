@@ -254,14 +254,26 @@ export function timeSince(calledAt, now = Date.now()) {
   if (!Number.isFinite(calledAt)) return null;
   const ms = Math.max(0, now - calledAt);
   const min = Math.floor(ms / 60_000);
-  // "just now" is a complete phrase; callers append "ago", so keep the units
-  // format consistent (callers use `${label} ago`).
   if (min < 1) return 'just now';
   if (min < 60) return `${min}m`;
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}h ${min % 60}m`;
   const d = Math.floor(hr / 24);
   return `${d}d ${hr % 24}h`;
+}
+
+/**
+ * Human age that reads correctly in a sentence: "just now", "26m ago".
+ *
+ * timeSince() returns a bare unit ("26m") except for the complete phrase
+ * "just now". Every caller appending " ago" therefore produced "just now ago".
+ * Use THIS function wherever an age is shown, and the bug cannot recur.
+ * Returns '' for an unknown time so callers can omit the parenthetical.
+ */
+export function timeAgo(calledAt, now = Date.now()) {
+  const label = timeSince(calledAt, now);
+  if (!label) return '';
+  return label === 'just now' ? label : `${label} ago`;
 }
 
 /** Build the record written on a successful call. */

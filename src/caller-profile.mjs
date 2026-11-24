@@ -17,7 +17,7 @@
  * period with no calls says so rather than showing zeros that look like failure.
  */
 
-import { callMetrics, fmtMultiple } from './calls.mjs';
+import { callMetrics, fmtMultiple, timeAgo } from './calls.mjs';
 import { fmtUsd } from './card-layout.mjs';
 import { callerLabel } from './caller-identity.mjs';
 
@@ -158,8 +158,9 @@ export function renderCallerProfile({
     // The peak is the single performance figure. When no peak was observed the
     // row says so rather than implying a 1.0x result.
     const perf = m.peakMeasured ? `[${esc(fmtProfileMultiple(m.peakMultiple))}]` : '[no peak]';
-    // timeSince already returns "just now"; appending "ago" produced "just now ago".
-    const age = m.ageLabel ? `${m.ageLabel} ago` : '';
+    // timeAgo() appends " ago" only when it reads correctly ("26m ago", never
+    // "just now ago").
+    const age = timeAgo(c.calledAt, now);
     L.push(`🟣 <b>${esc(sym)}</b> ${perf} (${esc(age)})`);
   }
 

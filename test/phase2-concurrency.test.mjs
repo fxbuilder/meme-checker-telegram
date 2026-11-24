@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { CallStore } from '../src/store.mjs';
 import { recordCall } from '../src/call-service.mjs';
 
@@ -35,6 +36,14 @@ for (const instances of [1, 2]) {
       assert.equal(result.recorded, 1);
       assert.equal(result.duplicate, 4);
       assert.equal(result.diskCount, 1);
+      // A new object shares state; an actual fresh process proves durability.
+      const reader = spawnSync(process.execPath, ['--input-type=module', '-e',
+        `import { CallStore } from ${JSON.stringify(new URL('../src/store.mjs', import.meta.url).href)}; console.log(JSON.stringify(new CallStore(${JSON.stringify(file)}).load().doc.calls));`,
+      ], { encoding: 'utf8' });
+      assert.equal(reader.status, 0, reader.stderr);
+      const restarted = JSON.parse(reader.stdout);
+      assert.equal(restarted.length, 1);
+      assert.equal(restarted[0].callerId, '1');
       for (const store of stores) assert.equal(store.firstCall('-1001', 'bsc', scanFor().token.address).callerId, '1');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
