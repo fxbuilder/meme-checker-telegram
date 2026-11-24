@@ -34,3 +34,4 @@ emoji-theme.utility.proposed.json
 # Never commit: this is live group data, not source.
 data/
 *.corrupt-*
+_*.mjs
