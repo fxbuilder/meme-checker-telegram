@@ -84,7 +84,7 @@ export async function resolveAmbiguousChain({ address, candidates = ['ethereum',
  * evidence on the likely chains; if none is found we return a prompt rather than
  * researching a default network.
  */
-async function resolveChainForResearch(target, deps) {
+export async function resolveChainForResearch(target, deps) {
   if (!target.ambiguous) return { ok: true, chain: target.chain };
   const found = await resolveAmbiguousChain({
     address: target.address,
@@ -98,7 +98,7 @@ async function resolveChainForResearch(target, deps) {
   return { ok: false };
 }
 
-function ambiguityMessage(address) {
+export function ambiguityMessage(address) {
   return [
     '🔎 <b>Which chain is this contract on?</b>',
     '',

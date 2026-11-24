@@ -26,6 +26,7 @@ import { mintCallerToken, DEFAULT_PERIOD } from './deep-link.mjs';
 import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
 import { handleAlertTest } from './alert-test.mjs';
 import { handleNarrative, handleX, handleKol } from './research/research-commands.mjs';
+import { handleRisk, handleDev, handleBundle } from './risk-commands.mjs';
 import { isEntitledToFullResearch, buildPreview, renderPreview } from './research/premium-preview.mjs';
 import { cardXSection } from './research/research-service.mjs';
 import { researchToken, cardNarrativeLines, cardXLine, cardKolLine } from './research/research-service.mjs';
@@ -1091,6 +1092,11 @@ bot.action(/^pnl:(.+)$/, async ctx => {
 bot.command('narrative', ctx => handleNarrative(ctx, researchDeps()));
 bot.command('x', ctx => handleX(ctx, researchDeps()));
 bot.command('kol', ctx => handleKol(ctx, researchDeps()));
+// Phase 5 risk commands. They share the research deps (cache + default chain) but hit
+// the risk provider, not X — so they can never spend a billable X request.
+bot.command('risk', ctx => handleRisk(ctx, { ...researchDeps(), fetchImpl: undefined }));
+bot.command('dev', ctx => handleDev(ctx, { ...researchDeps(), fetchImpl: undefined }));
+bot.command('bundle', ctx => handleBundle(ctx, { ...researchDeps(), fetchImpl: undefined }));
 bot.command('alerts', ctx => handleAlerts(ctx, callDeps()));
 /**
  * /alerttest — owner-only delivery check. Registered AFTER the generic message
