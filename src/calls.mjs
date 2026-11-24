@@ -41,14 +41,18 @@ export const MAX_PEAK_AGE_MS = Number.POSITIVE_INFINITY; // never stop tracking
  * cheaply. Returns milliseconds between observations.
  */
 export function pollIntervalFor(ageMs, {
-  hot = 5 * 60_000,
-  warm = 30 * 60_000,
-  cold = COLD_POLL_MS,
+  fresh = 20_000,        // 0-1h   : 15-30s  — the window where calls actually move
+  hourly = 60_000,       // 1-24h  : 60s
+  daily = 4 * 60_000,    // 1-7d   : 3-5min
+  weekly = 12 * 60_000,  // 7-30d  : 10-15min
+  stale = 45 * 60_000,   // 30d+   : 30-60min
 } = {}) {
-  if (!Number.isFinite(ageMs) || ageMs < 0) return hot;
-  if (ageMs <= HOT_WINDOW_MS) return hot;
-  if (ageMs <= WARM_WINDOW_MS) return warm;
-  return cold;
+  if (!Number.isFinite(ageMs) || ageMs < 0) return fresh;
+  if (ageMs <= 3600_000) return fresh;
+  if (ageMs <= 24 * 3600_000) return hourly;
+  if (ageMs <= 7 * 24 * 3600_000) return daily;
+  if (ageMs <= 30 * 24 * 3600_000) return weekly;
+  return stale;
 }
 
 /** Which tier a call is in, for reporting and for Phase 3 scheduling. */

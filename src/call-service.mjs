@@ -155,11 +155,18 @@ export async function observeCall({ store, call, scanResult, now = Date.now(), e
 
   const peak = nextPeak(call, mcap, { now, extremeMultiple, ...(corroboration?.confirm ? { requiredConfirmations: 1 } : {}) });
 
+  // Bounded observation history. Price-movement alerts need a genuine earlier
+  // sample with a real timestamp; without this a "15-minute move" would have to be
+  // invented. Kept small (12) so the store stays compact.
+  const history = Array.isArray(call.recentObservations) ? call.recentObservations.slice(-11) : [];
+  history.push({ at: now, marketCapUsd: mcap });
+
   const patch = {
     lastMarketCapUsd: mcap,
     lastObservedAt: now,
     peakMarketCapUsd: peak.peakMarketCapUsd,
     peakAt: peak.peakAt,
+    recentObservations: history,
   };
 
   // Persist or clear the pending extreme candidate so confirmation survives a

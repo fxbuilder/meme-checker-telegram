@@ -22,6 +22,8 @@ import { loadPolicy, isChatAllowed, isOwner, describePolicy } from './access.mjs
 import { verifyExtremeObservation } from './extreme-verify.mjs';
 import { resolveCaller, isAttributable } from './caller-identity.mjs';
 import { mintCallerToken } from './deep-link.mjs';
+import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
+import { startObserver } from './observer-loop.mjs';
 import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
 import {
@@ -39,6 +41,12 @@ const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const WEBSITE_BASE = (process.env.TOKEN_PAGE_BASE_URL ?? '').replace(/\/$/, '');
 const PREMIUM_URL  = (process.env.PREMIUM_URL ?? '').trim();
 const SCAN_MODE    = process.env.SCAN_MODE ?? 'mock';
+// Phase 3 observer. On by default: automatic monitoring is the point of the phase.
+// Every knob is env-overridable so the owner can slow it down without a code change.
+const OBSERVER_ENABLED      = (process.env.OBSERVER ?? 'on').toLowerCase() !== 'off';
+const OBSERVER_INTERVAL_MS  = Math.max(5_000, Number(process.env.OBSERVER_INTERVAL_MS) || 20_000);
+const OBSERVER_MAX_TOKENS   = Math.max(1, Number(process.env.OBSERVER_MAX_TOKENS) || 12);
+const OBSERVER_CONCURRENCY  = Math.max(1, Number(process.env.OBSERVER_CONCURRENCY) || 3);
 const EMOJI_THEME  = loadEnvTheme();
 const DEFAULT_EVM  = resolveChainAlias(process.env.DEFAULT_EVM_CHAIN ?? '') ?? DETECT_DEFAULT_EVM;
 
@@ -110,6 +118,8 @@ let CARD_VIEW = normalizeCardView(process.env.CARD_VIEW ?? 'standard');
 
 // Bot username populated after launch via getMe
 let BOT_USERNAME = '';
+/** Phase 3 observer controller, stopped on shutdown. */
+let observer = null;
 
 if (!BOT_TOKEN) {
   console.error('[bot] TELEGRAM_BOT_TOKEN is not set. Exiting.');
@@ -938,6 +948,16 @@ bot.action(/^pnl:(.+)$/, async ctx => {
   await sendPnlFor(ctx, { call, ...deps });
 });
 
+bot.command('alerts', ctx => handleAlerts(ctx, callDeps()));
+bot.action(/^al:/, async ctx => {
+  try {
+    await handleAlertsCallback(ctx, callDeps());
+  } catch (err) {
+    console.error('[bot] alerts callback failed:', err?.message ?? err);
+    await ctx.answerCbQuery('Something went wrong').catch(() => {});
+  }
+});
+
 bot.command('pnl', async ctx => {
   // sendPhoto needs the ctx-scoped telegram client, so bind it per invocation.
   const deps = callDeps();
@@ -1086,8 +1106,12 @@ export const internals = {
  * running instance with 409 Conflict. That is exactly what happened once during
  * development. Set BOT_NO_LAUNCH=1 to import the handlers without side effects.
  */
+// `NODE_TEST_CONTEXT` is what `node --test` actually sets; NODE_ENV=test is only a
+// convention. Missing it meant a test that imported the bot also started the
+// background observer, which then held the process open until the runner timed out.
 const SHOULD_LAUNCH = process.env.BOT_NO_LAUNCH !== '1'
-  && process.env.NODE_ENV !== 'test';
+  && process.env.NODE_ENV !== 'test'
+  && !process.env.NODE_TEST_CONTEXT;
 
 if (!SHOULD_LAUNCH) {
   console.log('[bot] BOT_NO_LAUNCH set — handlers registered, polling NOT started.');
@@ -1122,6 +1146,7 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
         { command: 'fc',      description: 'Who called a token first' },
         { command: 'pnl',     description: 'Shareable PnL card' },
         { command: 'callsettings', description: 'Auto-call and minimum MC' },
+        { command: 'alerts', description: 'Smart alert settings' },
         { command: 'about',   description: 'About Meme Checker' },
         { command: 'website', description: 'Open the Meme Checker website' },
         { command: 'upgrade', description: 'Unlock Premium analysis' },
@@ -1132,6 +1157,38 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
     }
     const pol = describePolicy(accessPolicy);
     console.log(`[bot] Staging allowlist: chats=[${pol.allowedChats.join(', ') || 'none'}] owners=[${pol.owners.join(', ') || 'none'}] allowAny=${pol.allowAnyChat}`);
+
+    // ---- Phase 3 background observer -------------------------------------
+    // Started here so `npm start` is still the only command. It shares this
+    // process, so one Ctrl+C stops polling and observation together.
+    if (OBSERVER_ENABLED) {
+      const send = async ({ chatId, text, replyToMessageId }) => {
+        const opts = { parse_mode: 'HTML', disable_web_page_preview: true };
+        try {
+          // Replying to the original call message keeps the alert attached to the
+          // call. If that message is gone Telegram rejects the reply, so fall back
+          // to a plain message in the same group rather than losing the alert.
+          if (replyToMessageId) return await bot.telegram.sendMessage(chatId, text, { ...opts, reply_to_message_id: replyToMessageId });
+        } catch (err) {
+          const desc = String(err?.description ?? err?.message ?? '');
+          if (!/message to be replied not found|message_id_invalid|replied message not found/i.test(desc)) throw err;
+          console.warn('[observer] original call message unavailable, sending unreplied alert');
+        }
+        return bot.telegram.sendMessage(chatId, text, opts);
+      };
+
+      observer = startObserver({
+        store: callStore,
+        scan,
+        send,
+        intervalMs: OBSERVER_INTERVAL_MS,
+        maxCalls: OBSERVER_MAX_TOKENS,
+        concurrency: OBSERVER_CONCURRENCY,
+      });
+    } else {
+      console.log('[observer] disabled (OBSERVER=off)');
+    }
+
     console.log('[bot] Polling for updates. (Ctrl+C to stop)');
     return bot.launch();
   })
@@ -1140,5 +1197,13 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
     process.exit(1);
   });
 
-process.once('SIGINT',  () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+/**
+ * Shutdown: stop observation first (so no new alerts are claimed), then polling.
+ * A second Ctrl+C is left to the OS.
+ */
+function shutdown(signal) {
+  try { observer?.stop(); } catch (err) { console.warn('[bot] observer stop failed:', err?.message ?? err); }
+  bot.stop(signal);
+}
+process.once('SIGINT',  () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));

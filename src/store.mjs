@@ -27,7 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Where the store lives. Overridable for tests and for a future volume mount. */
 export function defaultStorePath() {
@@ -47,6 +47,16 @@ function emptyDoc() {
     calls: [],
     /** monotonic id source; avoids Date.now() collisions in one millisecond */
     seq: 0,
+    /**
+     * Phase 3 alert state, keyed by a STABLE event id rather than array position:
+     *   `${callId}:milestone:${value}`      one row per crossed multiplier
+     *   `${callId}:dexpaid`                 the Dex Paid status tracker
+     *   `${callId}:migration`               the migration tracker
+     *   `${callId}:pump|dump|drawdown`      price-movement trackers
+     * Storing by key makes dedupe a property of the data, not of the loop that
+     * writes it, so a restart or a second observer cannot re-send an alert.
+     */
+    alerts: {},
   };
 }
 
@@ -69,7 +79,13 @@ export function migrate(docRaw) {
     migrated = true;
   }
 
-  // Future: if (doc.schemaVersion < 2) { ...doc.schemaVersion = 2; migrated = true; }
+  if (from < 2) {
+    // v1 had no alert state. Additive only: existing calls and settings are
+    // untouched, so a v1 file keeps every record and gains an empty alert map.
+    doc.alerts = doc.alerts && typeof doc.alerts === 'object' ? doc.alerts : {};
+    doc.schemaVersion = 2;
+    migrated = true;
+  }
 
   if (Number(doc.schemaVersion) > SCHEMA_VERSION) {
     // A newer binary wrote this file. Refuse to operate rather than corrupt it.
@@ -91,6 +107,24 @@ export function defaultGroupSettings(chatId) {
     // minimum USD market cap for a pasted CA to become a call. Guards against
     // recording garbage dust tokens that the provider mis-reports.
     minMarketCapUsd: 5_000,
+    /**
+     * Phase 3 alert switches. Multiplier alerts default ON because they are the
+     * headline feature; the noisier, judgement-dependent ones default OFF so a
+     * group is never surprised by alerts it did not ask for.
+     */
+    alerts: {
+      multiplier: true,
+      dexPaid: true,
+      migration: true,
+      priceMovement: false,
+      // Default enabled subset: the round numbers people actually screenshot.
+      milestones: [2, 5, 10, 20, 50, 100],
+      pumpPercent: 50,
+      pumpWindowMs: 15 * 60_000,
+      dumpPercent: 30,
+      dumpWindowMs: 15 * 60_000,
+      drawdownPercent: 50,
+    },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -348,6 +382,102 @@ export class CallStore {
     this.doc.calls[i] = { ...this.doc.calls[i], ...patch, updatedAt: Date.now() };
     await this.persist();
     return this.doc.calls[i];
+  }
+
+  // ---- alert state -------------------------------------------------------
+
+  /**
+   * Read one alert state row, or null.
+   * Rows are keyed by a stable event id, so this is a plain map lookup.
+   */
+  alertState(eventId) {
+    this.load();
+    return this.doc.alerts?.[eventId] ?? null;
+  }
+
+  /** Has this exact alert already been delivered successfully? */
+  alertDelivered(eventId) {
+    return this.alertState(eventId)?.state === 'delivered';
+  }
+
+  /**
+   * CLAIM an alert for delivery.
+   *
+   * Returns `{ claimed: true }` only if nothing has claimed or delivered this
+   * event id. The claim is written synchronously before any await, so two
+   * observers in one process cannot both win it.
+   *
+   * A row left in 'pending' by a crash is NOT automatically retried: re-sending a
+   * possibly-delivered alert is worse than dropping one. `reclaimStale` exists for
+   * an explicit operator decision instead of an automatic one.
+   */
+  async claimAlert(eventId, row) {
+    this.load();
+    const existing = this.doc.alerts[eventId];
+    // 'ambiguous' is terminal: we could not tell whether Telegram delivered it, so
+    // a retry risks a visible duplicate. 'failed' is retryable because the failure
+    // was definite (nothing reached the group).
+    if (existing && ['delivered', 'pending', 'ambiguous'].includes(existing.state)) {
+      return { claimed: false, existing };
+    }
+    this.doc.alerts[eventId] = {
+      ...row,
+      eventId,
+      state: 'pending',
+      claimedAt: Date.now(),
+    };
+    await this.persist();
+    return { claimed: true, existing: null };
+  }
+
+  /** Mark a claimed alert delivered, recording the Telegram message id. */
+  async markAlertDelivered(eventId, { messageId = null, at = Date.now() } = {}) {
+    this.load();
+    const cur = this.doc.alerts[eventId];
+    if (!cur) return null;
+    this.doc.alerts[eventId] = { ...cur, state: 'delivered', messageId, deliveredAt: at };
+    await this.persist();
+    return this.doc.alerts[eventId];
+  }
+
+  /**
+   * Record a delivery failure.
+   *
+   * 'failed' is retryable (nothing reached Telegram, or Telegram said no).
+   * 'ambiguous' means we could not tell whether the message was sent; it is never
+   * retried automatically, because a duplicate alert looks worse than a missed one.
+   */
+  async markAlertFailed(eventId, { reason, ambiguous = false, at = Date.now() } = {}) {
+    this.load();
+    const cur = this.doc.alerts[eventId];
+    if (!cur) return null;
+    this.doc.alerts[eventId] = {
+      ...cur,
+      state: ambiguous ? 'ambiguous' : 'failed',
+      failureReason: reason ?? null,
+      failedAt: at,
+      attempts: (cur.attempts ?? 1) + 1,
+    };
+    await this.persist();
+    return this.doc.alerts[eventId];
+  }
+
+  /** Set or update an arbitrary alert tracker row (dex paid, migration, movement). */
+  async setAlertState(eventId, patch) {
+    this.load();
+    this.doc.alerts[eventId] = { ...(this.doc.alerts[eventId] ?? {}), ...patch, eventId };
+    await this.persist();
+    return this.doc.alerts[eventId];
+  }
+
+  /** Count alerts by state, for the observer's status line. */
+  alertStats() {
+    this.load();
+    const out = { pending: 0, delivered: 0, failed: 0, ambiguous: 0 };
+    for (const row of Object.values(this.doc.alerts ?? {})) {
+      if (out[row.state] != null) out[row.state] += 1;
+    }
+    return out;
   }
 
   /** Calls that still want observation (not cancelled, not older than `maxAgeMs`). */

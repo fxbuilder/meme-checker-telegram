@@ -54,10 +54,15 @@ export async function observePass({
   // A hot call polls every few minutes; a month-old call polls daily. This is the
   // Phase 3 scheduler's cost model, expressed here so it can be tested now.
   const due = force ? open : open.filter((c) => {
+    // A call that has NEVER been observed is always due: waiting a full interval
+    // after creation would leave a brand-new call with no current price, and no
+    // alert could fire until the second interval.
+    if (!Number.isFinite(c.lastObservedAt)) return true;
     const age = now - c.calledAt;
     const interval = pollIntervalFor(age);
-    const last = c.lastObservedAt ?? c.calledAt;
-    return (now - last) >= Math.max(interval, perCallCooldownMs);
+    // The cooldown guards against re-polling the same token too often; it must not
+    // delay the FIRST observation, hence the branch above.
+    return (now - c.lastObservedAt) >= Math.max(interval, 0);
   });
 
   // One provider call per distinct token per run.
