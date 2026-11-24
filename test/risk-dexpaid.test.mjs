@@ -274,6 +274,27 @@ test('a tiny non-zero dev holding shows <0.1% rather than 0.0%', () => {
   assert.equal(zero.value, '0.0%');
 });
 
+test('the raw float GoPlus returns for a fractional holding never reaches the card', () => {
+  // Observed live on BNB Chain: 0.00009999999999999999. It must never print as-is,
+  // and never round down to a confident 0.0% either, because that reads as "no holding".
+  const observed = 0.00009999999999999999;
+  const r = resolveQuickCheck('dev', { risk: { ...emptyRisk(), dev: { address: '0xabc', balancePercentage: observed } }, riskStatus: 'ok' });
+  assert.equal(r.value, '<0.1%');
+  assert.notEqual(r.value, '0.0%');
+  assert.ok(!r.value.includes('9999'), 'the raw float does not leak through');
+  assert.equal(r.tone, 'warn', 'a non-zero holding is not a clean bill of health');
+});
+
+test('the raw float GoPlus returns for a fractional LP lock never reaches the card', () => {
+  // Observed live on Ethereum: 0.009091289719550899. It is a real, tiny lock - a
+  // near-total absence of protection - and must read as such, not as a rounded 0%.
+  const observed = 0.009091289719550899;
+  const r = resolveQuickCheck('lpLock', { risk: { ...emptyRisk(), lpLock: { lockedPercentage: observed, burnedPercentage: 0 } }, riskStatus: 'ok' });
+  assert.equal(r.value, '<1%');
+  assert.equal(r.tone, 'bad');
+  assert.ok(!r.value.includes('9091'), 'the raw float does not leak through');
+});
+
 test('Solana with an EMPTY creators array reports no dev, not "Known"', () => {
   const r = normalizeRisk('solana', { holder_count: '10', creators: [] });
   assert.equal(r.dev, null, 'empty creators must not render as a known dev');

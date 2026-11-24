@@ -23,27 +23,34 @@ Sources:
 Each tier fills only nulls, so a measured value is never replaced by another vendor's
 methodology.
 
-## Matrix
+## Matrix (re-measured after the GeckoTerminal tier was added)
 
-| Chain | GoPlus id | Tax / Fee | LP lock | Creator holds | Top 10 | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| Solana | `solana` | **fee n/a on legacy SPL** (Token-2022 → transfer fee) | ✅ burned 99.99% | ✅ 0.0% | ✅ 40.5% | ✅ verified |
-| Ethereum | `1` | ✅ 0/0% | partial (0.009%) | ✅ 0% | ✅ 38.6% | ✅ verified |
-| BNB Chain | `56` | — (not reported) | — | ✅ 0% | ✅ 2.9% | ✅ verified |
-| Base | `8453` | ✅ 0/0% | — | ✅ 0% | ✅ 33.3% | ✅ verified |
-| Arbitrum | `42161` | ✅ 0/0% | — | ✅ 0% | ✅ 46.5% | ✅ verified |
-| Optimism | `10` | ✅ 0/0% | — | ✅ 0% | ✅ 57.3% | ✅ verified |
-| Polygon | `137` | ✅ 0/0% | — | ✅ 0% | ✅ 37.9% | ✅ verified |
-| Avalanche | `43114` | — (not reported) | — | ✅ 0% | ✅ 79.7% | ✅ verified |
-| **Monad** | **`143`** | — | — | — | — | ⚠️ endpoint live, token had no record |
-| **Robinhood Chain** | **`4663`** | ✅ 0/0% | — | ✅ 0% | ✅ 27.5% | ✅ **verified** |
-| **Unichain** | **`130`** | — | — | ✅ 0% | ✅ 72.6% | ✅ **verified** |
-| **Berachain** | **`80094`** | — | — | — | ✅ 89.1% | ✅ **verified (partial)** |
-| **Abstract** | **`2741`** | — | — | — | — | ⚠️ endpoint live, token had no record |
-| HyperEVM | — | — | — | — | — | ❌ unsupported |
-| MegaETH | — | — | — | — | — | ❌ unsupported |
+Live `fetchRisk` calls against one real token per chain.
 
-**10 of 15 chains verified with real data.** 13 of 15 have a working provider endpoint.
+| Chain | GoPlus | Top 10 | Mintable | LP / Tax | Status |
+| --- | --- | --- | --- | --- | --- |
+| Solana | Y | 40.52% | false | burned / n-a | ok |
+| Ethereum | Y | 38.61% | false | 0.009% locked / 0-0 | ok |
+| BNB Chain | Y | 2.87% | **true** | — | ok |
+| Base | Y | 33.26% | false | 0-0 | ok |
+| Arbitrum | Y | 46.45% | — | 0-0 | ok |
+| Optimism | Y | 57.33% | **true** | 0-0 | ok |
+| Polygon | Y | 37.94% | **true** | 0-0 | ok |
+| Avalanche | Y | 79.73% | false | — | ok |
+| Unichain | Y | 72.59% | — | — | ok |
+| Berachain | Y | 89.06% | false | — | ok |
+| **HyperEVM** | **n** | — | **false** | — | **ok** (GeckoTerminal) |
+| MegaETH | n | — | — | — | no-data |
+| Monad / Robinhood / Abstract | Y | — | — | — | no seed token in this run |
+
+**Totals: 11 ok, 1 no-data, 0 unsupported, 3 without a seed token. 10 chains report top-10
+concentration.**
+
+`unsupported` reached **zero**. Before Fix 2c both HyperEVM and MegaETH returned
+`unsupported` immediately, and that early return skipped every fallback.
+
+**`mintable: true` on BNB Chain, Optimism and Polygon is a genuine finding**, not a bug:
+those tokens really do retain mint authority. It is shown, not hidden.
 
 ## What changed and why it was wrong
 
@@ -71,6 +78,13 @@ a different instrument. Verified both paths:
 **raw token units**. Dividing by `10^decimals` before comparing to supply is the
 difference between a correct 0% and a wildly wrong figure. Contract owner and metadata
 authority are separate fields and are not conflated with the original creator.
+
+## Raw provider floats never reach the card
+
+Live responses contained `0.00009999999999999999` (BNB Chain creator holding) and
+`0.009091289719550899` (Ethereum LP lock). Both render as `<0.1%` and `<1%` with a
+warning tone, and both are pinned by test so the raw value cannot leak into a card or
+round silently to a confident `0%`.
 
 ## A fabrication bug found while testing
 
