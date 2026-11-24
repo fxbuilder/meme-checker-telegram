@@ -56,15 +56,30 @@ remain irreconcilable.
 
 ## Phase 5 — Advanced Risk Intelligence
 
-⬜ not started
+✅ TECHNICAL PASS — `f28ef86`
+
+`/risk`, `/dev`, `/bundle` on existing GoPlus normalisation (8 of 15 chains). Three
+states kept strictly apart: measured / unknown (`—`) / not-supported (`n/a`).
+Unsupported never renders as safe. Found by running it: tiny holdings printed "0.00%",
+low-coverage LP read as "unlocked", and the renderer trusted any percentage it was
+given (now refuses >100).
 
 ## Phase 6 — Community, Leaderboard, Group Settings
 
-⬜ not started
+✅ TECHNICAL PASS — `713ef99`
+
+`/lb`, `/leaderboard`, `/gpnl`, `/settings`. Deterministic ranking (hit rate → best peak
+→ volume → key), losers retained, unmeasured calls shown not hidden. Settings fail
+closed via `?.allowed === true` — a truthiness test on the verdict object would always
+pass, which was a real Phase 3 defect.
 
 ## Phase 7 — Integrated release candidate
 
-⬜ not started
+✅ TECHNICAL PASS — `9610ff6` on branch `mc/phase7-integrated`
+
+Integration gate drove all 14 commands through the real middleware chain: every one
+responded, and host-level instrumentation recorded **0 paid X requests**.
+`docs/OWNER-ACCEPTANCE.md` and `docs/FINAL-HANDOFF.md` written; `.env.example` completed.
 
 ---
 
