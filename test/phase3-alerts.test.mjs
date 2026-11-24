@@ -594,3 +594,37 @@ test('the /alerts panel refuses to render switches for a non-owner', async () =>
   assert.deepEqual(kb, [], 'no buttons for a non-owner');
   assert.match(replies[0].t, /Only the bot owner can change/);
 });
+
+test('synthetic and cancelled calls never accumulate Dex Paid alert state', async () => {
+  const store = tmpStore();
+  store.groupSettings(GROUP, { title: 'A' });
+  await store.setGroupSetting(GROUP, { alerts: { multiplier: true, dexPaid: true, milestones: [2] } });
+  // Distinct addresses: uniqueness is per (group, chain, contract), so sharing one
+  // CA would make the synthetic and cancelled calls collide with the real one.
+  const mk = (addr) => ({
+    status: 'ok',
+    token: { chain: 'solana', address: addr, name: 'T', symbol: 'T' },
+    market: { marketCapUsd: 1_000_000, liquidityUsd: 200_000, priceUsd: 1 },
+    media: {},
+  });
+  const mkCall = async (addr, source) => (await recordCall({
+    store, caller, chatId: GROUP, source, messageId: 1, scanResult: mk(addr), now: Date.now() - 5 * 60_000,
+  })).call;
+
+  const real = await mkCall('So11111111111111111111111111111111111111112', 'auto');
+  const synth = await mkCall('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'synthetic');
+  const gone = await mkCall('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', 'auto');
+  await store.updateCall(gone.id, { status: 'cancelled' });
+
+  await runCycle({
+    store, scan: async () => scanAt(2_000_000), send: async () => ({}),
+    now: Date.now() + 60_000,
+    dexPaid: async () => ({ status: 'paid', detail: 'active tokenProfile' }),
+    dexPaidEveryMs: 0,
+  });
+
+  const ids = Object.keys(store.doc.alerts);
+  assert.ok(!ids.some((k) => k.startsWith(`${synth.id}:`)), 'a synthetic record must not get alert state');
+  assert.ok(!ids.some((k) => k.startsWith(`${gone.id}:`)), 'a cancelled record must not be polled');
+  assert.ok(ids.some((k) => k.startsWith(`${real.id}:`)), 'the live call is tracked');
+});

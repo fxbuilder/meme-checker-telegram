@@ -22,7 +22,7 @@
 import { observePass } from './call-observer.mjs';
 import { processMilestoneEvents, processDexPaid, processMovement } from './alert-service.mjs';
 import { fetchDexPaid } from './dex-paid.mjs';
-import { defaultGroupSettings } from './store.mjs';
+import { defaultGroupSettings, isActive, isSynthetic } from './store.mjs';
 
 /** Sleep that can be interrupted by shutdown. */
 export function sleep(ms, signal) {
@@ -136,6 +136,9 @@ export async function runCycle({
 
   // Dex Paid is a slow-moving signal: poll it far less often than price.
   const dueForPaid = store.openCalls({ now }).filter((c) => {
+    // Never track synthetic or non-active records: a simulated call must not
+    // accumulate alert state, and its rows must never reach a real group.
+    if (!isActive(c) || isSynthetic(c)) return false;
     const s = alertSettings(store, c.chatId);
     if (!s.dexPaid) return false;
     const prev = store.alertState(`${c.id}:dex-paid`);
