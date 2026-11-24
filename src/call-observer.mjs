@@ -55,6 +55,8 @@ export async function observePass({
   force = false,
   /** Aborts remaining work; forwarded from the scheduler on shutdown. */
   signal = null,
+  /** Injected so the scheduler's own logger receives these, not the console. */
+  log = console,
 }) {
   const aborted = () => Boolean(signal?.aborted);
   // maxAgeMs defaults to Infinity: old calls stay tracked, just less often.
@@ -127,7 +129,7 @@ export async function observePass({
       result = await scan({ chain: lead.chain, address: lead.address, signal: signal ?? undefined });
     } catch (err) {
       failed += 1;
-      console.warn(`[observer] scan failed for ${t.key}:`, err?.message ?? err);
+      log.warn(`[observer] scan failed for ${t.key}: ${err?.message ?? err}`);
       continue;
     }
     if (result?.status !== 'ok') {

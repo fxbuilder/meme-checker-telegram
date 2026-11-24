@@ -135,7 +135,7 @@ async function runCycleUnlocked({
     // than waiting for a slow provider to answer. Without this, Ctrl+C could sit
     // for the full provider timeout and still write an observation afterwards.
     scan: (request) => scan(request, { fetchImpl, enrich: false, signal: signal ?? undefined }),
-    now, maxCalls: marketLimit, force, signal,
+    now, maxCalls: marketLimit, force, signal, log,
   });
 
   let milestones = 0;
