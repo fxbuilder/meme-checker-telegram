@@ -151,7 +151,9 @@ export class RequestBudget {
     this.label = label;
     this.used = 0;
     this.windowStart = now();
-    this.lastSpendAt = 0;
+    // null, not 0: a clock that legitimately reads 0 must not be mistaken for
+    // "never spent", which silently disabled pacing.
+    this.lastSpendAt = null;
     /**
      * Measured, not guessed: consecutive GetXAPI searches returned 200 then 429.
      * 5000ms clears it in practice. Set to 0 to disable pacing (tests, or a provider
@@ -195,14 +197,35 @@ export class RequestBudget {
    * Returns false when the budget is exhausted, in which case nothing is awaited.
    */
   async reserve({ minIntervalMs = this.minIntervalMs, sleep = globalThis.__researchSleep ?? defaultSleep } = {}) {
-    if (!this.spend(1)) return false;
-    if (minIntervalMs > 0) {
-      const since = this.now() - this.lastSpendAt;
-      const wait = this.lastSpendAt === 0 ? 0 : Math.max(0, minIntervalMs - since);
-      if (wait > 0) await sleep(wait);
+    // SERIALISED. Reading lastSpendAt, computing a wait and writing lastSpendAt is a
+    // read-modify-write race: two concurrent reservations both observe the same
+    // `since`, both sleep the same interval, and wake together - so the floor held
+    // for sequential calls but not for simultaneous ones, which is precisely when a
+    // burst would be sent.
+    //
+    // Chaining through this promise makes reservations take turns, so each computes
+    // its wait against the PREVIOUS reservation's completion.
+    const prior = this.__reserveChain ?? Promise.resolve();
+    let release;
+    const mine = new Promise((resolve) => { release = resolve; });
+    this.__reserveChain = prior.then(() => mine);
+
+    await prior;
+    try {
+      // Charge inside the critical section so budget and pacing stay consistent.
+      if (!this.spend(1)) return false;
+      if (minIntervalMs > 0 && this.lastSpendAt !== null) {
+        const since = this.now() - this.lastSpendAt;
+        const wait = Math.max(0, minIntervalMs - since);
+        if (wait > 0) await sleep(wait);
+      }
+      this.lastSpendAt = this.now();
+      return true;
+    } finally {
+      // Always release, even on a refused spend or a throwing sleep, or the next
+      // reservation would wait forever.
+      release();
     }
-    this.lastSpendAt = this.now();
-    return true;
   }
 
   stats() {

@@ -64,8 +64,12 @@ export async function fetchWebsiteText(url, { fetchImpl = globalThis.fetch, time
 
     if (!res.ok) return { status: 'provider-error', detail: `http ${res.status}` };
 
+    // A response with NO content-type must not be assumed to be prose. Public
+    // websites usually declare one; a binary payload served without a header would
+    // otherwise flow straight into text extraction.
     const ctype = res.headers?.get?.('content-type') ?? '';
-    if (ctype && !TEXT_TYPES.test(ctype)) return { status: 'not-text', detail: ctype.split(';')[0] };
+    if (!ctype) return { status: 'not-text', detail: 'no content-type' };
+    if (!TEXT_TYPES.test(ctype)) return { status: 'not-text', detail: ctype.split(';')[0] };
 
     let body;
     try {
