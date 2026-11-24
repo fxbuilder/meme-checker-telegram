@@ -121,8 +121,13 @@ test('Solana uses the solana endpoint, EVM uses the numeric chain id', async () 
   const f = async (url) => { seen.push(url); return jsonRes({ code: 1, result: {} }); };
   await fetchRisk('solana', 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', { fetchImpl: f });
   await fetchRisk('optimism', '0x4200000000000000000000000000000000000042', { fetchImpl: f });
-  assert.match(seen[0], /\/solana\/token_security/);
-  assert.match(seen[1], /\/token_security\/10\?/);
+  // Solana also consults RugCheck now, so assert on the GoPlus URL specifically
+  // rather than assuming it is the first call.
+  const goplusSolana = seen.find((u) => /gopluslabs/.test(u) && /solana/.test(u));
+  assert.ok(goplusSolana, `expected a GoPlus solana call among ${seen.join(', ')}`);
+  assert.match(goplusSolana, /\/solana\/token_security/);
+  const optimism = seen.find((u) => /token_security\/10\?/.test(u));
+  assert.ok(optimism, 'optimism must use the numeric chain id 10');
 });
 
 // ---- Dex Paid classification ----------------------------------------------

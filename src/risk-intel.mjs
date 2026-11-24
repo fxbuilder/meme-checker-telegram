@@ -19,6 +19,7 @@
  *     `status` on the block and the card says the data could not be checked.
  */
 import { getChain } from './chains.mjs';
+import { fetchRugCheck } from './security/rugcheck.mjs';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
 const TIMEOUT_MS = 8_000;
@@ -269,6 +270,78 @@ export function normalizeRisk(chainId, row) {
 }
 
 /**
+ * Merge a fallback security source into a primary one, FIELD BY FIELD.
+ *
+ * WHY FIELD-LEVEL AND NOT PROVIDER-LEVEL: the BONK card showed `Tax: —`, `LP Locked: —`
+ * and `Creator Holds: —` because GoPlus's Solana payload simply does not carry those
+ * three. Falling back only when the WHOLE provider fails would have left them empty;
+ * taking the fallback wholesale would have thrown away GoPlus's holder total.
+ *
+ * A primary value is never overwritten. Only nulls are filled, so a measured 0 stays 0
+ * and a measured lock percentage is not replaced by another vendor's methodology.
+ */
+export function mergeRisk(primary, fallback) {
+  // A fallback-only result still needs the full shape: callers read holders/security
+  // unconditionally, so returning the raw provider object would throw.
+  if (!primary) {
+    if (!fallback) return null;
+    return {
+      ...fallback,
+      holders: { ...(fallback.holders ?? {}) },
+      security: { ...(fallback.security ?? {}) },
+      tax: fallback.tax ?? null,
+      lpLock: fallback.lpLock ?? null,
+      dev: fallback.dev ?? null,
+      sources: { ...(fallback.sources ?? {}), primary: 'none', fallback: fallback.source ?? null },
+    };
+  }
+  if (!fallback) return primary;
+
+  const out = {
+    holders: { ...(primary.holders ?? {}) },
+    security: { ...(primary.security ?? {}) },
+    tax: primary.tax ?? fallback.tax ?? null,
+    lpLock: primary.lpLock ?? fallback.lpLock ?? null,
+    dev: primary.dev ?? fallback.dev ?? null,
+    // Record where each block came from, so the UI can be precise.
+    sources: { ...(primary.sources ?? {}) },
+  };
+
+  // Holders: fill each field independently.
+  const fbH = fallback.holders ?? {};
+  for (const k of ['total', 'top10Percentage', 'largestHolderPercentage']) {
+    if (out.holders[k] === null || out.holders[k] === undefined) {
+      if (fbH[k] !== null && fbH[k] !== undefined) out.holders[k] = fbH[k];
+    }
+  }
+  // Provider-reported vs independently verified concentration must be distinguishable.
+  if (out.holders.top10Percentage !== null && primary.holders?.top10Percentage == null) {
+    out.holders.concentrationSource = 'rugcheck';
+  } else if (out.holders.top10Percentage !== null) {
+    out.holders.concentrationSource = 'goplus';
+  }
+
+  const fbS = fallback.security ?? {};
+  for (const k of Object.keys(fbS)) {
+    if (out.security[k] === null || out.security[k] === undefined) {
+      if (fbS[k] !== null && fbS[k] !== undefined) out.security[k] = fbS[k];
+    }
+  }
+
+  out.sources = {
+    ...(primary.sources ?? {}),
+    // Only claim the fallback for blocks it actually supplied.
+    ...(primary.tax == null && fallback.tax ? { tax: fallback.source } : {}),
+    ...(primary.lpLock == null && fallback.lpLock ? { lpLock: fallback.source } : {}),
+    ...(primary.dev == null && fallback.dev ? { dev: fallback.source } : {}),
+    ...(primary.holders?.top10Percentage == null && fallback.holders?.top10Percentage != null
+      ? { holders: fallback.source } : {}),
+  };
+
+  return out;
+}
+
+/**
  * Fetch risk intel for one token.
  * Returns { status, data, detail }:
  *   'ok'          — data is the normalized block
@@ -320,6 +393,24 @@ export async function fetchRisk(chainId, address, { fetchImpl = globalThis.fetch
   } catch (err) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
     result = { status: 'error', data: null, detail: timedOut ? 'timeout' : `transport: ${err?.message ?? err}` };
+  }
+
+  // ---- Field-level fallback for Solana -----------------------------------
+  // GoPlus's Solana payload has no transfer fee, no LP-lock figure and no creator
+  // BALANCE, which is exactly the trio the owner saw as dashes. RugCheck supplies all
+  // three from on-chain state, free and keyless. The merge fills only the gaps.
+  if (chain.goplus === 'solana') {
+    const rc = await fetchRugCheck(address, { fetchImpl });
+    if (rc.status === 'ok' && rc.data) {
+      const primary = result.status === 'ok' ? result.data : null;
+      const merged = mergeRisk(primary, rc.data);
+      if (merged) {
+        result = { status: 'ok', data: merged, detail: result.detail ?? null };
+      }
+    } else if (result.status !== 'ok') {
+      // GoPlus failed entirely but RugCheck works: RugCheck alone is a real answer.
+      result = { status: 'ok', data: rc.data, detail: `goplus ${result.status}; rugcheck ok` };
+    }
   }
 
   if (result.status !== 'no-data') {

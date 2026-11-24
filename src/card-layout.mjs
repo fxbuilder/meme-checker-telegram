@@ -127,9 +127,22 @@ export function resolveQuickCheck(key, result) {
       };
     }
     case 'tax': {
-      // Solana has no buy/sell tax concept at all.
       if (unsupported) return { label: 'Tax', value: NA, tone: 'muted' };
       const t = risk?.tax;
+
+      // SOLANA HAS NO BUY/SELL TAX. A Token-2022 token may carry a TRANSFER FEE, which
+      // applies to every transfer rather than to a trade. Calling it "tax" would be
+      // wrong, and treating a missing value as "0%" would be a fabricated all-clear,
+      // so it is labelled for what it is.
+      if (t?.kind === 'transfer-fee') {
+        if (t.pct == null) return { label: 'Transfer Fee', value: DASH, tone: 'muted' };
+        const pct = Number(t.pct);
+        if (!Number.isFinite(pct) || pct < 0) return { label: 'Transfer Fee', value: DASH, tone: 'muted' };
+        if (pct === 0) return { label: 'Transfer Fee', value: '0%', tone: 'good' };
+        const tone = pct >= 5 ? 'bad' : 'warn';
+        return { label: 'Transfer Fee', value: `${pct.toFixed(2)}%`, tone };
+      }
+
       if (!t || (t.buy == null && t.sell == null)) {
         return { label: 'Tax', value: DASH, tone: 'muted' };
       }
@@ -147,8 +160,24 @@ export function resolveQuickCheck(key, result) {
     case 'lpLock': {
       if (unsupported) return { label: 'LP Locked', value: NA, tone: 'muted' };
       const lp = risk?.lpLock;
-      if (!lp || lp.lockedPercentage == null) return { label: 'LP Locked', value: DASH, tone: 'muted' };
-      const locked = lp.lockedPercentage;
+      if (!lp) return { label: 'LP Locked', value: DASH, tone: 'muted' };
+
+      // BURNED and LOCKED are different guarantees and must not be silently summed
+      // into one number. A destroyed LP mint can never be withdrawn; a locked one can
+      // be unlocked when the timer ends. Solana providers report burn explicitly.
+      //
+      // NULL GUARD: Number(null) is 0, so a naive isFinite(Number(x)) test turns an
+      // UNKNOWN into a confident "0% (unlocked)". That is a fabricated risk verdict,
+      // and it is exactly the class of bug this block exists to prevent.
+      const toNum = (v) => (v === null || v === undefined || v === '' ? null
+        : (Number.isFinite(Number(v)) ? Number(v) : null));
+      const burned = toNum(lp.burnedPercentage);
+      const locked = toNum(lp.lockedPercentage);
+
+      if (burned !== null && burned >= 50) {
+        return { label: 'LP Locked', value: `Burned ${burned.toFixed(0)}%`, tone: 'good' };
+      }
+      if (locked === null) return { label: 'LP Locked', value: DASH, tone: 'muted' };
       // A tiny locked sliver is materially different from none.
       if (locked > 0 && locked < 1) return { label: 'LP Locked', value: '<1%', tone: 'bad' };
       const tone = locked >= 90 ? 'good' : locked >= 50 ? 'warn' : 'bad';

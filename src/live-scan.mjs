@@ -360,15 +360,18 @@ export async function enrichResult(result, { fetchImpl, riskFetch, paidFetch } =
 
   const out = { ...result, dexPaid: paid };
 
-  if (risk.status === 'ok') {
+  // `status: 'ok'` promises usable data, but a defensive check costs nothing and a
+  // null dereference here would take down an otherwise good scan.
+  if (risk.status === 'ok' && risk.data) {
     out.risk = risk.data;
     out.riskStatus = 'ok';
     // The card's Holder Overview reads a flat shape; keep both in sync so the
     // quick-check block and the holder section can never disagree.
+    const h = risk.data.holders ?? {};
     out.holders = {
-      total: risk.data.holders.total,
-      top10Percentage: risk.data.holders.top10Percentage,
-      largestHolderPercentage: risk.data.holders.largestHolderPercentage,
+      total: h.total ?? null,
+      top10Percentage: h.top10Percentage ?? null,
+      largestHolderPercentage: h.largestHolderPercentage ?? null,
     };
   } else {
     out.riskStatus = risk.status; // 'unsupported' | 'no-data' | 'error'
