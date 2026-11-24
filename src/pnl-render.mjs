@@ -36,7 +36,7 @@ function interpreters() {
  * Build the payload the renderer consumes. Derived from the SAME callMetrics the
  * text card uses, so the two surfaces cannot disagree.
  */
-export function buildPnlPayload(call, { now = Date.now(), tokenName = null } = {}) {
+export function buildPnlPayload(call, { now = Date.now(), tokenName = null, groupTitle = null, logoUrl = null } = {}) {
   const m = callMetrics(call, now);
   return {
     name: tokenName ?? call.name ?? call.symbol ?? 'Token',
@@ -54,6 +54,13 @@ export function buildPnlPayload(call, { now = Date.now(), tokenName = null } = {
     percent: fmtSignedPercent(m.currentPercent) ?? '',
     peakMultiple: m.peakIsObserved ? (fmtMultiple(m.peakMultiple) ?? null) : null,
     peakIsObserved: m.peakIsObserved,
+    // Phase 2 image quality: group identity, labelled peak ROI, and project art.
+    groupTitle: groupTitle ?? null,
+    peakPercent: m.peakIsObserved ? (fmtSignedPercent(m.peakPercent) ?? null) : null,
+    // Only an image we have already validated for THIS chain+contract is passed
+    // here; the renderer re-checks it rather than trusting the URL blindly.
+    logoUrl: logoUrl ?? null,
+    calledAtLabel: call.calledAt ? new Date(call.calledAt).toISOString().slice(0, 10) : null,
   };
 }
 
@@ -85,13 +92,13 @@ function runOnce(interp, outPath, payload) {
  * Render a call to a PNG file.
  * @returns {Promise<string|null>} absolute path, or null when unavailable.
  */
-export async function renderPnlPng(call, { now = Date.now(), tokenName = null } = {}) {
+export async function renderPnlPng(call, { now = Date.now(), tokenName = null, groupTitle = null, logoUrl = null } = {}) {
   if (!call) return null;
   if (!fs.existsSync(SCRIPT)) {
     console.warn('[pnl-render] renderer script missing:', SCRIPT);
     return null;
   }
-  const payload = buildPnlPayload(call, { now, tokenName });
+  const payload = buildPnlPayload(call, { now, tokenName, groupTitle, logoUrl });
   const outPath = path.join(os.tmpdir(), `mc-pnl-${call.id}-${Date.now()}.png`);
 
   let lastErr = null;

@@ -183,64 +183,101 @@ test('/fc for an uncalled token says so', async () => {
 
 // ---- /pnl ----------------------------------------------------------------
 
-test('/pnl sends an image card when a renderer is available', async () => {
+test('/pnl sends exactly ONE photo with NO caption for a recorded call', async () => {
   const store = tmpStore();
   await recordCall({ store, scanResult: okScan(), caller: { id: 1, displayName: 'F', username: 'foxy' }, chatId: CHAT });
-  const { ctx, out } = makeCtx({ text: '/pnl' });
+  const { ctx, out } = makeCtx({ text: `/pnl ${CA}` });
 
   await handlePnl(ctx, {
     store,
-    scan: async () => okScan({ market: { ...okScan().market, marketCapUsd: 10_000_000 } }),
+    scan: scanOk,
     renderPng: async () => 'C:/tmp/card.png',
-    sendPhoto: async (chatId, p, opts) => { out.push({ photo: p, text: opts.caption }); },
+    sendPhoto: async (chatId, p, opts) => { out.push({ photo: p, opts }); },
   });
 
-  const photoMsg = out.find((o) => o.photo);
-  assert.ok(photoMsg, 'expected a photo card');
-  assert.match(photoMsg.text, /PnL/);
-  assert.match(photoMsg.text, /2\.00x/, 'refreshed to 10M against a 5M entry');
-  assert.match(photoMsg.text, /not realized profit/);
+  const photos = out.filter((o) => o.photo);
+  assert.equal(photos.length, 1, 'exactly one photo');
+  assert.equal(photos[0].opts.caption, undefined, 'no caption attached');
+  assert.equal(photos[0].opts.parse_mode, undefined, 'no parse mode for an empty caption');
+  assert.equal(photos[0].opts.reply_markup, undefined, 'no buttons');
+  // No separate text report.
+  assert.equal(out.filter((o) => o.text && !o.photo).length, 0, 'no extra text message');
 });
 
-test('/pnl falls back to a text card when rendering fails', async () => {
+test('/pnl with an unrecorded CA says so exactly once and inserts nothing', async () => {
+  const store = tmpStore();
+  const before = store.callsForChat(CHAT, { limit: 50 }).length;
+  const other = `0x${'b'.repeat(40)}`;
+  const { ctx, out } = makeCtx({ text: `/pnl ${other}` });
+
+  await handlePnl(ctx, { store, scan: scanOk, renderPng: async () => 'x', sendPhoto: async () => {} });
+
+  assert.equal(out.length, 1, 'one response only');
+  assert.equal(out[0].text, 'No recorded call for this token in this group.');
+  assert.equal(store.callsForChat(CHAT, { limit: 50 }).length, before, 'no call created');
+});
+
+test('/pnl reports a render failure instead of faking a text delivery', async () => {
   const store = tmpStore();
   await recordCall({ store, scanResult: okScan(), caller: { id: 1, displayName: 'F', username: 'foxy' }, chatId: CHAT });
-  const { ctx, out } = makeCtx({ text: '/pnl' });
+  const { ctx, out } = makeCtx({ text: `/pnl ${CA}` });
 
   await handlePnl(ctx, {
     store, scan: scanOk,
     renderPng: async () => { throw new Error('no renderer'); },
-    sendPhoto: async () => { throw new Error('should not be called'); },
+    sendPhoto: async () => { throw new Error('must not be called'); },
   });
 
-  assert.ok(!out.some((o) => o.photo), 'must not claim a photo');
-  const textMsg = out.find((o) => o.text && /PnL/.test(o.text));
-  assert.ok(textMsg, 'text fallback must be sent');
+  assert.ok(!out.some((o) => o.photo), 'no photo claimed');
+  const msg = out.find((o) => o.text);
+  assert.match(msg.text, /Could not generate the PnL image/);
+  assert.ok(!/Entry MC|ROI:/.test(msg.text), 'must not present a text report as success');
 });
 
-test('/pnl with no calls explains instead of erroring', async () => {
-  const store = tmpStore();
-  const { ctx, out } = makeCtx({ text: '/pnl' });
-  await handlePnl(ctx, { store, scan: scanOk });
-  assert.match(out[0].text, /No matching call/);
-});
-
-test('/pnl survives a failed refresh and still shows stored values', async () => {
+test('/pnl survives a failed refresh and still sends the image', async () => {
   const store = tmpStore();
   await recordCall({ store, scanResult: okScan(), caller: { id: 1, displayName: 'F', username: 'foxy' }, chatId: CHAT });
-  const { ctx, out } = makeCtx({ text: '/pnl' });
-  await handlePnl(ctx, { store, scan: async () => ({ status: 'api-error' }) });
-  const msg = out.find((o) => o.text && /PnL/.test(o.text));
-  assert.ok(msg);
-  assert.match(msg.text, /\$5\.00M/, 'entry preserved from storage');
+  const { ctx, out } = makeCtx({ text: `/pnl ${CA}` });
+  await handlePnl(ctx, {
+    store, scan: async () => ({ status: 'api-error' }),
+    renderPng: async () => 'C:/tmp/card.png',
+    sendPhoto: async (chatId, p) => { out.push({ photo: p }); },
+  });
+  assert.equal(out.filter((o) => o.photo).length, 1);
 });
 
-test('/pnl accepts a 1-based index into /calls', async () => {
+test('/pnl with no argument shows usage, makes no call', async () => {
   const store = tmpStore();
-  await recordCall({ store, scanResult: okScan(), caller: { id: 1, displayName: 'F', username: 'foxy' }, chatId: CHAT, now: 1000 });
-  const { ctx, out } = makeCtx({ text: '/pnl 1' });
+  const { ctx, out } = makeCtx({ text: '/pnl' });
   await handlePnl(ctx, { store, scan: scanOk });
-  assert.ok(out.some((o) => o.text && /Cake/.test(o.text)));
+  assert.match(out[0].text, /Usage/);
+  assert.equal(store.callsForChat(CHAT, { limit: 50 }).length, 0);
+});
+
+test('/pnl rejects a non-address argument', async () => {
+  const store = tmpStore();
+  const { ctx, out } = makeCtx({ text: '/pnl notanaddress' });
+  await handlePnl(ctx, { store, scan: scanOk });
+  assert.match(out[0].text, /does not look like a contract address/);
+});
+
+test("/pnl never falls back to another group's call history", async () => {
+  const store = tmpStore();
+  // A call exists in a DIFFERENT group for the same token.
+  await recordCall({
+    store, scanResult: okScan(),
+    caller: { id: 9, displayName: 'x', username: 'x' }, chatId: '-100OTHER',
+  });
+  const { ctx, out } = makeCtx({ text: `/pnl ${CA}` });
+  await handlePnl(ctx, { store, scan: scanOk, renderPng: async () => 'x', sendPhoto: async () => {} });
+  assert.equal(out[0].text, 'No recorded call for this token in this group.');
+});
+
+test('/pnl does not create a call for an unrecorded token', async () => {
+  const store = tmpStore();
+  const { ctx } = makeCtx({ text: `/pnl ${CA}` });
+  await handlePnl(ctx, { store, scan: scanOk, renderPng: async () => 'x', sendPhoto: async () => {} });
+  assert.equal(store.callsForChat(CHAT, { limit: 50 }).length, 0);
 });
 
 // ---- /callsettings -------------------------------------------------------

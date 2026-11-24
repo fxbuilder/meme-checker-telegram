@@ -265,10 +265,18 @@ export function timeSince(calledAt, now = Date.now()) {
 }
 
 /** Build the record written on a successful call. */
-export function buildCallRecord({ chatId, userId, displayName, username, entry, source, messageId = null, now = Date.now() }) {
+export function buildCallRecord({
+  chatId, userId, displayName, username, entry, source,
+  messageId = null, messageDate = null, now = Date.now(),
+  callerKey = null, callerKind = 'user', senderChatId = null,
+}) {
   return {
     chatId: String(chatId),
-    callerId: String(userId),
+    // callerId is retained for older records; callerKey is the stable identity.
+    callerId: String(userId ?? callerKey ?? ''),
+    callerKey: callerKey ?? (userId != null ? `u:${userId}` : null),
+    callerKind,
+    senderChatId,
     callerName: displayName ?? null,
     callerUsername: username ?? null,
     chain: entry.chain,
@@ -289,6 +297,9 @@ export function buildCallRecord({ chatId, userId, displayName, username, entry, 
     source: source ?? 'manual', // 'manual' | 'auto' | 'synthetic'
     status: 'active',
     messageId,
+    // The original message timestamp, so call time is the post time rather than
+    // the moment a retry happened to be processed.
+    messageDate: Number.isFinite(messageDate) ? messageDate : null,
     notes: null,
   };
 }

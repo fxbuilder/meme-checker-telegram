@@ -13,9 +13,73 @@ rasteriser for one card is not justified.
 The layout deliberately mirrors src/pnl-card.mjs so the text card and the image
 card cannot drift apart in what they claim.
 """
+import io
 import json
+import os
+import ssl
 import sys
+import urllib.request
 from PIL import Image, ImageDraw, ImageFont
+
+# Logo fetching is deliberately narrow: https only, hard size cap, short timeout,
+# and a quiet fallback. A missing or hostile image must never break the card.
+LOGO_TIMEOUT = 6
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_MAX_PX = 512
+
+
+def fetch_logo(url, cache_dir=None):
+    """Return a PIL image for a logo URL, or None. Never raises."""
+    if not url or not isinstance(url, str):
+        return None
+    if not url.lower().startswith('https://'):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'MemeChecker/1.0'})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=LOGO_TIMEOUT, context=ctx) as resp:
+            ctype = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if ctype and not ctype.startswith('image/'):
+                return None
+            data = resp.read(LOGO_MAX_BYTES + 1)
+        if len(data) > LOGO_MAX_BYTES:
+            return None
+        img = Image.open(io.BytesIO(data))
+        img.load()
+        if img.mode not in ('RGB', 'RGBA'):
+            img = img.convert('RGBA')
+        if max(img.size) > LOGO_MAX_PX:
+            img.thumbnail((LOGO_MAX_PX, LOGO_MAX_PX), Image.LANCZOS)
+        return img
+    except Exception:
+        return None
+
+
+def paste_logo(canvas, logo, box):
+    """Draw a circular logo at box=(x, y, size). No-op when absent."""
+    if logo is None:
+        return False
+    x, y, size = box
+    try:
+        art = logo.copy()
+        art = art.convert('RGBA')
+        # Cover-crop so a non-square logo is not distorted.
+        w, h = art.size
+        side = min(w, h)
+        art = art.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
+        art = art.resize((size, size), Image.LANCZOS)
+
+        mask = Image.new('L', (size * 4, size * 4), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, size * 4 - 1, size * 4 - 1), fill=255)
+        mask = mask.resize((size, size), Image.LANCZOS)
+
+        canvas.paste(art, (x, y), mask)
+        # subtle ring
+        ImageDraw.Draw(canvas).ellipse(
+            (x - 1, y - 1, x + size, y + size), outline=(60, 78, 96), width=2)
+        return True
+    except Exception:
+        return False
 
 W, H = 1000, 620
 BG_TOP = (18, 26, 36)
@@ -116,6 +180,9 @@ def main():
     pct = payload.get("percent") or ""
     peak_mult = payload.get("peakMultiple")
     peak_observed = bool(payload.get("peakIsObserved"))
+    group_title = payload.get("groupTitle") or ""
+    peak_pct = payload.get("peakPercent") or ""
+    logo_url = payload.get("logoUrl")
     disclaimer = payload.get(
         "disclaimer",
         "Price ratio since the call, not realized profit. "
@@ -150,27 +217,44 @@ def main():
         w = draw.textlength(t, font=f_small)
         draw.text((W - 64 - w, 52), t, font=f_small, fill=MUTED)
 
-    # ---- token identity ----
-    title = fit_text(draw, name, f_title, 620)
-    draw.text((64, 168), title, font=f_title, fill=(255, 255, 255))
-    sub = fit_text(draw, f"{symbol} · {chain}".strip(" ·"), f_sub, 620)
-    draw.text((64, 228), sub, font=f_sub, fill=MUTED)
+    # ---- token identity (logo-aware) ----
+    logo = fetch_logo(logo_url) if logo_url else None
+    logo_drawn = paste_logo(img, logo, (64, 152, 84)) if logo else False
+    tx = 64 + (84 + 22 if logo_drawn else 0)
+    text_w = 620 - (84 + 22 if logo_drawn else 0)
+
+    title = fit_text(draw, name, f_title, text_w)
+    draw.text((tx, 158), title, font=f_title, fill=(255, 255, 255))
+    sub_line = f"{symbol} · {chain}".strip(" ·")
+    if group_title:
+        sub_line = f"{sub_line} · {group_title}" if sub_line else group_title
+    sub = fit_text(draw, sub_line, f_sub, text_w)
+    draw.text((tx, 218), sub, font=f_sub, fill=MUTED)
 
     # ---- headline ROI (right aligned) ----
     colour = tone_for(mult)
-    roi_text = payload.get("multipleLabel") or "n/a"
+    roi_text = payload.get("multipleLabel") or "—"
     rw = draw.textlength(roi_text, font=f_huge)
     draw.text((W - 64 - rw, 132), roi_text, font=f_huge, fill=colour)
+    draw.text((W - 64 - draw.textlength("CURRENT ROI", font=f_kicker), 118),
+              "CURRENT ROI", font=f_kicker, fill=DIM)
     if pct:
         pw = draw.textlength(pct, font=f_mono)
         draw.text((W - 64 - pw, 222), pct, font=f_mono, fill=colour)
 
-    # ---- caller + peak multiple ----
-    draw.text((64, 284), f"Called by {caller}", font=f_small, fill=TEXT)
+    # ---- labelled ROI pair (current vs peak, explicitly distinguished) ----
+    # The big number is CURRENT. Peak sits beside it with its own label so the two
+    # can never be read as the same figure.
+    # The big number above IS the current ROI, so only the peak needs its own
+    # labelled column here — repeating current would read as a second figure.
+    lbl_x = W - 64
     if peak_observed and peak_mult:
-        pm = f"peak {peak_mult}"
-        pw2 = draw.textlength(pm, font=f_mono)
-        draw.text((W - 64 - pw2, 284), pm, font=f_mono, fill=MUTED)
+        draw.text((lbl_x - 150, 300), "PEAK ROI", font=f_tiny, fill=DIM)
+        draw.text((lbl_x - 150, 318), fit_text(draw, peak_mult, f_mono, 130), font=f_mono, fill=MUTED)
+
+    # ---- caller + peak multiple ----
+    caller_line = f"Called by {caller}"
+    draw.text((64, 284), fit_text(draw, caller_line, f_small, 560), font=f_small, fill=TEXT)
 
     # ---- divider ----
     draw.line([(64, 320), (W - 64, 320)], fill=LINE, width=1)

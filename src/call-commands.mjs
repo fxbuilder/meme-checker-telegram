@@ -22,6 +22,8 @@ import { getChain } from './chains.mjs';
 import { renderPnlPng } from './pnl-render.mjs';
 import { canChangeSettings } from './access.mjs';
 import { verifyExtremeObservation } from './extreme-verify.mjs';
+import { renderCallerProfile, profileKeyboard } from './caller-profile.mjs';
+import { mintCallerToken, resolveCallerToken } from './deep-link.mjs';
 
 /** Age labels read naturally: "just now", not "just now ago". */
 function ageLabel(label) {
@@ -216,13 +218,22 @@ export async function handleFirstCall(ctx, deps) {
 }
 
 /**
- * /pnl [number|address]
- * Refreshes the observation, then sends a shareable image card.
- * Falls back to the text card if the renderer is unavailable — it never claims
- * an image was sent when it was not.
+ * /pnl <contract_address>
+ *
+ * IMAGE ONLY. On success this sends exactly one photo with NO caption, no text
+ * report and no buttons — the image carries every figure. A separate text card
+ * would be a second message saying the same thing.
+ *
+ * Order of operations:
+ *   1. resolve the CA against THIS group's recorded calls (never another group)
+ *   2. no call → one clean sentence, and no insert
+ *   3. ambiguous EVM address → ask, never guess
+ *   4. refresh the observation, render, send the photo
+ *   5. if rendering fails → say so plainly, do NOT present a text report as if the
+ *      image had been delivered
  */
 export async function handlePnl(ctx, deps) {
-  const { store, scan, defaultEvmChain = DEFAULT_EVM_CHAIN, renderPng, sendPhoto } = deps;
+  const { store, scan, defaultEvmChain = DEFAULT_EVM_CHAIN, renderPng, sendPhoto, groupTitle = null } = deps;
   if (ctx.from?.is_bot) return;
   if (!isGroupChat(ctx)) {
     await ctx.reply('ℹ️ PnL cards are per group. Run /pnl in the group that made the call.');
@@ -230,64 +241,122 @@ export async function handlePnl(ctx, deps) {
   }
 
   const raw = String(ctx.message?.text ?? '').replace(/^\/\w+(@\w+)?\s*/i, '').trim();
-  let call = null;
-  let chain = null;
-  let address = null;
 
-  if (/^\d+$/.test(raw)) {
-    // Index into the /calls list.
-    const list = store.callsForChat(ctx.chat.id, { limit: 50 }).filter((c) => !isSynthetic(c));
-    call = list[Number(raw) - 1] ?? null;
-  } else if (raw) {
-    const parsed = parseCallArgs(ctx.message?.text, defaultEvmChain);
-    chain = parsed.candidates[0]?.chain ?? null;
-    address = parsed.address;
-    if (chain && address) call = resolveCall(store, ctx.chat.id, { chain, address });
-  } else {
-    // Bare /pnl → the most recent call in this group.
-    call = resolveCall(store, ctx.chat.id, {});
-  }
-
-  if (!call) {
-    await ctx.reply('📭 No matching call found. Use /calls to see the list.', { parse_mode: 'HTML' });
+  // ---- argument handling ------------------------------------------------
+  if (!raw) {
+    await ctx.reply(
+      'Usage: <code>/pnl &lt;contract_address&gt;</code>\n' +
+      '<i>Shows the recorded call for that token in this group.</i>',
+      { parse_mode: 'HTML' },
+    );
     return;
   }
 
-  // Refresh the observation so the card is not misleadingly stale.
+  const parsed = parseCallArgs(ctx.message?.text, defaultEvmChain);
+  if (!parsed.address) {
+    await ctx.reply('❌ That does not look like a contract address.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  // ---- resolve against THIS group only ----------------------------------
+  let call = null;
+  let ambiguous = null;
+
+  if (parsed.candidates.length > 1) {
+    // An EVM string is valid on several chains. Prefer the one this group
+    // actually recorded; if several match, ask rather than guess.
+    const hits = parsed.candidates
+      .map((c) => store.firstCall(ctx.chat.id, c.chain, c.address))
+      .filter(Boolean);
+    if (hits.length === 1) call = hits[0];
+    else if (hits.length > 1) ambiguous = hits;
+  }
+
+  if (!call && !ambiguous) {
+    // A Solana address has one possible chain; an EVM one defaults to the group
+    // default, but we check every EVM chain the group has recorded for this
+    // address before concluding there is no call.
+    const addr = parsed.address;
+    const knownChains = new Set(store.callsForChat(ctx.chat.id, { limit: 500 }).map((c) => c.chain));
+    const matches = [];
+    for (const chain of knownChains) {
+      const hit = store.firstCall(ctx.chat.id, chain, addr);
+      if (hit) matches.push(hit);
+    }
+    if (matches.length === 1) call = matches[0];
+    else if (matches.length > 1) ambiguous = matches;
+  }
+
+  if (ambiguous) {
+    const opts = ambiguous.map((c) => `${c.chain}`).join(', ');
+    await ctx.reply(
+      `⚠️ This address is recorded on more than one chain in this group (${esc(opts)}).
+` +
+      'Use <code>/pnl &lt;chain&gt; &lt;address&gt;</code> to choose.',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  if (!call) {
+    // Exactly one clean sentence, and nothing is created.
+    await ctx.reply('No recorded call for this token in this group.');
+    return;
+  }
+
+  if (call.status === 'cancelled') {
+    await ctx.reply('That call was cancelled with /justscan, so there is no PnL to show.');
+    return;
+  }
+
+  // ---- refresh, then one photo -------------------------------------------
+  let freshLogo = null;
   try {
     const fresh = await scan({ chain: call.chain, address: call.address });
-    const obs = await observeCall({ store, call, scanResult: fresh, verifyExtreme: verifyExtremeObservation });
+    freshLogo = fresh?.image ? { image: fresh.image } : null;
+    const obs = await observeCall({
+      store, call, scanResult: fresh, verifyExtreme: verifyExtremeObservation,
+    });
     if (obs.updated) call = obs.call;
   } catch (err) {
     console.warn('[pnl] refresh failed, using stored values:', err?.message ?? err);
   }
 
-  const text = pnlText(call);
-  const m = callMetrics(call);
+  // The logo must belong to THIS chain+contract. `image` on the refreshed scan is
+  // already resolved from the identity-checked pair, so it is safe to use; when
+  // the refresh failed we pass nothing rather than reusing a guessed URL.
+  let logoUrl = null;
+  try {
+    if (freshLogo?.image && /^https:\/\//i.test(freshLogo.image)) logoUrl = freshLogo.image;
+  } catch (_) { /* non-fatal */ }
 
-  // Try the image card; degrade to text rather than lie about delivery.
-  let sentImage = false;
-  if (typeof renderPng === 'function' && typeof sendPhoto === 'function') {
-    try {
-      const png = await renderPng(call, { tokenName: call.name });
-      if (png) {
-        await sendPhoto(ctx.chat.id, png, {
-          caption: text,
-          parse_mode: 'HTML',
-          reply_to_message_id: ctx.message?.message_id ?? undefined,
-        });
-        sentImage = true;
-      }
-    } catch (err) {
-      console.warn('[pnl] image card failed, falling back to text:', err?.description ?? err?.message ?? err);
-    }
+  let png = null;
+  try {
+    png = await renderPng(call, {
+      tokenName: call.name,
+      groupTitle,
+      logoUrl,
+    });
+  } catch (err) {
+    console.warn('[pnl] render failed:', err?.message ?? err);
+    png = null;
   }
-  if (!sentImage) {
-    await ctx.reply(text, {
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
+
+  if (!png) {
+    // Be explicit: the image is the deliverable, so an unavailable renderer is an
+    // error to report, not something to paper over with a text card.
+    await ctx.reply('⚠️ Could not generate the PnL image. Please try again shortly.');
+    return;
+  }
+
+  try {
+    // No caption, no keyboard. Image only.
+    await sendPhoto(ctx.chat.id, png, {
       reply_to_message_id: ctx.message?.message_id ?? undefined,
     });
+  } catch (err) {
+    console.warn('[pnl] photo send failed:', err?.description ?? err?.message ?? err);
+    await ctx.reply('⚠️ Could not send the PnL image. Please try again shortly.');
   }
 }
 
@@ -379,3 +448,63 @@ export async function handleJustScan(ctx) {
 }
 
 export { renderPnlPng };
+
+// ---- Caller profile (Phase 2, NOT the leaderboard) -----------------------
+
+/**
+ * Show a caller's history within ONE group.
+ *
+ * Access: during staging this is OWNER-only. The requirement is to not leak group
+ * records through a forwarded or guessed link, and membership verification is a
+ * Phase 6 concern (documented in docs/phase2-caller-profile.md).
+ */
+export async function handleCallerProfile(ctx, deps) {
+  const { store, callerKey, groupTitle, period = '7d', page = 0, policy, isOwnerCheck } = deps;
+  if (!callerKey) {
+    await ctx.reply('No caller specified.');
+    return;
+  }
+  const owner = isOwnerCheck ? isOwnerCheck(ctx.from?.id) : true;
+  if (policy && !owner) {
+    await ctx.reply(
+      '🔒 Caller profiles are restricted to the bot owner during staging.\n' +
+      '<i>Group membership verification arrives in Phase 6.</i>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const all = store.callsForTokenAnyChain
+    ? store.callsForTokenAnyChain(ctx.chat?.id, callerKey)
+    : store.callsForChat(ctx.chat?.id, { limit: 500 }).filter((c) => c.callerKey === callerKey || c.callerId === callerKey.replace(/^u:/, ''));
+
+  const visible = all.filter((c) => c.status !== 'cancelled' && !isSynthetic(c));
+  const { text, page: safePage, pages } = renderCallerProfile({
+    callerKey, calls: visible, groupTitle, period, page,
+  });
+
+  const token = mintCallerToken(ctx.chat?.id, callerKey, period);
+  const keyboard = profileKeyboard({ callerToken: token, period, page: safePage, pages });
+  return { text, keyboard, callerKey, period: safePage === page ? period : period };
+}
+
+/** Resolve a start payload to { chatId, callerKey, period } for the DM profile. */
+export function resolveStartPayload(payload, store, { chatIds = [], periods = ['1d', '7d', '14d', '30d'] } = {}) {
+  for (const chatId of chatIds) {
+    const candidates = callerKeysInGroup(store, chatId).map((k) => ({ callerKey: k }));
+    const hit = resolveCallerToken(payload, chatId, candidates, { periods });
+    if (hit) return { chatId, callerKey: hit.callerKey, period: hit.period };
+  }
+  return null;
+}
+
+/** Every distinct caller key with at least one call in a group. */
+export function callerKeysInGroup(store, chatId) {
+  const calls = store.callsForChat(chatId, { limit: 1000 }).filter((c) => !isSynthetic(c));
+  const keys = new Set();
+  for (const c of calls) {
+    if (c.callerKey) keys.add(c.callerKey);
+    else if (c.callerId) keys.add(`u:${c.callerId}`);
+  }
+  return [...keys];
+}

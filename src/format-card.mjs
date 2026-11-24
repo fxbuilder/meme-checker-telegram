@@ -33,6 +33,7 @@ import {
   resolveQuickCheck, quickChecks, securityPairs, alignedRows, sectionTitle,
 } from './card-layout.mjs';
 import { getChain } from './chains.mjs';
+import { callerLabel } from './caller-identity.mjs';
 
 /**
  * Returns true only for absolute HTTPS URLs with no credentials and no
@@ -254,6 +255,31 @@ export function normalizeView(view) {
   return 'standard';
 }
 
+/**
+ * The "First Call" line shown inside the token card.
+ *
+ * Shape:  🔥 First Call <a>Name</a> @ $18.22M
+ * The name is a deep link into the bot DM so the profile opens in-chat rather
+ * than a Telegram user profile (which a bot cannot target anyway). When no
+ * signed token is available the name renders as plain bold text — an
+ * unclickable name is better than a link that goes somewhere wrong.
+ */
+export function renderFirstCallLine(firstCall, e = (x) => x, { botUsername = '', callerToken = null } = {}) {
+  const name = callerLabel(firstCall);
+  const mcap = fmtUsd(firstCall?.entryMarketCapUsd);
+  const label = clipText(name, 24);
+  const nameHtml = (callerToken && botUsername)
+    ? `<a href="https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(callerToken)}">${esc(label)}</a>`
+    : `<b>${esc(label)}</b>`;
+  const at = mcap ? ` @ <b>${esc(mcap)}</b>` : '';
+  return `${e('🔥')} First Call ${nameHtml}${at}`;
+}
+
+function clipText(v, n) {
+  const chars = [...String(v ?? '')];
+  return chars.length <= n ? chars.join('') : `${chars.slice(0, n - 1).join('')}…`;
+}
+
 export function formatCard(result, {
   mockLabel   = false,
   websiteBase = '',
@@ -261,6 +287,8 @@ export function formatCard(result, {
   addBotUrl   = '',
   botUsername = '',
   emojiTheme  = noTheme,
+  firstCall   = null,
+  callerToken = null,
   // Library default stays 'detailed' so the documented §4.1 contract and every
   // existing caller are unchanged. The BOT passes 'standard' explicitly, so the
   // user-facing default is the standard card.
@@ -442,6 +470,14 @@ export function formatCard(result, {
     if (!isAcceptableUrl(fullAnalysisUrl)) {
       lines.push('<i>Full analysis page coming soon.</i>');
     }
+  }
+
+  // ===== First Call attribution (Phase 2) =================================
+  // Rendered INSIDE the same card, just above the footer — never a separate
+  // message. Only present in group mode when a call exists for this token.
+  if (firstCall) {
+    lines.push('');
+    lines.push(renderFirstCallLine(firstCall, e, { botUsername, callerToken }));
   }
 
   // ===== Footer ===========================================================

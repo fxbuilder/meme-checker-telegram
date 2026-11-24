@@ -47,6 +47,7 @@ export async function recordCall({
   now = Date.now(),
   duplicateWindowMs = 10 * 60_000,
   messageId = null,
+  messageDate = null,
 }) {
   const check = validateEntry(scanResult);
   if (!check.ok) {
@@ -64,22 +65,38 @@ export async function recordCall({
     };
   }
 
+  // caller may be a resolved identity ({callerKey, kind, ...}) or the legacy
+  // {id, displayName, username} shape. Both are normalised here.
+  const identity = {
+    userId: caller.userId ?? (caller.id != null ? String(caller.id) : null),
+    callerKey: caller.callerKey ?? (caller.id != null ? `u:${caller.id}` : null),
+    callerKind: caller.kind ?? 'user',
+    senderChatId: caller.senderChatId ?? null,
+    displayName: caller.displayName,
+    username: caller.username ?? null,
+  };
+
   // Duplicate protection: the same member re-calling the same token in a short
   // window is almost always a double-tap or a re-paste, not a new call.
-  const dup = store.recentCallByUser(chatId, entry.chain, entry.address, caller.id, duplicateWindowMs, now);
+  const dup = store.recentCallByUser(chatId, entry.chain, entry.address, identity.callerKey ?? identity.userId, duplicateWindowMs, now);
   if (dup) {
     return { status: CALL_STATUS.DUPLICATE, reason: 'this caller already called this token recently', call: dup };
   }
 
   const record = buildCallRecord({
     chatId,
-    userId: caller.id,
-    displayName: caller.displayName,
-    username: caller.username,
+    userId: identity.userId,
+    callerKey: identity.callerKey,
+    callerKind: identity.callerKind,
+    senderChatId: identity.senderChatId,
+    displayName: identity.displayName,
+    username: identity.username,
     entry,
     source,
     messageId,
-    now,
+    messageDate,
+    // A call's time is the moment the CA was posted, not when the bot processed it.
+    now: Number.isFinite(messageDate) ? messageDate * 1000 : now,
   });
 
   // First-caller attribution is decided BEFORE insert, from persisted history.

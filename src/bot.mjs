@@ -20,11 +20,14 @@ import { resolveTokenImage } from './media.mjs';
 import { CallStore } from './store.mjs';
 import { loadPolicy, isChatAllowed, isOwner, describePolicy } from './access.mjs';
 import { verifyExtremeObservation } from './extreme-verify.mjs';
+import { resolveCaller, isAttributable } from './caller-identity.mjs';
+import { mintCallerToken } from './deep-link.mjs';
 import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
 import {
   handleCall, handleCalls, handleFirstCall, handlePnl, handleCallSettings, handleJustScan,
-  isGroupChat, callerIdentity,
+  handleCallerProfile, resolveStartPayload, callerKeysInGroup,
+  isGroupChat,
 } from './call-commands.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
 import {
@@ -51,6 +54,13 @@ export const callStore = new CallStore();
  * everywhere when unset.
  */
 export const accessPolicy = loadPolicy();
+
+/**
+ * Chats where the NEXT pasted contract should be scanned but NOT recorded.
+ * Set by /justscan (no address) and consumed by the next CA message in that chat.
+ * Time-boxed so a stale flag cannot silently suppress a later legitimate call.
+ */
+const justScanRequested = new Set();
 
 /**
  * Bot-level card mode. STANDARD is the product default: information-rich and
@@ -108,6 +118,23 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
   } catch (_) { /* non-fatal */ }
 
   const result = await scan({ chain, address });
+
+  // ---- First-call attribution inside the card (groups only) --------------
+  // Shown whenever a call already exists for this token in this group, in BOTH
+  // auto and manual modes. A normal scan in manual mode does not create a call.
+  let firstCall = null;
+  let callerToken = null;
+  if (isGroupChat(ctx) && result?.status === 'ok') {
+    try {
+      firstCall = callStore.firstCall(ctx.chat.id, chain, address);
+      if (firstCall?.callerKey) {
+        callerToken = mintCallerToken(ctx.chat.id, firstCall.callerKey, '7d');
+      }
+    } catch (err) {
+      console.warn('[bot] first-call lookup failed (card continues):', err?.message ?? err);
+    }
+  }
+
   const { text, buttons } = formatCard(result, {
     mockLabel:   SCAN_MODE === 'mock',
     websiteBase: WEBSITE_BASE,
@@ -115,6 +142,8 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     botUsername: BOT_USERNAME,
     emojiTheme:  activeEmojiTheme,
     view,
+    firstCall,
+    callerToken,
   });
 
   // Resolve a VERIFIED project image before sending. Only a fetched, validated
@@ -159,7 +188,40 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
 
 // ---- Commands --------------------------------------------------------------
 
+/**
+ * /start [payload]
+ * A caller-profile deep link lands here. The payload is resolved against the
+ * groups the bot knows, and only for the owner during staging.
+ */
 bot.start(async ctx => {
+  const payload = (ctx.startPayload ?? '').trim();
+  if (payload) {
+    const hit = resolveStartPayload(payload, callStore, { chatIds: Object.keys(callStore.doc.groups ?? {}) });
+    if (hit) {
+      if (!isOwner(accessPolicy, ctx.from?.id)) {
+        await ctx.reply(
+          '🔒 Caller profiles are owner-only during staging.',
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+      const chat = callStore.doc.groups[hit.chatId];
+      const out = await handleCallerProfile(ctx, {
+        store: callStore,
+        callerKey: hit.callerKey,
+        groupTitle: chat?.title ?? hit.chatId,
+        period: hit.period,
+        policy: accessPolicy,
+        isOwnerCheck: (id) => isOwner(accessPolicy, id),
+      });
+      if (out) await ctx.reply(out.text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: out.keyboard } });
+      return;
+    }
+    // Unknown/expired payload: do not reveal whether it ever existed.
+    await ctx.reply('That link is no longer valid.', { parse_mode: 'HTML' });
+    return;
+  }
+
   if (ctx.from?.is_bot) return;
   const text = [
     '👋 <b>Welcome to MEME CHECKER</b>',
@@ -522,41 +584,43 @@ bot.on('message', async ctx => {
   // Process first detected candidate only (brief: one reply per message)
   const { chain, address } = det.candidates[0];
 
+  // A pending /justscan in this chat suppresses recording for exactly one CA.
+  const skipRecording = justScanRequested.delete(String(ctx.chat?.id));
+
   // ---- Auto-call (Phase 2) ------------------------------------------------
-  // Recorded BEFORE the card is sent so the call is persisted even if delivery
-  // fails, and only in groups with auto-call explicitly switched on. Scanning and
-  // calling stay distinct acts everywhere else.
+  // In auto mode the PASTED contract is the call: the sender of this message owns
+  // it, recorded BEFORE the card is built so the card can show the attribution in
+  // the same message. one scan, one call, one card — no separate confirmation
+  // message, and no second provider request.
   let callOutcome = null;
   if (isGroupChat(ctx)) {
     try {
       const settings = callStore.groupSettings(ctx.chat.id);
-      if (settings.autoCall === 'auto') {
-        const result = await scan({ chain, address });
-        callOutcome = await recordCall({
-          store: callStore,
-          scanResult: result,
-          caller: callerIdentity(ctx),
-          chatId: ctx.chat.id,
-          source: 'auto',
-          messageId: ctx.message?.message_id ?? null,
-        });
+      if (settings.autoCall === 'auto' && !skipRecording) {
+        const identity = resolveCaller(ctx.message, ctx.chat);
+        if (isAttributable(identity)) {
+          const result = await scan({ chain, address });
+          callOutcome = await recordCall({
+            store: callStore,
+            scanResult: result,
+            caller: identity,
+            chatId: ctx.chat.id,
+            source: 'auto',
+            messageId: ctx.message?.message_id ?? null,
+            messageDate: ctx.message?.date ?? null,
+          });
+        } else {
+          console.log(`[bot] auto-call skipped: ${identity.attributionNote}`);
+        }
       }
     } catch (err) {
       console.warn('[bot] auto-call failed (card continues):', err?.message ?? err);
     }
   }
 
-  await runScan(ctx, chain, address);
-
-  // Confirm a recorded call so the group can see attribution happened.
-  if (callOutcome?.status === CALL_STATUS.RECORDED) {
-    const who = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name ?? 'caller');
-    const mcap = callOutcome.entryMarketCapUsd;
-    await ctx.reply(
-      `📌 Call recorded by <b>${who}</b>${callOutcome.isFirstCall ? ' · 🥇 first call' : ''} at <b>$${(mcap / 1e6).toFixed(2)}M</b>`,
-      { parse_mode: 'HTML', reply_to_message_id: ctx.message?.message_id ?? undefined },
-    ).catch(() => {});
-  }
+  // The card reads attribution from the store, so a call recorded just above is
+  // reflected in this same card. No separate message is sent.
+  await runScan(ctx, chain, address, { justRecorded: callOutcome });
 });
 
 // ---- Phase 2: call tracking commands --------------------------------------
@@ -588,7 +652,151 @@ bot.command('call',    ctx => handleCall(ctx, callDeps()));
 bot.command('calls',   ctx => handleCalls(ctx, callDeps()));
 bot.command('fc',      ctx => handleFirstCall(ctx, callDeps()));
 bot.command('callsettings', ctx => handleCallSettings(ctx, callDeps()));
-bot.command('justscan', ctx => handleJustScan(ctx));
+/**
+ * /justscan — cancel an accidental auto-call.
+ *
+ * Two distinct jobs, both supported:
+ *   1. `/justscan` sent BEFORE or WITH a CA in the same message: that CA is
+ *      scanned but not recorded (handled by the flag in the message handler).
+ *   2. `/justscan <address>` sent AFTER an accidental call: the call is marked
+ *      cancelled so it stops counting, and the group is told. History is not
+ *      deleted — the record is retained but excluded from metrics.
+ */
+bot.command('justscan', async ctx => {
+  if (ctx.from?.is_bot) return;
+  if (!isGroupChat(ctx)) {
+    await ctx.reply('ℹ️ Just Scan applies in groups.');
+    return;
+  }
+
+  const parsed = parseCallArgs(ctx.message?.text, DEFAULT_EVM);
+  if (!parsed.address) {
+    // No address: explain the behaviour for the NEXT message.
+    justScanRequested.add(String(ctx.chat.id));
+    setTimeout(() => justScanRequested.delete(String(ctx.chat.id)), 15_000).unref?.();
+    await handleJustScan(ctx);
+    return;
+  }
+
+  const chain = parsed.candidates[0].chain;
+  const call = callStore.firstCall(ctx.chat.id, chain, parsed.address);
+  if (!call) {
+    await ctx.reply('📭 No recorded call for that token in this group — nothing to cancel.', { parse_mode: 'HTML' });
+    return;
+  }
+  if (call.status === 'cancelled') {
+    await ctx.reply('✅ That call is already cancelled.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  await callStore.updateCall(call.id, {
+    status: 'cancelled',
+    cancelledAt: Date.now(),
+    cancelledBy: String(ctx.from?.id ?? ''),
+    notes: [call.notes, 'cancelled via /justscan'].filter(Boolean).join('; '),
+  });
+
+  await ctx.reply(
+    `🗑 <b>Call cancelled</b>
+
+${esc(call.symbol ? '$' + call.symbol : (call.name ?? 'token'))} by ` +
+    `<b>${esc(call.callerName ?? 'unknown')}</b> is no longer counted.
+` +
+    '<i>The record is kept for history but excluded from caller stats and alerts.</i>',
+    { parse_mode: 'HTML' },
+  );
+});
+
+/**
+ * /profile [@username|userId] — caller history in THIS group.
+ * Also reachable by clicking the First Call name on a card, which deep-links into
+ * the DM with a signed payload.
+ */
+bot.command('profile', async ctx => {
+  if (ctx.from?.is_bot) return;
+  if (!isGroupChat(ctx)) {
+    await ctx.reply('ℹ️ Caller profiles are per group. Use /profile inside the group.');
+    return;
+  }
+  const arg = String(ctx.message?.text ?? '').replace(/^\/\w+(@\w+)?\s*/i, '').trim();
+  const keys = callerKeysInGroup(callStore, ctx.chat.id);
+  let callerKey = null;
+
+  if (arg) {
+    const bare = arg.replace(/^@/, '').toLowerCase();
+    const calls = callStore.callsForChat(ctx.chat.id, { limit: 1000 });
+    const match = calls.find((c) =>
+      String(c.callerUsername ?? '').toLowerCase() === bare ||
+      String(c.callerId ?? '') === bare ||
+      String(c.callerKey ?? '') === arg);
+    if (match) callerKey = match.callerKey ?? `u:${match.callerId}`;
+  } else {
+    // No argument: the caller's own profile.
+    callerKey = resolveCaller(ctx.message, ctx.chat).callerKey;
+  }
+
+  if (!callerKey || !keys.includes(callerKey)) {
+    await ctx.reply('No recorded calls by that caller in this group.', { parse_mode: 'HTML' });
+    return;
+  }
+
+  if (!isOwner(accessPolicy, ctx.from?.id)) {
+    await ctx.reply(
+      '🔒 Caller profiles are restricted to the bot owner during staging.\n' +
+      '<i>Group membership verification arrives in Phase 6.</i>',
+      { parse_mode: 'HTML' },
+    );
+    return;
+  }
+
+  const out = await handleCallerProfile(ctx, {
+    store: callStore,
+    callerKey,
+    groupTitle: callStore.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? 'this group',
+    period: '7d',
+    policy: accessPolicy,
+    isOwnerCheck: (id) => isOwner(accessPolicy, id),
+  });
+  if (out) {
+    await ctx.reply(out.text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: out.keyboard } });
+  }
+});
+
+/** Period buttons + pagination on a caller profile. */
+bot.action(/^c[pg]:cp_[A-Za-z0-9_-]+/, async ctx => {
+  const data = ctx.match?.[0] ?? '';
+  const [, token, period, pageRaw] = data.split(':');
+  const owner = isOwner(accessPolicy, ctx.from?.id);
+  if (!owner) {
+    await ctx.answerCbQuery('Owner-only during staging');
+    return;
+  }
+  const groups = Object.keys(callStore.doc.groups ?? {});
+  const resolved = resolveStartPayload(token, callStore, { chatIds: groups });
+  if (!resolved) {
+    await ctx.answerCbQuery('Link expired');
+    return;
+  }
+  const out = await handleCallerProfile(
+    { ...ctx, chat: { id: resolved.chatId, title: callStore.doc.groups?.[resolved.chatId]?.title ?? '' } },
+    {
+      store: callStore,
+      callerKey: resolved.callerKey,
+      groupTitle: callStore.doc.groups?.[resolved.chatId]?.title ?? resolved.chatId,
+      period: period ?? resolved.period,
+      page: Number(pageRaw ?? 0) || 0,
+      policy: accessPolicy,
+      isOwnerCheck: (id) => isOwner(accessPolicy, id),
+    },
+  );
+  await ctx.answerCbQuery();
+  if (out) {
+    await ctx.editMessageText(out.text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: out.keyboard },
+    });
+  }
+});
 
 bot.command('pnl', async ctx => {
   // sendPhoto needs the ctx-scoped telegram client, so bind it per invocation.

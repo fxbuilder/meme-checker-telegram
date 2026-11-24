@@ -212,10 +212,19 @@ export class CallStore {
    * `now` is injectable: callers pass the same clock they stamp records with, so
    * a record and its dedup check can never disagree about when "now" is.
    */
-  recentCallByUser(chatId, chain, address, userId, windowMs, now = Date.now()) {
+  recentCallByUser(chatId, chain, address, callerIdentity, windowMs, now = Date.now()) {
     const cutoff = now - windowMs;
+    const want = String(callerIdentity ?? '');
+    // Records may carry either the stable callerKey ("u:42") or the legacy
+    // numeric callerId ("42"); match on both so dedup cannot be bypassed by a
+    // record written before the identity model changed.
+    const wantBare = want.replace(/^u:/, '');
     return this.callsForToken(chatId, chain, address)
-      .find((c) => c.callerId === String(userId) && c.calledAt > cutoff) ?? null;
+      .find((c) => {
+        if (!(c.calledAt > cutoff)) return false;
+        const keys = [c.callerKey, c.callerId].filter(Boolean).map(String);
+        return keys.includes(want) || keys.includes(wantBare);
+      }) ?? null;
   }
 
   /** Append a validated call record. */
