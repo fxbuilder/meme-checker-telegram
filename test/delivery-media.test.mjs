@@ -323,3 +323,65 @@ test('a hostile token name still produces a sendable, escaped caption', () => {
   const tags = [...text.matchAll(/<(\/?)([a-zA-Z-]+)/g)].map((m) => m[2].toLowerCase());
   for (const t of tags) assert.ok(allowed.includes(t), `unexpected tag <${t}>`);
 });
+
+// ---- Synthetic metadata cannot contaminate real scan results --------------
+
+test('a hostile name override cannot leak into the scan cache or later scans', async () => {
+  const { liveScan, clearLiveCache } = await import('../src/live-scan.mjs');
+  clearLiveCache();
+
+  const addr = '0x6982508145454ce325ddbe47a25d4ec3d2311933';
+  const pair = {
+    chainId: 'ethereum',
+    pairAddress: 'P1',
+    baseToken: { address: addr, name: 'Pepe', symbol: 'PEPE' },
+    priceUsd: '0.0000034', marketCap: 1_400_000_000, fdv: 1_400_000_000,
+    liquidity: { usd: 23_000_000 }, volume: { h24: 1_700_000 },
+    priceChange: { h1: -0.5, h24: 3.7 }, pairCreatedAt: 1_682_000_000_000,
+  };
+  const fetchImpl = async () => ({
+    ok: true, status: 200, json: async () => [pair],
+  });
+
+  // 1. Real scan, which populates the cache.
+  const real = await liveScan({ chain: 'ethereum', address: addr }, {
+    fetchImpl,
+    riskFetch: async () => ({ status: 'unsupported', data: null, detail: 'test' }),
+    paidFetch: async () => ({ status: 'unknown', detail: 'test' }),
+  });
+  assert.equal(real.token.name, 'Pepe');
+  assert.equal(real.token.symbol, 'PEPE');
+
+  // 2. Apply a hostile override exactly as the QA harness does — to a COPY.
+  const hostile = { ...real, token: { ...real.token, name: '<script>x</script>', symbol: 'EVIL' } };
+  assert.equal(hostile.token.name, '<script>x</script>');
+  // The original object must be untouched (spread is shallow-safe here).
+  assert.equal(real.token.name, 'Pepe', 'override must not mutate the cached result');
+
+  // 3. A later scan of the SAME address must return the genuine metadata.
+  const again = await liveScan({ chain: 'ethereum', address: addr }, {
+    fetchImpl,
+    riskFetch: async () => ({ status: 'unsupported', data: null, detail: 'test' }),
+    paidFetch: async () => ({ status: 'unknown', detail: 'test' }),
+  });
+  assert.equal(again.token.name, 'Pepe', 'cache must not hold synthetic metadata');
+  assert.equal(again.token.symbol, 'PEPE');
+  assert.ok(!again.token.name.includes('script'));
+});
+
+test('no scan module writes token metadata to disk', async () => {
+  // Synthetic test data can only contaminate via persistence. There is none:
+  // scanning is stateless apart from in-process caches. Guard that invariant so a
+  // future disk cache cannot silently become a contamination vector.
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const dir = path.resolve(import.meta.dirname, '../src');
+  const files = ['live-scan.mjs', 'risk-intel.mjs', 'dex-paid.mjs', 'scanner.mjs', 'media.mjs'];
+  for (const f of files) {
+    const src = await fs.readFile(path.join(dir, f), 'utf8');
+    // Ignore comments; look for real calls.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    assert.ok(!/writeFileSync|writeFile\s*\(|appendFileSync/.test(code),
+      `${f} must not persist scan data to disk`);
+  }
+});

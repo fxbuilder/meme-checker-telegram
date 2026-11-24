@@ -68,7 +68,9 @@ for (const c of CASES) {
   let r = await liveScan({ chain: c.chain, address: c.address });
 
   if (c.hostile && r.status === 'ok') {
-    // Deliberately hostile but realistically-shaped values.
+    // SIMULATION ONLY. This name is invented here, at runtime, on a shallow copy
+    // of the scan result. It is never written to the scan cache, never persisted,
+    // and cannot reach a real user card — a regression test asserts both.
     r = {
       ...r,
       token: {
