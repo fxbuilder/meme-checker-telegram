@@ -289,6 +289,7 @@ export function formatCard(result, {
   emojiTheme  = noTheme,
   firstCall   = null,
   callerToken = null,
+  research    = null,
   // Library default stays 'detailed' so the documented §4.1 contract and every
   // existing caller are unchanged. The BOT passes 'standard' explicitly, so the
   // user-facing default is the standard card.
@@ -436,6 +437,18 @@ export function formatCard(result, {
   lines.push(sectionTitle(e('🧠'), 'NARRATIVE'));
   lines.push('');
   lines.push(...buildNarrative(result, e, mode));
+
+  // ===== X / KOL INTELLIGENCE (optional) ==================================
+  // Only rendered when research actually produced something. Absent research
+  // prints NOTHING here — not a zero, not "0 posts" — because an empty count
+  // would assert that we looked and found nothing.
+  if (research?.xLine || research?.kolLine) {
+    lines.push('');
+    lines.push(sectionTitle(e('𝕏'), 'X INTELLIGENCE'));
+    lines.push('');
+    if (research.xLine) lines.push(esc(research.xLine));
+    if (research.kolLine) lines.push(esc(research.kolLine));
+  }
 
   // ===== PROJECT LINKS ====================================================
   lines.push('');

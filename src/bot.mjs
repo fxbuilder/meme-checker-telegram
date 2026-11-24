@@ -24,6 +24,9 @@ import { resolveCaller, isAttributable } from './caller-identity.mjs';
 import { mintCallerToken } from './deep-link.mjs';
 import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
 import { handleAlertTest } from './alert-test.mjs';
+import { handleNarrative, handleX, handleKol } from './research/research-commands.mjs';
+import { researchToken, cardNarrativeLines, cardXLine, cardKolLine } from './research/research-service.mjs';
+import { researchCache, xBudget } from './research/research-cache.mjs';
 import { startObserver } from './observer-loop.mjs';
 import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
@@ -48,6 +51,12 @@ const OBSERVER_ENABLED      = (process.env.OBSERVER ?? 'on').toLowerCase() !== '
 const OBSERVER_INTERVAL_MS  = Math.max(5_000, Number(process.env.OBSERVER_INTERVAL_MS) || 20_000);
 const OBSERVER_MAX_TOKENS   = Math.max(1, Number(process.env.OBSERVER_MAX_TOKENS) || 12);
 const OBSERVER_CONCURRENCY  = Math.max(1, Number(process.env.OBSERVER_CONCURRENCY) || 3);
+// Phase 4 research enrichment on scan cards. On by default because the narrative
+// is a headline feature; RESEARCH_ON_SCAN=off disables the extra call entirely.
+const RESEARCH_ON_SCAN_FLAG = (process.env.RESEARCH_ON_SCAN ?? 'on').toLowerCase() !== 'off';
+// Hard ceiling for research on a card. A scan must stay responsive even if a
+// provider is slow, so the card ships without research rather than waiting.
+const RESEARCH_TIMEOUT_MS = Math.max(1_000, Number(process.env.RESEARCH_TIMEOUT_MS) || 2_500);
 const EMOJI_THEME  = loadEnvTheme();
 const DEFAULT_EVM  = resolveChainAlias(process.env.DEFAULT_EVM_CHAIN ?? '') ?? DETECT_DEFAULT_EVM;
 
@@ -179,6 +188,46 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     }
   }
 
+  // ---- Optional research (Phase 4) ---------------------------------------
+  // Fetched with a hard timeout and cached; a miss or a failure leaves the card's
+  // existing narrative line untouched. Research NEVER blocks or breaks a scan:
+  // the market card is already complete before this runs.
+  let researchLines = null;
+  if (result?.status === 'ok' && SCAN_MODE === 'live' && RESEARCH_ON_SCAN_FLAG) {
+    try {
+      const research = await Promise.race([
+        researchToken({
+          chain,
+          address,
+          symbol: result?.token?.symbol ?? null,
+          cache: researchCache,
+          budget: xBudget,
+          // No X posts on a card: discovery is credentialed, slow and costly, and a
+          // card only ever needs the counts. /x exists for the detail.
+          includePosts: true,
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(null), RESEARCH_TIMEOUT_MS)),
+      ]);
+      if (research) {
+        // Prefer the researched narrative over the market provider's absent one.
+        if (research.narrative?.available && (!result.narrative?.summary)) {
+          result.narrative = {
+            summary: cardNarrativeLines(research.narrative),
+            source: research.narrative.summarySource,
+            // Labelled a project claim so the card does not present it as verified.
+            evidence: research.narrative.summaryClass,
+          };
+        }
+        researchLines = {
+          xLine: cardXLine(research.x),
+          kolLine: cardKolLine(research.x),
+        };
+      }
+    } catch (err) {
+      console.warn('[bot] research enrichment skipped:', err?.message ?? err);
+    }
+  }
+
   const { text, buttons } = formatCard(result, {
     mockLabel:   SCAN_MODE === 'mock',
     websiteBase: WEBSITE_BASE,
@@ -188,6 +237,7 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     view,
     firstCall,
     callerToken,
+    research: researchLines,
   });
 
   // Resolve a VERIFIED project image before sending. Only a fetched, validated
@@ -712,6 +762,19 @@ bot.on('message', async (ctx, next) => {
 // ---- Phase 2: call tracking commands --------------------------------------
 
 /** Shared dependency bundle for the call commands. */
+/**
+ * Research is OPTIONAL and additive: it is fetched with a short budget and any
+ * failure simply leaves the card's existing narrative line alone. It must never
+ * slow or break a market scan.
+ */
+function researchDeps() {
+  return {
+    cache: researchCache,
+    budget: xBudget,
+    defaultEvmChain: DEFAULT_EVM,
+  };
+}
+
 function callDeps() {
   return {
     store: callStore,
@@ -949,6 +1012,9 @@ bot.action(/^pnl:(.+)$/, async ctx => {
   await sendPnlFor(ctx, { call, ...deps });
 });
 
+bot.command('narrative', ctx => handleNarrative(ctx, researchDeps()));
+bot.command('x', ctx => handleX(ctx, researchDeps()));
+bot.command('kol', ctx => handleKol(ctx, researchDeps()));
 bot.command('alerts', ctx => handleAlerts(ctx, callDeps()));
 /**
  * /alerttest — owner-only delivery check. Registered AFTER the generic message
@@ -1156,6 +1222,9 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
         { command: 'pnl',     description: 'Shareable PnL card' },
         { command: 'callsettings', description: 'Auto-call and minimum MC' },
         { command: 'alerts', description: 'Smart alert settings' },
+        { command: 'narrative', description: 'Evidence-based token narrative' },
+        { command: 'x', description: 'Public X posts about a token' },
+        { command: 'kol', description: 'Recorded public calls by an X account' },
         { command: 'about',   description: 'About Meme Checker' },
         { command: 'website', description: 'Open the Meme Checker website' },
         { command: 'upgrade', description: 'Unlock Premium analysis' },
