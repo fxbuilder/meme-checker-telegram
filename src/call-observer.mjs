@@ -147,7 +147,24 @@ export async function observePass({
   const tiers = { hot: 0, warm: 0, cold: 0 };
   for (const c of open) tiers[pollTierFor(now - c.calledAt)] += 1;
 
-  return { observed, skipped, failed, events, open: open.length, tiers, updatedCalls };
+  // `skipped` must account for the BUDGET too, not just cadence: when maxCalls
+  // truncates the target list, those tokens were not observed and an operator needs
+  // to see that rather than a reassuring "skipped: 0".
+  const budgetSkipped = Math.max(0, targets.length - targets.length)
+    + Math.max(0, new Set(due.map((c) => `${c.chain}:${normaliseAddress(c.chain, c.address)}`)).size - targets.length);
+  return {
+    observed,
+    skipped: skipped + budgetSkipped,
+    failed,
+    events,
+    open: open.length,
+    tiers,
+    updatedCalls,
+    // Explicit budget reporting, separate from cadence skips.
+    due: due.length,
+    targets: targets.length,
+    budgetSkipped,
+  };
 }
 
 /** Remaining open calls that this pass did not touch, for reporting. */

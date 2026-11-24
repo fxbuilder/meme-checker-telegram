@@ -23,6 +23,7 @@ import { verifyExtremeObservation } from './extreme-verify.mjs';
 import { resolveCaller, isAttributable } from './caller-identity.mjs';
 import { mintCallerToken } from './deep-link.mjs';
 import { handleAlerts, handleAlertsCallback } from './alert-commands.mjs';
+import { handleAlertTest } from './alert-test.mjs';
 import { startObserver } from './observer-loop.mjs';
 import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
@@ -949,6 +950,14 @@ bot.action(/^pnl:(.+)$/, async ctx => {
 });
 
 bot.command('alerts', ctx => handleAlerts(ctx, callDeps()));
+/**
+ * /alerttest — owner-only delivery check. Registered AFTER the generic message
+ * listener, which passes commands through via next(), so it is reachable.
+ */
+bot.command('alerttest', ctx => handleAlertTest(ctx, {
+  policy: accessPolicy,
+  testGroupId: process.env.TELEGRAM_TEST_GROUP_ID ?? null,
+}));
 bot.action(/^al:/, async ctx => {
   try {
     await handleAlertsCallback(ctx, callDeps());
