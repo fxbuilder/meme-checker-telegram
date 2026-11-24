@@ -307,3 +307,125 @@ the intended daily budget.
 - EVM X coverage is unproven: PEPE and CAKE both returned 429 during acceptance.
 - The fresh-memecoin narrative path (website prose, no CoinGecko listing) is verified
   by unit test and by a real BONK website fetch, not against a live fresh launch.
+
+---
+
+# Narrative engine: multi-chain sources
+
+**Goal:** Basic Narrative is a core FREE feature and must work for both freshly
+launched and established memecoins across all supported chains, without any paid X
+requests.
+
+## Why CoinGecko was replaced as the backbone
+
+CoinGecko's platform map covered **8 of 16** chains, and most newly launched memecoins
+are not listed there at all. A CoinGecko-primary engine therefore answered
+"unavailable" for exactly the tokens this bot exists to describe. CoinGecko is now
+**supplementary**.
+
+## Source hierarchy
+
+| Rank | Source | Evidence class | Chains |
+| --- | --- | --- | --- |
+| 1 | GeckoTerminal token info | project claim | 15 |
+| 2 | Metaplex on-chain JSON | project claim | Solana |
+| 3 | CoinGecko description | project claim | 8 |
+| 4 | Project website prose | project claim | any (SSRF-guarded) |
+| 5 | Market-provider blurb | reported | 15 |
+| — | Solana mint account | **verified** | Solana |
+| — | Pair / DEX identity | **verified** | 15 |
+
+## GeckoTerminal (`src/research/geckoterminal.mjs`)
+
+Keyless. Network ids verified against `GET /api/v2/networks` (pages 1-2), **not
+guessed**:
+
+```
+solana->solana      ethereum->eth        bsc->bsc           base->base
+arbitrum->arbitrum  optimism->optimism   polygon->polygon_pos  avalanche->avax
+hyperevm->hyperevm  monad->monad         unichain->unichain berachain->berachain
+abstract->abstract  megaeth->megaeth     story->story
+robinhood -> NOT PRESENT (no source)
+```
+
+An unmapped chain is reported as a **coverage gap**, never as a token with no story.
+
+Endpoint: `GET /api/v2/networks/{net}/tokens/{address}/info` returns
+`description`, `websites[]`, `twitter_handle`, `telegram_handle`, `discord_url`,
+`image_url`, `coingecko_coin_id`.
+
+Only absolute `http(s)` URLs survive normalisation. `javascript:`, `data:`, `ftp:` and
+malformed values are dropped, not repaired.
+
+## On-chain metadata (`src/research/onchain-metadata.mjs`)
+
+For a fresh launch with no published description, the mint account still proves what
+the token **is**:
+
+- SPL Token vs **Token-2022**, identified from the owning program
+- decimals, supply
+- **mint authority** renounced vs active (stated as a risk, not a feature)
+- **freeze authority** renounced vs active
+
+These are rendered as `verified` claims. Metaplex off-chain JSON is fetched only over
+HTTPS, **never following a redirect** (a redirect would bypass the SSRF check), and its
+prose is a project claim.
+
+## Pacing: measured, not documented
+
+Testing showed bursts and even 3s spacing returning 429, while 20s always succeeded.
+The real limiter is burst-sensitive, not a simple per-minute count. Therefore:
+
+- **6s minimum spacing** (10/min), conservative against the published ~30/min
+- concurrent callers are **serialised** through a promise chain
+- a **429 is retried with backoff** before giving up: a throttle is not a verdict about
+  the token, and without the retry our own throughput would manufacture false
+  "no narrative" results
+
+## Fresh launch is not an empty card
+
+When no prose exists, `/narrative` states that plainly and then shows verified contract
+facts and project links:
+
+```
+No published project description exists for this contract.
+Showing verified contract facts instead.
+
+Verified facts
+- Standard SPL token (on-chain mint account)
+- Mint authority renounced: supply is fixed (on-chain mint account)
+- Freeze authority renounced: tokens cannot be frozen (on-chain mint account)
+```
+
+An honest absence plus true facts beats a blank response.
+
+## Cost
+
+Every source used is **free and keyless**: GeckoTerminal, DexScreener, public Solana
+RPC, project websites. **Zero paid X requests** reach an ordinary Telegram user: the X
+path is cache-only for non-entitled callers, and this narrative work adds no X
+dependency at all.
+
+## Capability matrix
+
+Measured by execution across all 16 registered chains. **15/16 chains have a metadata
+source**; prose narrative composes wherever the provider publishes a description, and
+verified contract facts cover the rest on Solana.
+
+## Open-source components considered
+
+Evaluated against "useful, secure, commercially compatible". The project's only runtime
+dependency is Telegraf, and that was kept deliberately:
+
+| Component | Decision |
+| --- | --- |
+| `mpl-token-metadata` | Concept adopted (metadata account shape); no SDK added, a JSON-RPC read is enough |
+| `token-2022` | Concept adopted (program id distinguishes the standard); no crate added |
+| `pump-public-docs` | Used as reference for launchpad identity; no code |
+| `wevm/viem` | **Rejected**: DexScreener already returns the EVM name/symbol we need; viem is a large dependency for no new data |
+| `four-meme-ai`, `clanker-sdk` | **Rejected**: chain-specific launchpad SDKs without confirmed commercial terms or needed coverage |
+| `trustwallet/assets` | **Rejected**: logo-only registry, adds no narrative |
+| `mozilla/readability` | **Not adopted**: the existing bounded regex extractor works on the sites tested; a DOM parser is heavier for marginal gain |
+| `metascraper` | **Rejected**: large dependency tree for og: tags the existing `media.mjs` already extracts |
+| GeckoTerminal API | **Adopted**: the actual coverage unlock |
+| DexScreener API | Already in use; retained |
