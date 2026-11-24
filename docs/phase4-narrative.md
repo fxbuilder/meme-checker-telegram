@@ -429,3 +429,37 @@ dependency is Telegraf, and that was kept deliberately:
 | `metascraper` | **Rejected**: large dependency tree for og: tags the existing `media.mjs` already extracts |
 | GeckoTerminal API | **Adopted**: the actual coverage unlock |
 | DexScreener API | Already in use; retained |
+
+## Measured capability matrix (executed, not claimed)
+
+Probed live across every registered chain. Each row is a real token from that chain's
+top pool, run through the production `composeNarrative` path.
+
+| Chain | Metadata source | Narrative | Claims |
+| --- | --- | --- | --- |
+| Solana | GeckoTerminal | prose (596 ch) | verified contract facts |
+| Ethereum | GeckoTerminal | prose (417 ch) | — |
+| BNB Chain | GeckoTerminal | verified facts | 1 |
+| Base | GeckoTerminal | prose (962 ch) | — |
+| Arbitrum | GeckoTerminal | prose (417 ch) | — |
+| Optimism | GeckoTerminal | prose (417 ch) | — |
+| Polygon | GeckoTerminal | verified facts | 1 |
+| Avalanche | GeckoTerminal | verified facts | 1 |
+| HyperEVM | GeckoTerminal | prose (417 ch) | — |
+| Monad | GeckoTerminal | verified facts | 1 |
+| Unichain | GeckoTerminal | verified facts | 1 |
+| Berachain | GeckoTerminal | prose (371 ch) | — |
+| Abstract | GeckoTerminal | prose (371 ch) | — |
+| MegaETH | GeckoTerminal | prose (122 ch) | — |
+| Story | GeckoTerminal | verified facts | 1 |
+| Robinhood Chain | **none** | **unavailable** | 0 |
+
+**15 of 16 chains produce narrative output.** 9 return a prose summary from the
+project's own description; 6 have no published description and return verified
+contract facts instead. Robinhood Chain has no keyless metadata source and reports that
+as a coverage gap rather than as a token with no story.
+
+A "prose" row means the provider published a description long enough to summarise
+(the pipeline rejects cookie walls and stub text). A "facts" row is not a failure: the
+token genuinely has no published description, and stating verified on-chain facts beats
+an empty card.
