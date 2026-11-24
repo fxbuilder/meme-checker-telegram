@@ -134,3 +134,59 @@ text message rather than truncating the contract address or a risk warning.
   model cost and no risk of a model inventing a story.
 - Historical entry market caps for X calls are not derivable from post text alone, so
   KOL performance remains unavailable until a post is observed live at call time.
+
+---
+
+## X provider configuration — what to set
+
+Recovered from `E:\Projects\Onchain-Intelligence-Scanner` (read-only), commit
+`9ca3db5` *"feat(x): add GetXAPI as a second live search provider, behind a real
+spend guard"*.
+
+### GetXAPI (primary)
+
+| Item | Value |
+| --- | --- |
+| Environment variable | `GETXAPI_KEY` |
+| Optional host override | `GETXAPI_BASE_URL` (default `https://api.getxapi.com`) |
+| Auth header | `Authorization: Bearer <key>` |
+| Search endpoint | `GET /twitter/tweet/advanced_search?q=<query>&product=Latest\|Top[&cursor=]` |
+| Response | `{ tweets: [...], has_more, next_cursor, tweet_count }` |
+| User endpoint | `GET /twitter/user/info?userName=<handle>` |
+| Published cost | $0.001 per standard search call |
+| Post fields | `id`, `text`, `createdAt`, `author.{userName,name,followers,isVerified,isBlueVerified}`, `likeCount`, `retweetCount`, `replyCount`, `quoteCount`, `viewCount`, `bookmarkCount`, `isReply`, `isQuote`, `quotedTweetId`, `url` |
+
+**No credential is present in either project.** `GETXAPI_KEY` was never committed to
+git in the reference project (verified with `git log -S`), and `.env.example` there
+lists no X provider at all. The adapter was added with tests but there is no record of
+a live key being configured on this machine.
+
+To enable X/KOL intelligence, set in `E:\meme-checker-telegram\.env`:
+
+```
+GETXAPI_KEY=<your key>
+```
+
+Then restart the bot. Nothing else needs changing — the adapter, field mapping,
+cache, budget, dedupe and classification are built and tested against the recovered
+contract.
+
+### Provider selection
+
+`X_PROVIDER=getxapi|sorsa` names the backend explicitly. Without it, GetXAPI wins if
+its key exists, then Sorsa. Silent precedence is avoided on purpose: cost and
+provenance should not depend on which variable a machine happens to have.
+
+### Budget
+
+`RESEARCH_X_BUDGET` (default 20) caps X search requests per rolling day. A cache hit
+does not spend budget, and an exhausted budget reports `budget-exhausted` rather than
+silently making the request.
+
+### What is verified vs not
+
+- **Verified here:** the request shape, field mapping, error classification,
+  deduplication and classification logic — all against mocked payloads in the exact
+  recovered shape.
+- **NOT verified here:** that a live key works end to end. That requires the key.
+  Until a real search returns real posts, X intelligence is not claimed to work.
