@@ -709,6 +709,8 @@ Promise.resolve(bot.telegram?.getMe?.())
     } catch (err) {
       console.warn('[bot] Could not register command menu:', err?.message ?? err);
     }
+    const pol = describePolicy(accessPolicy);
+    console.log(`[bot] Staging allowlist: chats=[${pol.allowedChats.join(', ') || 'none'}] owners=[${pol.owners.join(', ') || 'none'}] allowAny=${pol.allowAnyChat}`);
     console.log('[bot] Polling for updates. (Ctrl+C to stop)');
     return bot.launch();
   })
