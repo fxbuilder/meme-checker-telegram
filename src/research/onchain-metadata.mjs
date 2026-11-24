@@ -178,6 +178,142 @@ function pickSite(j) {
   return null;
 }
 
+
+/**
+ * Derive the Metaplex metadata account address for a mint.
+ *
+ * Program Derived Addresses need Ed25519 curve maths, and Node has no built-in for
+ * it. Rather than pull in a chain SDK for one lookup, `getProgramAccounts` is used
+ * with a memcmp filter on the mint field: the RPC does the derivation work server
+ * side and returns the account. It is a heavier call, so it is only made when nothing
+ * else described the token.
+ *
+ * The offset is 1 + 32 = 33: Metaplex metadata accounts begin with a 1-byte key
+ * discriminator, followed by the 32-byte mint address.
+ */
+const METAPLEX_MINT_OFFSET = 33;
+
+/**
+ * Fetch the on-chain Metaplex metadata for a Solana mint.
+ *
+ * @returns {Promise<{status:string, metadata?:object}>}
+ */
+export async function readMetaplexMetadata(mintAddress, opts = {}) {
+  const mint = String(mintAddress ?? '').trim();
+  if (!mint) return { status: 'provider-error', detail: 'empty address' };
+
+  const r = await rpc('getProgramAccounts', [
+    METAPLEX_PROGRAM,
+    {
+      // base64, because the public RPC does NOT decode Metaplex accounts for us -
+      // jsonParsed returned raw base64 and the lookup silently produced nothing.
+      encoding: 'base64',
+      filters: [{ memcmp: { offset: METAPLEX_MINT_OFFSET, bytes: mint } }],
+      // Name/symbol/uri live early in the account; 500 bytes covers them without
+      // pulling a multi-kilobyte blob.
+      dataSlice: { offset: 0, length: 500 },
+    },
+  ], opts);
+
+  if (r.status !== 'ok') return r;
+  const accounts = Array.isArray(r.result) ? r.result : [];
+  if (!accounts.length) return { status: 'not-found' };
+
+  const b64 = accounts[0]?.account?.data?.[0];
+  if (typeof b64 !== 'string') return { status: 'not-decoded' };
+
+  const decoded = decodeMetaplexAccount(b64);
+  if (!decoded) return { status: 'not-decoded' };
+
+  return {
+    status: 'ok',
+    metadata: { source: 'metaplex', ...decoded },
+  };
+}
+
+/**
+ * Decode the leading fields of a Metaplex Metadata account.
+ *
+ * LAYOUT (Borsh, after the 1-byte key discriminator):
+ *   update_authority  32 bytes
+ *   mint              32 bytes
+ *   name              u32 length + bytes (null-padded, usually 32)
+ *   symbol            u32 length + bytes (usually 10)
+ *   uri               u32 length + bytes (usually 200)
+ *   seller_fee_bps    u16
+ *   ...
+ *
+ * This is a hand-rolled reader rather than a dependency: the fields needed are all
+ * leading, fixed-layout, and a chain SDK would be a large addition for four strings.
+ * Anything unexpected returns null, so a malformed account is reported as undecodable
+ * instead of producing garbage text.
+ */
+export function decodeMetaplexAccount(base64) {
+  let buf;
+  try {
+    buf = Buffer.from(base64, 'base64');
+  } catch { return null; }
+  if (!buf || buf.length < 70) return null;
+
+  let off = 1; // key discriminator
+  if (buf.length < off + 64) return null;
+  const updateAuthority = bs58(buf.subarray(off, off + 32));
+  off += 32;
+  off += 32; // mint (we already know it)
+
+  const readString = () => {
+    if (off + 4 > buf.length) return null;
+    const len = buf.readUInt32LE(off);
+    off += 4;
+    // A length beyond the buffer means the layout assumption is wrong.
+    if (len < 0 || len > 2_000 || off + len > buf.length) return null;
+    const raw = buf.subarray(off, off + len);
+    off += len;
+    // Null-padded UTF-8.
+    return raw.toString('utf8').replace(/\0+$/g, '').trim();
+  };
+
+  const name = readString();
+  if (name === null) return null;
+  const symbol = readString();
+  if (symbol === null) return null;
+  const uri = readString();
+  if (uri === null) return null;
+
+  let isMutable = null;
+  if (off < buf.length) isMutable = buf[off] === 1;
+  else if (off === buf.length) isMutable = null;
+
+  return {
+    name: name || null,
+    symbol: symbol || null,
+    uri: /^https:\/\//i.test(uri) ? uri : null,
+    updateAuthority: updateAuthority && updateAuthority.length > 30 ? updateAuthority : null,
+    isMutable,
+  };
+}
+
+/** Minimal base58 encoder — Solana public keys are base58, and Buffer has no helper. */
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function bs58(bytes) {
+  if (!bytes || !bytes.length) return null;
+  let zeros = 0;
+  while (zeros < bytes.length && bytes[zeros] === 0) zeros += 1;
+  const digits = [0];
+  for (let i = zeros; i < bytes.length; i += 1) {
+    let carry = bytes[i];
+    for (let j = 0; j < digits.length; j += 1) {
+      carry += digits[j] << 8;
+      digits[j] = carry % 58;
+      carry = (carry / 58) | 0;
+    }
+    while (carry > 0) { digits.push(carry % 58); carry = (carry / 58) | 0; }
+  }
+  let out = '1'.repeat(zeros);
+  for (let i = digits.length - 1; i >= 0; i -= 1) out += B58[digits[i]];
+  return out;
+}
+
 /**
  * Turn verified on-chain facts into narrative CLAIMS (not prose).
  * These are statements about the contract that no source can dispute.

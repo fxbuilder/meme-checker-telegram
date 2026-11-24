@@ -16,7 +16,8 @@ import { getChain } from '../chains.mjs';
 import { fetchContractProfile, buildNarrative } from './narrative-source.mjs';
 import { composeNarrative, htmlToText, isBoilerplate } from './narrative-pipeline.mjs';
 import { fetchTokenInfo, gtSupportsChain } from './geckoterminal.mjs';
-import { readSolanaMint } from './onchain-metadata.mjs';
+import { readSolanaMint, readMetaplexMetadata, readMetaplexJson } from './onchain-metadata.mjs';
+import { isSafeExternalUrl } from '../media.mjs';
 import { fetchWebsiteText } from './website-fetch.mjs';
 import {
   searchTokenPosts, summariseKols, xDiscoveryStatus, coverageNote,
@@ -100,15 +101,37 @@ export async function researchToken({
   }
   out.fromCache = gtFromCache && profFromCache;
 
-  // Verified on-chain facts. Solana only, and only when nothing off-chain described
-  // the token - otherwise the mint read is an extra request for no benefit.
+  // Verified on-chain facts, plus on-chain narrative for Solana.
+  //
+  // Both reads only happen when nothing off-chain described the token: a token with a
+  // published description gains nothing from them, and skipping keeps the common scan
+  // at one request.
   let mint = null;
+  let metaplex = null;
   if (chain === 'solana' && !(gt?.status === 'ok' && gt.token?.description)) {
     const mKey = cacheKey('sol-mint', chain, address);
     const mBefore = cache.stats();
     const mRes = await cache.cached(mKey, TTL_MS.description, () => readSolanaMint(address, { fetchImpl }));
     if (cache.stats().misses !== mBefore.misses) out.requests += 1;
     if (mRes?.status === 'ok') mint = mRes.mint;
+
+    // Metaplex metadata is where a Solana token's OWN description lives when the
+    // aggregators have not indexed it yet - which is the fresh-launch case. The `uri`
+    // points at an off-chain JSON that is attacker-controlled, so it is fetched
+    // through the SSRF guard and treated as a claim.
+    const metaRes = await cache.cached(
+      cacheKey('spl-meta', chain, address),
+      TTL_MS.description,
+      () => readMetaplexMetadata(address, { fetchImpl }),
+    );
+    if (metaRes?.status === 'ok' && metaRes.metadata?.uri) {
+      const jsonRes = await cache.cached(
+        cacheKey('spl-meta-json', chain, metaRes.metadata.uri),
+        TTL_MS.description,
+        () => readMetaplexJson(metaRes.metadata.uri, { fetchImpl, isSafeUrl: isSafeExternalUrl }),
+      );
+      if (jsonRes?.status === 'ok') metaplex = jsonRes.metadata;
+    }
   }
 
   // A chain with no metadata source at all AND no website to read has no prose
@@ -165,6 +188,7 @@ export async function researchToken({
     websiteText,
     gtToken: gt?.status === 'ok' ? gt.token : null,
     mint,
+    metaplex,
   });
 
   out.narrative = {
@@ -181,6 +205,7 @@ export async function researchToken({
       geckoterminal: gt?.status ?? 'not-consulted',
       coingecko: prof?.status ?? 'not-consulted',
       onchain: mint ? 'ok' : (chain === 'solana' ? 'not-read' : 'unsupported-chain'),
+      metaplex: metaplex ? 'ok' : (chain === 'solana' ? 'not-found' : 'unsupported-chain'),
     },
   };
 
