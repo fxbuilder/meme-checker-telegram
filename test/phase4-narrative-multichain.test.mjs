@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   GT_NETWORK, gtSupportsChain, gtNetwork, normaliseTokenInfo,
-  fetchTokenInfo, narrativeCoverageForChain, PacedGate,
+  fetchTokenInfo, narrativeCoverageForChain, PacedGate, addressFromRelationshipId,
 } from '../src/research/geckoterminal.mjs';
 import {
   readSolanaMint, readMetaplexJson, mintFacts,
@@ -263,6 +263,18 @@ test('no prose source is an honest unavailable state, with only contract facts',
 });
 
 // ---- pacing --------------------------------------------------------------
+
+
+test('a network id containing an underscore does not corrupt the address', () => {
+  // GeckoTerminal relationship ids are "<network>_<address>" and network names can
+  // contain underscores. Splitting on the first one turned polygon_pos_0xabc into
+  // "pos_0xabc", so Polygon lookups silently returned not-found.
+  const addr = '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619';
+  assert.equal(addressFromRelationshipId(`polygon_pos_${addr}`, 'polygon_pos'), addr);
+  assert.equal(addressFromRelationshipId(`polygon_pos_${addr}`), addr, 'fallback splits on the LAST underscore');
+  assert.equal(addressFromRelationshipId('solana_DezXAZ8z7', 'solana'), 'DezXAZ8z7');
+  assert.equal(addressFromRelationshipId('', 'solana'), null);
+});
 
 test('the paced gate serialises concurrent callers', async () => {
   let clock = 0;

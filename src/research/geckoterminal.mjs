@@ -94,6 +94,28 @@ export class PacedGate {
   }
 }
 
+
+/**
+ * Extract the token address from a GeckoTerminal relationship id.
+ *
+ * The id is `"<network>_<address>"`, but network names may themselves contain an
+ * underscore - `polygon_pos`, `polygon-zkevm`. Splitting on the FIRST underscore
+ * turns `polygon_pos_0xabc` into `pos_0xabc`, a token that cannot exist, which is
+ * exactly how Polygon lookups silently returned not-found.
+ *
+ * Solana/EVM addresses never contain an underscore, so stripping the known network
+ * prefix is both correct and unambiguous.
+ */
+export function addressFromRelationshipId(relId, network = null) {
+  const s = String(relId ?? '').trim();
+  if (!s) return null;
+  if (network && s.startsWith(`${network}_`)) return s.slice(network.length + 1);
+  // Fallback: the address is the segment after the LAST underscore, because addresses
+  // are alphanumeric only.
+  const idx = s.lastIndexOf('_');
+  return idx === -1 ? null : s.slice(idx + 1);
+}
+
 /** One shared gate for all GeckoTerminal traffic in this process. */
 export const gtGate = new PacedGate();
 
