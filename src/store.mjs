@@ -152,11 +152,19 @@ export class CallStore {
 
   // ---- groups -------------------------------------------------------------
 
-  groupSettings(chatId) {
+  groupSettings(chatId, { title = null } = {}) {
     this.load();
     const key = String(chatId);
     if (!this.doc.groups[key]) this.doc.groups[key] = defaultGroupSettings(key);
-    return this.doc.groups[key];
+    const g = this.doc.groups[key];
+    // Remember the human title when we are told it, so caller profiles and PnL
+    // cards can name the group instead of showing a numeric chat id.
+    if (title && g.title !== title) {
+      g.title = title;
+      g.updatedAt = new Date().toISOString();
+      this.persist().catch(() => {});
+    }
+    return g;
   }
 
   async setGroupSetting(chatId, patch) {
@@ -257,6 +265,20 @@ export class CallStore {
     this.load();
     const cutoff = now - maxAgeMs;
     return this.doc.calls.filter((c) => c.status === 'active' && c.calledAt > cutoff);
+  }
+
+  /**
+   * Delete a record outright. Used ONLY to clean up acceptance artefacts that were
+   * inserted by mistake; normal history is never deleted (cancellation marks a
+   * record instead, so the audit trail survives).
+   */
+  async removeCall(id) {
+    this.load();
+    const before = this.doc.calls.length;
+    this.doc.calls = this.doc.calls.filter((c) => c.id !== id);
+    const removed = before - this.doc.calls.length;
+    if (removed) await this.persist();
+    return removed;
   }
 
   stats() {

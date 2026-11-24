@@ -595,7 +595,7 @@ bot.on('message', async ctx => {
   let callOutcome = null;
   if (isGroupChat(ctx)) {
     try {
-      const settings = callStore.groupSettings(ctx.chat.id);
+      const settings = callStore.groupSettings(ctx.chat.id, { title: ctx.chat.title ?? null });
       if (settings.autoCall === 'auto' && !skipRecording) {
         const identity = resolveCaller(ctx.message, ctx.chat);
         if (isAttributable(identity)) {

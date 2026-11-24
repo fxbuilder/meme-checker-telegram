@@ -313,7 +313,9 @@ export async function handlePnl(ctx, deps) {
   let freshLogo = null;
   try {
     const fresh = await scan({ chain: call.chain, address: call.address });
-    freshLogo = fresh?.image ? { image: fresh.image } : null;
+    // Scan results are nested: identity in `token`, art in `media`. The logo is
+    // only ever taken from the identity-matched pair, never re-guessed here.
+    freshLogo = fresh?.media?.logo ? { image: fresh.media.logo } : null;
     const obs = await observeCall({
       store, call, scanResult: fresh, verifyExtreme: verifyExtremeObservation,
     });
