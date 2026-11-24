@@ -55,6 +55,9 @@ and fail-closed authorisation.
 - **0 paid X requests** across every command plus a Refresh tap.
 - Top 10 concentration: the reported 111.1% reproduced and fixed; inconsistent rows now
   yield `null`, never a clamped 100%. Live values: PEPE 38.6%, BONK 40.5%.
+- **Synthetic isolation against the real store:** before the fix `/gpnl` reported
+  9 calls / best 6x / 33% hit rate for `sissooo1`; after, 5 calls / best 1.35x / 0%.
+  The 6x was three Phase-3 `SIM` test rows.
 - Card replies to the CA message id, never the picker id.
 - Refresh edits in place and inserts no call.
 - Cache: 3 identical research calls → 1 provider fetch.
