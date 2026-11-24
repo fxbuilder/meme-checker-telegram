@@ -310,7 +310,10 @@ export async function handlePnl(ctx, deps) {
     return;
   }
 
-  await sendPnlFor(ctx, { call: scoped[0], store, scan, renderPng, sendPhoto, groupTitle });
+  await sendPnlFor(ctx, {
+    call: scoped[0], store, scan, renderPng, sendPhoto,
+    groupTitle: groupTitle ?? store.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? null,
+  });
 }
 
 /**

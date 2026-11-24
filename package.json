@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node --env-file=.env src/bot.mjs",
-    "test": "node --test"
+    "start": "set SCAN_MODE=live&& node --env-file=.env src/bot.mjs",
+    "test": "node --test",
+    "start:mock": "set SCAN_MODE=mock&& node --env-file=.env src/bot.mjs"
   },
   "dependencies": {
     "telegraf": "^4.16.3"

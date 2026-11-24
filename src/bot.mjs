@@ -1046,6 +1046,23 @@ bot.catch((err, ctx) => {
   ctx?.reply?.('⚠️ An unexpected error occurred. Please try again.').catch(() => {});
 });
 
+// ---- Command tracing -------------------------------------------------------
+// One concise line per incoming command so the owner's terminal shows what the bot
+// actually received. This is the cheapest way to tell "update never arrived" apart
+// from "handler failed". Message text and secrets are never printed.
+bot.use(async (ctx, next) => {
+  const text = ctx.message?.text ?? ctx.callbackQuery?.data;
+  if (!text) return next();
+  const kind = ctx.callbackQuery ? 'CB' : 'CMD';
+  const who = ctx.from?.id ?? '?';
+  const where = ctx.chat?.type === 'private' ? 'DM' : `chat=${ctx.chat?.id}`;
+  // Only surface commands and callbacks; ordinary group chatter stays silent.
+  if (kind === 'CMD' && !/^\/\w/.test(String(text).trim())) return next();
+  const shown = String(text).split(/\r?\n/)[0].slice(0, 72);
+  console.log(`[cmd] ${kind} ${shown} (from=${who} ${where})`);
+  return next();
+});
+
 // ---- Exports for tests ------------------------------------------------------
 // The handler graph is exported so regression tests can drive the REAL routing
 // (middleware order included) with a fake context instead of calling renderers in
@@ -1077,6 +1094,10 @@ if (!SHOULD_LAUNCH) {
 }
 
 console.log(`[bot] Starting Meme Checker bot (SCAN_MODE=${SCAN_MODE})…`);
+if (SCAN_MODE !== 'live') {
+  console.warn('[bot] ⚠ SCAN_MODE is not "live" — cards will show MOCK data. Set SCAN_MODE=live for real tokens.');
+}
+console.log(`[bot] Store: ${callStore.filePath}`);
 // Startup order (all before polling begins):
 //  1) getMe → set BOT_USERNAME so the Add-to-Group button is populated on the first card
 //  2) setMyCommands → command menu live from the first update (not after polling stops)

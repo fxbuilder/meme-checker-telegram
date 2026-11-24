@@ -17,6 +17,7 @@ export class Telegraf {
   help(f){globalThis.uh.help=f}
   command(k,f){globalThis.uh[k]=f}
   on(k,f){globalThis.uh[k]=f}
+  use(f){ (globalThis.uhMiddleware ||= []).push(f) }
   action(re,f){ (globalThis.uhActions ||= []).push({re,f}) }
   catch(){}
   async launch(){}

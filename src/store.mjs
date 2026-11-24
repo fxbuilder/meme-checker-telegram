@@ -96,13 +96,28 @@ export function defaultGroupSettings(chatId) {
   };
 }
 
+// One document AND persistence queue per file in this process. Independent store
+// objects must not check stale snapshots or race the same atomic-write temp path.
+// This is an in-process guarantee; separate bot processes must not share a file.
+const fileStates = new Map();
+
 export class CallStore {
   constructor(filePath = defaultStorePath()) {
-    this.filePath = filePath;
-    this.doc = emptyDoc();
-    this.loaded = false;
-    this.writeQueue = Promise.resolve();
-    this.migrated = false;
+    this.filePath = path.resolve(filePath);
+    const key = process.platform === 'win32' ? this.filePath.toLowerCase() : this.filePath;
+    if (!fileStates.has(key)) {
+      fileStates.set(key, {
+        doc: emptyDoc(), loaded: false, writeQueue: Promise.resolve(), migrated: false,
+      });
+    }
+    const state = fileStates.get(key);
+    for (const name of ['doc', 'loaded', 'writeQueue', 'migrated']) {
+      Object.defineProperty(this, name, {
+        enumerable: true,
+        get: () => state[name],
+        set: (value) => { state[name] = value; },
+      });
+    }
   }
 
   /** Read the file. Never throws for a missing file; quarantines a corrupt one. */
@@ -284,9 +299,9 @@ export class CallStore {
    * calls no matter how much time passes, and the original first caller, entry
    * market cap and timestamp must survive.
    *
-   * Insertion is serialised through `writeQueue` so two concurrent updates for the
-   * same token cannot both pass the existence check and then both insert — the
-   * check and the push happen inside one queued section.
+   * All instances for this file share the document and persistence queue. The
+   * synchronous existence check and push cannot interleave; only persistence
+   * yields, after the canonical record is already visible to every instance.
    *
    * Returns { row, duplicate: true, existing } when the token is already tracked.
    */
