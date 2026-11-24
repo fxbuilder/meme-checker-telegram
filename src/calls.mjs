@@ -307,6 +307,10 @@ export function buildCallRecord({
     // Peak begins at entry: the call's own baseline is the first observation.
     peakMarketCapUsd: entry.entryMarketCapUsd,
     peakAt: now,
+    // Seed the movement history with the entry sample. Without it the first real
+    // observation has nothing to compare against, so a pump/dump could not be
+    // detected until the SECOND observation after the call.
+    recentObservations: [{ at: now, marketCapUsd: entry.entryMarketCapUsd }],
     lastMarketCapUsd: entry.entryMarketCapUsd,
     lastObservedAt: now,
     calledAt: now,

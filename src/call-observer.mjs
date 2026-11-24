@@ -21,6 +21,13 @@ import { normaliseAddress, isSynthetic } from './store.mjs';
 
 export const MILESTONES = [2, 3, 5, 10, 25, 50, 100];
 
+/** Sparse/corrupt rows must not become provider requests or poison healthy calls. */
+export function hasObservationIdentity(call) {
+  return typeof call?.id === 'string' && Boolean(call.id)
+    && call.chatId != null && typeof call.chain === 'string' && Boolean(call.chain)
+    && typeof call.address === 'string' && Boolean(call.address);
+}
+
 /**
  * Highest milestone a multiple has crossed. Used for alert thresholds.
  * Returns null below 2x so a flat or losing call never reports a "milestone".
@@ -46,9 +53,12 @@ export async function observePass({
   perCallCooldownMs = 5 * 60_000,
   maxAgeMs = MAX_PEAK_AGE_MS,
   force = false,
+  /** Aborts remaining work; forwarded from the scheduler on shutdown. */
+  signal = null,
 }) {
+  const aborted = () => Boolean(signal?.aborted);
   // maxAgeMs defaults to Infinity: old calls stay tracked, just less often.
-  const open = store.openCalls({ maxAgeMs, now }).filter((c) => !isSynthetic(c));
+  const open = store.openCalls({ maxAgeMs, now }).filter((c) => !isSynthetic(c) && hasObservationIdentity(c));
 
   // Adaptive cadence: each call is due when its age-based interval has elapsed.
   // A hot call polls every few minutes; a month-old call polls daily. This is the
@@ -65,17 +75,30 @@ export async function observePass({
     return (now - c.lastObservedAt) >= Math.max(interval, 0);
   });
 
+  // FAIR ORDERING. Applying the cap to insertion order starved later tokens: three
+  // fresh calls with maxCalls=2 re-fetched A,B every cycle and C was never observed,
+  // because the first two became due again each time. Sort by least-recently
+  // observed so the cap rotates through the whole book.
+  const ordered = [...due].sort((a, b) => {
+    const la = Number.isFinite(a.lastObservedAt) ? a.lastObservedAt : -Infinity;
+    const lb = Number.isFinite(b.lastObservedAt) ? b.lastObservedAt : -Infinity;
+    if (la !== lb) return la - lb;              // never-observed (-Infinity) first
+    return (a.calledAt ?? 0) - (b.calledAt ?? 0); // then oldest call first
+  });
+
   // One provider call per distinct token per run.
   const seen = new Set();
   const targets = [];
-  for (const c of due) {
+  for (const c of ordered) {
+    if (targets.length >= maxCalls) break;
     const key = `${c.chain}:${normaliseAddress(c.chain, c.address)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     // One provider request, but EVERY group tracking this contract gets the
     // observation: the dedupe above is about avoiding duplicate API calls, not
     // about updating only the first group that happened to be seen.
-    const sameToken = store.doc.calls.filter((c) => c.status === 'active'
+    const sameToken = store.doc.calls.filter((c) => c?.status === 'active'
+      && hasObservationIdentity(c)
       && !isSynthetic(c)
       && c.chain === c.chain
       && normaliseAddress(c.chain, c.address) === normaliseAddress(c.chain, c.address)
@@ -92,13 +115,16 @@ export async function observePass({
   const updatedCalls = [];
 
   for (const t of targets) {
+    // Checked per token: a shutdown during a slow first request must prevent the
+    // remaining fetches AND their writes.
+    if (aborted()) break;
     const lead = t.calls[0];
     if (!lead) continue;
     const before = new Map(t.calls.map((c) => [c.id, callMetrics(c, now).currentMultiple]));
 
     let result;
     try {
-      result = await scan({ chain: lead.chain, address: lead.address });
+      result = await scan({ chain: lead.chain, address: lead.address, signal: signal ?? undefined });
     } catch (err) {
       failed += 1;
       console.warn(`[observer] scan failed for ${t.key}:`, err?.message ?? err);
@@ -111,6 +137,9 @@ export async function observePass({
     }
 
     for (const call of t.calls) {
+      // No write after a shutdown: an observation landing post-abort is exactly the
+      // "alert after stop" class of bug.
+      if (aborted()) break;
       const obs = await observeCall({ store, call, scanResult: result, now });
       if (!obs.updated) { failed += 1; continue; }
       observed += 1;

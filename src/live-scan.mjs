@@ -388,7 +388,7 @@ const cacheKey = (chain, key) => `scan:${chain}:${key}`;
  * Cached by (chain, address); failures are cached briefly so a throttle is not
  * re-hit by every message in a busy group.
  */
-export async function liveScan(request, { fetchImpl, riskFetch, paidFetch, timeoutMs, baseUrl, nowMs } = {}) {
+export async function liveScan(request, { fetchImpl, riskFetch, paidFetch, timeoutMs, baseUrl, nowMs, enrich = true } = {}) {
   const chain = request?.chain;
   const def = getChain(chain);
   if (!def) return { mode: 'live', status: 'invalid-response' };
@@ -399,7 +399,7 @@ export async function liveScan(request, { fetchImpl, riskFetch, paidFetch, timeo
   const key = addressKey(chain, request?.address);
   if (!key) return { mode: 'live', status: 'invalid-response' };
 
-  const ck = cacheKey(chain, key);
+  const ck = cacheKey(chain, key) + (enrich ? '' : ':market');
   const hit = cache.get(ck);
   if (hit && hit.expiresAt > Date.now()) return hit.result;
 
@@ -410,7 +410,7 @@ export async function liveScan(request, { fetchImpl, riskFetch, paidFetch, timeo
     : { mode: 'live', status: fetched.status };
 
   // Enrich only a real hit. Market data must stand on its own if risk/paid fail.
-  if (result.status === 'ok') {
+  if (result.status === 'ok' && enrich) {
     result = await enrichResult(result, { riskFetch: riskFetch ?? fetchImpl, paidFetch: paidFetch ?? fetchImpl });
   }
 

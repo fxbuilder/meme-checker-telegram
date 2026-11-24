@@ -29,6 +29,12 @@ import path from 'node:path';
 
 export const SCHEMA_VERSION = 2;
 
+/**
+ * How many delivery attempts one alert may take before it is abandoned.
+ * A permanent rejection (bot blocked, chat deleted) must not be retried forever.
+ */
+export const MAX_ALERT_ATTEMPTS = 3;
+
 /** Where the store lives. Overridable for tests and for a future volume mount. */
 export function defaultStorePath() {
   return process.env.CALLS_DB_PATH
@@ -377,7 +383,7 @@ export class CallStore {
   /** Apply a partial update to one record (observations, cancellation, repair). */
   async updateCall(id, patch) {
     this.load();
-    const i = this.doc.calls.findIndex((c) => c.id === id);
+    const i = this.doc.calls.findIndex((c) => c?.id === id);
     if (i === -1) return null;
     this.doc.calls[i] = { ...this.doc.calls[i], ...patch, updatedAt: Date.now() };
     await this.persist();
@@ -420,14 +426,29 @@ export class CallStore {
     if (existing && ['delivered', 'pending', 'ambiguous'].includes(existing.state)) {
       return { claimed: false, existing };
     }
+    // Preserve the previous attempt count and history: resetting it on every claim
+    // made a permanently-failing event look like a first attempt forever, so it
+    // could be retried without limit.
+    const priorAttempts = Number(existing?.attempts) || 0;
+    if (existing?.state === 'failed' && priorAttempts >= MAX_ALERT_ATTEMPTS) {
+      return { claimed: false, existing, exhausted: true };
+    }
+    // Telegram told us to wait. Refuse a claim that ignores that instruction, which
+    // otherwise retried immediately and earned another 429.
+    if (existing?.retryAt && Number(existing.retryAt) > Date.now()) {
+      return { claimed: false, existing, tooSoon: true, retryAt: existing.retryAt };
+    }
     this.doc.alerts[eventId] = {
+      ...(existing ?? {}),
       ...row,
       eventId,
       state: 'pending',
       claimedAt: Date.now(),
+      attempts: priorAttempts + 1,
+      firstClaimedAt: existing?.firstClaimedAt ?? Date.now(),
     };
     await this.persist();
-    return { claimed: true, existing: null };
+    return { claimed: true, existing: existing ?? null };
   }
 
   /** Mark a claimed alert delivered, recording the Telegram message id. */
@@ -456,7 +477,9 @@ export class CallStore {
       state: ambiguous ? 'ambiguous' : 'failed',
       failureReason: reason ?? null,
       failedAt: at,
-      attempts: (cur.attempts ?? 1) + 1,
+      // Do NOT increment here: claimAlert already counted this attempt, and counting
+      // twice per attempt made the budget meaningless.
+      attempts: cur.attempts ?? 1,
     };
     await this.persist();
     return this.doc.alerts[eventId];
@@ -480,8 +503,14 @@ export class CallStore {
     return out;
   }
 
-  /** Calls that still want observation (not cancelled, not older than `maxAgeMs`). */
-  openCalls({ maxAgeMs = 7 * 24 * 3600_000, now = Date.now() } = {}) {
+  /**
+   * Calls that still want observation.
+   *
+   * The default horizon is Infinity: calls are never retired. An earlier 7-day
+   * default silently excluded an eight-day-old call from every alert query while
+   * the observer itself still tracked it, so the two disagreed about what existed.
+   */
+  openCalls({ maxAgeMs = Infinity, now = Date.now() } = {}) {
     this.load();
     const cutoff = now - maxAgeMs;
     return this.doc.calls.filter((c) => isActive(c) && c.calledAt > cutoff);

@@ -274,16 +274,24 @@ test('a transition INTO paid is announced once', async () => {
   assert.equal(sent.length, 1);
 });
 
-test('a provider failure is never treated as not-paid', async () => {
+test('a provider failure is never treated as not-paid, and never overwrites confirmed status', async () => {
   const store = tmpStore();
   const call = await seedCall(store);
   const { sent, send } = recorder();
   await processDexPaid({ store, call, status: 'not-paid', send, now: Date.now() });
   const out = await processDexPaid({ store, call, status: 'unknown', detail: 'http 500', send, now: Date.now() + 1000 });
   assert.equal(out.announced, false);
-  assert.equal(store.alertState(eventId.dexPaid(call.id)).lastStatus, 'unknown');
-  // And unknown must not later count as a transition to paid on its own.
+  // An outage must NOT be recorded as the status: overwriting it made
+  // 'paid -> unknown -> paid' look like a fresh payment and sent a false alert.
+  assert.equal(store.alertState(eventId.dexPaid(call.id)).lastStatus, 'not-paid',
+    'confirmed status must survive an outage');
   assert.equal(sent.length, 0);
+
+  // Recovering to paid after an outage with NO prior paid observation is a genuine
+  // transition and IS announced.
+  const recover = await processDexPaid({ store, call, status: 'paid', detail: 'active tokenProfile', send, now: Date.now() + 2000 });
+  assert.equal(recover.announced, true);
+  assert.equal(sent.length, 1);
 });
 
 test('the Dex Paid message distinguishes the documented states', () => {
@@ -591,8 +599,8 @@ test('the /alerts panel refuses to render switches for a non-owner', async () =>
   };
   await handleAlerts(ctx, { store, policy });
   const kb = replies[0]?.o?.reply_markup?.inline_keyboard;
-  assert.deepEqual(kb, [], 'no buttons for a non-owner');
-  assert.match(replies[0].t, /Only the bot owner can change/);
+  assert.equal(kb, undefined, 'no panel or buttons for a non-owner');
+  assert.match(replies[0].t, /owner-only/);
 });
 
 test('synthetic and cancelled calls never accumulate Dex Paid alert state', async () => {

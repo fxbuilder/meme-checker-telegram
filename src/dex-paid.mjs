@@ -29,6 +29,8 @@ const TTL_MS = 120_000;
 const FAIL_TTL_MS = 20_000;
 
 const cache = new Map();
+/** key -> in-flight promise, so concurrent callers share one request. */
+const inflight = new Map();
 
 /** Order statuses that mean the project currently has the paid product. */
 const ACTIVE_STATUSES = new Set(['approved']);
@@ -92,26 +94,41 @@ export async function fetchDexPaid(chainId, address, { fetchImpl = globalThis.fe
   const hit = cache.get(ck);
   if (hit && hit.expiresAt > Date.now()) return hit.result;
 
-  let result;
-  try {
-    const res = await fetchImpl(`${DS_BASE}/${chain.ds}/${encodeURIComponent(address)}`, {
-      headers: { accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) {
-      result = { status: 'unknown', detail: `http ${res.status}` };
-    } else {
-      result = classifyOrders(chainId, await res.json());
-    }
-  } catch (err) {
-    const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-    result = { status: 'unknown', detail: timedOut ? 'timeout' : `transport: ${err?.message ?? err}` };
-  }
+  // IN-FLIGHT DEDUPE. The cache above only holds completed results, so two groups
+  // asking about the same token in the same cycle both started a request. Sharing
+  // the promise means one HTTP call no matter how many groups are waiting.
+  const pending = inflight.get(ck);
+  if (pending) return pending;
 
-  cache.set(ck, { result, expiresAt: Date.now() + (result.status === 'unknown' ? FAIL_TTL_MS : TTL_MS) });
-  return result;
+  const task = (async () => {
+    let result;
+    try {
+      const res = await fetchImpl(`${DS_BASE}/${chain.ds}/${encodeURIComponent(address)}`, {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        result = { status: 'unknown', detail: `http ${res.status}` };
+      } else {
+        result = classifyOrders(chainId, await res.json());
+      }
+    } catch (err) {
+      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      result = { status: 'unknown', detail: timedOut ? 'timeout' : `transport: ${err?.message ?? err}` };
+    }
+    cache.set(ck, { result, expiresAt: Date.now() + (result.status === 'unknown' ? FAIL_TTL_MS : TTL_MS) });
+    return result;
+  })();
+
+  inflight.set(ck, task);
+  try {
+    return await task;
+  } finally {
+    inflight.delete(ck);
+  }
 }
 
 export function clearDexPaidCache() {
   cache.clear();
+  inflight.clear();
 }

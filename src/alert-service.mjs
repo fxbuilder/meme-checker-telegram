@@ -19,6 +19,7 @@
  * the request was written is 'ambiguous' and is not retried.
  */
 
+import { isSynthetic } from './store.mjs';
 import {
   eventId, renderMilestoneAlert, renderDexPaidAlert, renderMigrationAlert,
   renderMovementAlert, highestReachedMilestone, DEFAULT_MILESTONES, retryAfterMs,
@@ -55,6 +56,17 @@ export async function deliverAlert({
 }) {
   if (!text) return { sent: false, reason: 'empty text' };
 
+  // Re-read eligibility from the store immediately before sending. A call may have
+  // been cancelled while this cycle was working through other tokens; the captured
+  // object would otherwise still look active and we would alert on a withdrawn call.
+  if (call?.id) {
+    store.load();
+    const fresh = store.doc.calls.find((c) => c?.id === call.id);
+    if (fresh && (fresh.status !== 'active' || isSynthetic(fresh))) {
+      return { sent: false, reason: `call is ${fresh.status}` };
+    }
+  }
+
   const claim = await store.claimAlert(id, {
     type: id.split(':')[1] ?? 'alert',
     callId: call?.id ?? null,
@@ -78,8 +90,11 @@ export async function deliverAlert({
   } catch (err) {
     if (isRateLimited(err)) {
       // Nothing was delivered and we know why. Safe to retry later.
-      await store.markAlertFailed(id, { reason: `429 retry_after=${retryAfterMs(err)}ms` });
-      return { sent: false, reason: 'rate-limited', retryAfterMs: retryAfterMs(err) };
+      const waitMs = retryAfterMs(err);
+      await store.markAlertFailed(id, { reason: `429 retry_after=${waitMs}ms` });
+      // Persist the deadline so a later claim respects it instead of retrying at once.
+      await store.setAlertState(id, { retryAt: Date.now() + waitMs });
+      return { sent: false, reason: 'rate-limited', retryAfterMs: waitMs };
     }
     if (isDefiniteFailure(err)) {
       await store.markAlertFailed(id, { reason: String(err?.description ?? err?.message ?? 'send failed').slice(0, 200) });
@@ -130,35 +145,47 @@ export async function processMilestoneEvents({
   if (reached == null) return [];
 
   // Every enabled milestone at or below `reached` counts as crossed now.
-  const list = Array.isArray(enabled) ? enabled : [];
+  const list = Array.isArray(enabled) ? enabled.filter((m) => Number.isFinite(m)) : [];
   const newlyCrossed = list
     .filter((m) => Number.isFinite(m) && m <= reached)
     .sort((a, b) => a - b);
 
   const outcomes = [];
-  for (const m of newlyCrossed) {
-    const id = eventId.milestone(call.id, m);
-    if (m === reached) {
-      // The one that actually gets announced.
-      const text = renderMilestoneAlert({ call, milestone: m, currentMarketCapUsd, groupTitle, now });
-      const res = await deliverAlert({ store, call, id, text, send, groupTitle, replyToMessageId, now });
-      outcomes.push({ milestone: m, announced: res.sent, reason: res.reason });
-    } else {
-      // Suppressed, but marked so a later observation cannot resurrect it.
-      const claimed = await store.claimAlert(id, {
-        type: 'milestone', callId: call.id, chatId: String(call.chatId),
-        chain: call.chain, address: call.address,
-      });
-      if (claimed.claimed) {
-        await store.setAlertState(id, {
-          state: 'delivered',
-          suppressedBy: eventId.milestone(call.id, reached),
-          deliveredAt: now,
-          messageId: null,
-        });
-      }
-      outcomes.push({ milestone: m, announced: false, reason: 'consolidated into higher milestone' });
+
+  // ORDER MATTERS. The highest milestone is attempted FIRST, and the lower ones are
+  // only suppressed once it has actually been delivered. Suppressing them first meant
+  // a rejected announcement left 2x/5x marked delivered while the group received
+  // nothing at all — every milestone silently lost.
+  const topId = eventId.milestone(call.id, reached);
+  const topText = renderMilestoneAlert({ call, milestone: reached, currentMarketCapUsd, groupTitle, now });
+  const top = await deliverAlert({ store, call, id: topId, text: topText, send, groupTitle, replyToMessageId, now });
+  outcomes.push({ milestone: reached, announced: top.sent, reason: top.reason });
+
+  if (!top.sent) {
+    // Leave the lower milestones untouched: a later observation can still alert them,
+    // so the group is not left with a pure gap.
+    for (const m of newlyCrossed) {
+      if (m !== reached) outcomes.push({ milestone: m, announced: false, reason: 'held: higher milestone not delivered' });
     }
+    return outcomes;
+  }
+
+  for (const m of newlyCrossed) {
+    if (m === reached) continue;
+    const id = eventId.milestone(call.id, m);
+    const claimed = await store.claimAlert(id, {
+      type: 'milestone', callId: call.id, chatId: String(call.chatId),
+      chain: call.chain, address: call.address,
+    });
+    if (claimed.claimed) {
+      await store.setAlertState(id, {
+        state: 'delivered',
+        suppressedBy: topId,
+        deliveredAt: now,
+        messageId: null,
+      });
+    }
+    outcomes.push({ milestone: m, announced: false, reason: 'consolidated into higher milestone' });
   }
   return outcomes;
 }
@@ -167,20 +194,57 @@ export async function processMilestoneEvents({
 export async function processDexPaid({ store, call, status, detail, send, now = Date.now() }) {
   const id = eventId.dexPaid(call.id);
   const prev = store.alertState(id);
-  const previousStatus = prev?.lastStatus ?? null;
+  const confirmedStatus = prev?.lastStatus ?? null;
 
-  // Record the status every time, so the next comparison is meaningful.
-  await store.setAlertState(id, { lastStatus: status, lastCheckedAt: now, detail: detail ?? null });
+  await store.setAlertState(id, { lastCheckedAt: now, detail: detail ?? null });
 
-  if (status !== 'paid') return { announced: false, reason: `status ${status}` };
-  if (previousStatus === 'paid') return { announced: false, reason: 'already paid' };
-  // First ever observation already paid: record silently, do not claim a payment
-  // event that may predate the call.
-  if (previousStatus == null) return { announced: false, reason: 'already paid at first observation' };
+  // An outage is NOT a status change. Overwriting the last confirmed status with
+  // 'unknown' made 'paid -> unknown(503) -> paid' look like a fresh payment and
+  // produced a false announcement. Only a real observation updates the baseline.
+  if (status === 'unknown') {
+    return { announced: false, reason: 'provider unavailable (status unchanged)' };
+  }
 
+  const isBetter = status === 'paid';
+  if (!isBetter) {
+    await store.setAlertState(id, { lastStatus: status });
+    return { announced: false, reason: `status ${status}` };
+  }
+  if (confirmedStatus === 'paid') return { announced: false, reason: 'already paid' };
+  // First ever observation already paid: record silently rather than claim a
+  // payment event that may predate the call.
+  if (confirmedStatus == null) {
+    await store.setAlertState(id, { lastStatus: 'paid' });
+    return { announced: false, reason: 'already paid at first observation' };
+  }
+
+  // A stable event id per transition so a rejected delivery can be retried without
+  // re-detecting the transition (which would return 'already paid' and never retry).
+  const eventKey = `${id}:transition:${confirmedStatus}->paid`;
   const text = renderDexPaidAlert({ call, status, detail, now });
-  const res = await deliverAlert({ store, call, id: `${id}:event:${now}`, text, send, now });
+  const res = await deliverAlert({ store, call, id: eventKey, text, send, now });
+  if (res.sent) await store.setAlertState(id, { lastStatus: 'paid' });
   return { announced: res.sent, reason: res.reason };
+}
+
+/**
+ * Retry any Dex Paid transition that was detected but not delivered.
+ * Runs each cycle so an alert rejected by a transient error is not lost.
+ */
+export async function retryPendingDexPaid({ store, calls, send, now = Date.now() }) {
+  let sent = 0;
+  for (const call of calls) {
+    const id = eventId.dexPaid(call.id);
+    const st = store.alertState(id);
+    if (!st) continue;
+    const key = Object.keys(store.doc.alerts).find((k) => k.startsWith(`${id}:transition:`) && store.doc.alerts[k].state === 'failed');
+    if (!key) continue;
+    await store.setAlertState(id, { lastStatus: st.confirmedBefore ?? st.lastStatus });
+    const text = renderDexPaidAlert({ call, status: 'paid', detail: st.detail, now });
+    const res = await deliverAlert({ store, call, id: key, text, send, now });
+    if (res.sent) { sent += 1; await store.setAlertState(id, { lastStatus: 'paid' }); }
+  }
+  return { retried: sent };
 }
 
 /** Migration. Only verified evidence is announced, once per call. */

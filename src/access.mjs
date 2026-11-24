@@ -44,7 +44,7 @@ export function loadPolicy(env = process.env) {
 
 /** Is this user the owner? */
 export function isOwner(policy, userId) {
-  if (userId == null) return false;
+  if (userId == null || !(policy?.ownerIds instanceof Set)) return false;
   return policy.ownerIds.has(String(userId));
 }
 

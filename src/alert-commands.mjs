@@ -2,9 +2,9 @@
  * src/alert-commands.mjs
  * /alerts — the minimum owner-facing control for Phase 3.
  *
- * Authorization uses the same access module as /callsettings: reading is fine for
- * anyone in an allowed chat, CHANGING requires an owner. A group admin is still
- * refused, because admin rights are not verified yet (Phase 6).
+ * Authorization uses the same access module as /callsettings: both the panel
+ * and its callbacks are owner-only during staging. Group admin status alone is
+ * not sufficient, because it is not verified yet (Phase 6).
  *
  * Settings live in the group row, so they survive restarts and are per-group.
  */
@@ -22,7 +22,7 @@ function onOff(v) {
 /** Default alert settings, merged with whatever the group has stored. */
 export function effectiveAlertSettings(store, chatId) {
   const stored = store.groupSettings(chatId).alerts ?? {};
-  return {
+  const settings = {
     multiplier: true,
     dexPaid: true,
     migration: true,
@@ -35,6 +35,10 @@ export function effectiveAlertSettings(store, chatId) {
     drawdownPercent: 50,
     ...stored,
   };
+  settings.milestones = Array.isArray(settings.milestones)
+    ? settings.milestones.filter((m) => Number.isFinite(m) && m >= 2)
+    : [2, 5, 10, 20, 50, 100];
+  return settings;
 }
 
 export function renderAlertsPanel(settings, { groupTitle = null, canEdit = false } = {}) {
@@ -97,6 +101,11 @@ export function milestonesKeyboard(settings) {
 export async function handleAlerts(ctx, deps) {
   const { store, policy } = deps;
   if (ctx.from?.is_bot) return;
+  const gate = canChangeSettings(policy, { userId: ctx.from?.id });
+  if (!gate.allowed) {
+    await ctx.reply('🔒 <code>/alerts</code> is owner-only during staging.', { parse_mode: 'HTML' });
+    return;
+  }
   if (ctx.chat?.type !== 'group' && ctx.chat?.type !== 'supergroup') {
     await ctx.reply('ℹ️ Alert settings apply to groups. Add me to a group first.');
     return;

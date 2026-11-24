@@ -16,10 +16,10 @@ const SCAN_MODE = process.env.SCAN_MODE ?? 'mock';
  * scan({ chain, address }) → normalized result object
  * Always returns a result (never throws to caller); errors become status objects.
  */
-export async function scan(request) {
+export async function scan(request, options = {}) {
   try {
     if (SCAN_MODE === 'live') {
-      return await liveScan(request);
+      return await liveScan(request, options);
     }
     return await mockScan(request);
   } catch (err) {

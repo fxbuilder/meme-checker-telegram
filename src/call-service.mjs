@@ -158,15 +158,20 @@ export async function observeCall({ store, call, scanResult, now = Date.now(), e
   // Bounded observation history. Price-movement alerts need a genuine earlier
   // sample with a real timestamp; without this a "15-minute move" would have to be
   // invented. Kept small (12) so the store stays compact.
+  //
+  // ONLY trusted observations are recorded. An unconfirmed extreme stays in
+  // pendingPeak; putting it here made movement alerts announce a "19900% pump" and
+  // then a false "99% dump" once the reading reverted.
   const history = Array.isArray(call.recentObservations) ? call.recentObservations.slice(-11) : [];
-  history.push({ at: now, marketCapUsd: mcap });
+  const trusted = !peak.pending;
+  if (trusted) history.push({ at: now, marketCapUsd: mcap });
 
   const patch = {
     lastMarketCapUsd: mcap,
     lastObservedAt: now,
     peakMarketCapUsd: peak.peakMarketCapUsd,
     peakAt: peak.peakAt,
-    recentObservations: history,
+    ...(trusted ? { recentObservations: history } : {}),
   };
 
   // Persist or clear the pending extreme candidate so confirmation survives a
