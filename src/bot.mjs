@@ -26,7 +26,7 @@ import { recordCall, CALL_STATUS } from './call-service.mjs';
 import { renderPnlPng, cleanupPng } from './pnl-render.mjs';
 import {
   handleCall, handleCalls, handleFirstCall, handlePnl, handleCallSettings, handleJustScan,
-  handleCallerProfile, resolveStartPayload, callerKeysInGroup, sendPnlFor,
+  handleCallerProfile, resolveStartPayload, callerKeysInGroup, sendPnlFor, parseCallArgs,
   isGroupChat,
 } from './call-commands.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
@@ -229,6 +229,9 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
 bot.start(async ctx => {
   const payload = (ctx.startPayload ?? '').trim();
   if (payload) {
+    // Load FIRST. CallStore starts empty, so enumerating groups before any query
+    // runs sees nothing and a perfectly valid link is reported as expired.
+    callStore.load();
     const hit = resolveStartPayload(payload, callStore, { chatIds: Object.keys(callStore.doc.groups ?? {}) });
     if (hit) {
       if (!isOwner(accessPolicy, ctx.from?.id)) {
@@ -771,8 +774,8 @@ bot.command('justscan', async ctx => {
   await ctx.reply(
     `🗑 <b>Call cancelled</b>
 
-${esc(call.symbol ? '$' + call.symbol : (call.name ?? 'token'))} by ` +
-    `<b>${esc(call.callerName ?? 'unknown')}</b> is no longer counted.
+${escHtml(call.symbol ? '$' + call.symbol : (call.name ?? 'token'))} by ` +
+    `<b>${escHtml(call.callerName ?? 'unknown')}</b> is no longer counted.
 ` +
     '<i>The record is kept for history but excluded from caller stats and alerts.</i>',
     { parse_mode: 'HTML' },
@@ -837,14 +840,18 @@ bot.command('profile', async ctx => {
 });
 
 /** Period buttons + pagination on a caller profile. */
-bot.action(/^c[pg]:cp_[A-Za-z0-9_-]+/, async ctx => {
-  const data = ctx.match?.[0] ?? '';
+bot.action(/^c[pg]:cp_/, async ctx => {
+  // Read the WHOLE callback payload. Matching only the token prefix meant the
+  // period and page suffixes were never parsed, so every period button re-rendered
+  // the original period and Next kept showing page one.
+  const data = String(ctx.callbackQuery?.data ?? ctx.match?.[0] ?? '');
   const [, token, period, pageRaw] = data.split(':');
   const owner = isOwner(accessPolicy, ctx.from?.id);
   if (!owner) {
     await ctx.answerCbQuery('Owner-only during staging');
     return;
   }
+  callStore.load();
   const groups = Object.keys(callStore.doc.groups ?? {});
   const resolved = resolveStartPayload(token, callStore, { chatIds: groups });
   if (!resolved) {
@@ -1047,6 +1054,9 @@ export { bot };
 export const internals = {
   pendingScans, takePendingScan, stashPendingScan, justScanRequested,
   detectAll, runScan, sendChainPicker,
+  // The exact store instance the handlers use, so tests seed and assert against
+  // the same object instead of a second instance that races the load cache.
+  callStore, accessPolicy,
 };
 
 // ---- Launch ----------------------------------------------------------------

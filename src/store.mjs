@@ -207,7 +207,7 @@ export class CallStore {
     // normalised form for the chain the record was written with.
     return this.doc.calls.filter((c) => {
       if (c.chatId !== key) return false;
-      if (c.status === 'cancelled') return false;
+      if (!isActive(c)) return false;
       if (isSynthetic(c)) return false;
       return normaliseAddress(c.chain, c.address) === normaliseAddress(c.chain, addr);
     }).sort((a, b) => b.calledAt - a.calledAt);
@@ -229,7 +229,7 @@ export class CallStore {
     return this.doc.calls
       .filter((c) => c.chatId === key && c.chain === chain
         && normaliseAddress(chain, c.address) === norm
-        && c.status !== 'cancelled'
+        && isActive(c)
         && !isSynthetic(c))
       .sort((a, b) => a.calledAt - b.calledAt)[0] ?? null;
   }
@@ -267,8 +267,9 @@ export class CallStore {
         // acceptance run would otherwise block the real member from being
         // recorded for the rest of the dedup window.
         if (isSynthetic(c)) return false;
-        // A cancelled call was withdrawn, so it must not block a fresh one.
-        if (c.status === 'cancelled') return false;
+        // Only an ACTIVE call blocks a new one: a cancelled call was withdrawn and
+        // a superseded duplicate lost to the canonical record.
+        if (!isActive(c)) return false;
         const keys = [c.callerKey, c.callerId].filter(Boolean).map(String);
         return keys.includes(want) || keys.includes(wantBare);
       }) ?? null;
@@ -307,7 +308,7 @@ export class CallStore {
     const existing = this.doc.calls.find((c) => c.chatId === chatId
       && c.chain === chain
       && normaliseAddress(chain, c.address) === normAddr
-      && c.status !== 'cancelled'
+      && isActive(c)
       && (isSynthetic(c) === synthetic));
 
     if (existing) return { row: existing, duplicate: true, existing };
@@ -338,7 +339,7 @@ export class CallStore {
   openCalls({ maxAgeMs = 7 * 24 * 3600_000, now = Date.now() } = {}) {
     this.load();
     const cutoff = now - maxAgeMs;
-    return this.doc.calls.filter((c) => c.status === 'active' && c.calledAt > cutoff);
+    return this.doc.calls.filter((c) => isActive(c) && c.calledAt > cutoff);
   }
 
   /**
@@ -377,6 +378,20 @@ export function normaliseAddress(chain, address) {
 
 /** Simulated/test records are tagged so they can be filtered out of real stats. */
 export const SYNTHETIC_FLAG = 'synthetic';
+
+/**
+ * The only status that represents a real, current call.
+ *
+ *   active      the canonical tracked call
+ *   cancelled   withdrawn by the caller via /justscan
+ *   superseded  a duplicate that lost to the canonical call during repair
+ *
+ * Every query that answers "what is tracked here" must use this, so the three
+ * statuses cannot drift apart between callers, PnL, correction and the observer.
+ */
+export function isActive(call) {
+  return call?.status === 'active';
+}
 
 /** True when a record came from a controlled scenario rather than a real caller. */
 export function isSynthetic(call) {

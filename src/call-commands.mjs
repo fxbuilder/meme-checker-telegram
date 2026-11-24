@@ -18,7 +18,7 @@ import { recordCall, observeCall, resolveCall, pnlText, CALL_STATUS } from './ca
 import { callMetrics, fmtMultiple, fmtSignedPercent } from './calls.mjs';
 import { fmtUsd } from './card-layout.mjs';
 import { timeSince } from './calls.mjs';
-import { isSynthetic } from './store.mjs';
+import { isSynthetic, isActive } from './store.mjs';
 import { getChain } from './chains.mjs';
 import { renderPnlPng } from './pnl-render.mjs';
 import { canChangeSettings } from './access.mjs';
@@ -161,7 +161,9 @@ export async function handleCalls(ctx, deps) {
     await ctx.reply('ℹ️ Call history is per group.');
     return;
   }
-  const calls = store.callsForChat(ctx.chat.id, { limit: 15 }).filter((c) => !isSynthetic(c));
+  const calls = store.callsForChat(ctx.chat.id, { limit: 40 })
+    .filter((c) => isActive(c) && !isSynthetic(c))
+    .slice(0, 15);
   if (!calls.length) {
     await ctx.reply(
       '📋 <b>No calls yet</b>\n\nRecord one with <code>/call &lt;address&gt;</code>, or enable auto-call with <code>/callsettings autocall on</code>.',
@@ -211,7 +213,8 @@ export async function handleFirstCall(ctx, deps) {
     await ctx.reply('📭 No call recorded for this token in this group yet.', { parse_mode: 'HTML' });
     return;
   }
-  const all = store.callsForToken(ctx.chat.id, chain, address).filter((c) => !isSynthetic(c));
+  const all = store.callsForToken(ctx.chat.id, chain, address)
+    .filter((c) => isActive(c) && !isSynthetic(c));
   const m = callMetrics(first);
   const who = first.callerUsername ? `@${first.callerUsername}` : first.callerName;
   const lines = [
@@ -506,7 +509,8 @@ export function resolveStartPayload(payload, store, { chatIds = [], periods = ['
 
 /** Every distinct caller key with at least one call in a group. */
 export function callerKeysInGroup(store, chatId) {
-  const calls = store.callsForChat(chatId, { limit: 1000 }).filter((c) => !isSynthetic(c));
+  const calls = store.callsForChat(chatId, { limit: 1000 })
+    .filter((c) => isActive(c) && !isSynthetic(c));
   const keys = new Set();
   for (const c of calls) {
     if (c.callerKey) keys.add(c.callerKey);
