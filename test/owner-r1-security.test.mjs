@@ -103,10 +103,24 @@ test('a genuine zero still renders 0%', () => {
 
 // ---- Solana tax vs Token-2022 transfer fee ------------------------------
 
-test('a legacy SPL token has NO tax field, because there is no fee concept', () => {
+test('a legacy SPL token reports Tax: N/A, because there is no fee concept', () => {
+  // ROUND 2 CHANGE. This used to assert a null tax block rendering as a dash. The OWNER
+  // asked for N/A when non-applicability is VERIFIED, which is the stronger and more
+  // useful statement: a dash reads as "not measured" and invites the reader to think a
+  // check failed, when in fact there is no such fee for this token standard at all.
   const n = normalizeRugCheck(report({ tokenProgram: TOKEN_PROG, transferFee: { pct: 0 } }));
   assert.equal(n.standard, 'spl-token');
-  assert.equal(n.tax, null, 'zero fee on a legacy token does not mean 0% tax');
+  assert.equal(n.tax.kind, 'not-applicable');
+  assert.notEqual(n.tax.pct, 0, 'a zero fee on a legacy token does not mean 0% tax');
+  const r = resolveQuickCheck('tax', { risk: { ...emptyRisk(), tax: n.tax }, riskStatus: 'ok' });
+  assert.equal(r.value, 'N/A');
+  assert.notEqual(r.value, '0%', 'zero would be a fabricated all-clear');
+});
+
+test('an unrecognised token program renders a dash, not N/A', () => {
+  // N/A asserts "this concept cannot exist here", which needs a KNOWN standard.
+  const n = normalizeRugCheck(report({ tokenProgram: 'Unknown111111111111111111111111111111111111' }));
+  assert.equal(n.tax, null);
   const r = resolveQuickCheck('tax', { risk: { ...emptyRisk(), tax: n.tax }, riskStatus: 'ok' });
   assert.equal(r.value, '—');
 });

@@ -29,6 +29,20 @@ const stub = installTelegramStub();
 const CHAT = -5333984336;
 const AMBIG = '0x6982508145454ce325ddbe47a25d4ec3d2311933';
 
+/**
+ * Pin chain resolution for these tests.
+ *
+ * A pasted EVM address is now resolved automatically, so whether a picker appears
+ * depends on live providers. That would make these reply-context assertions
+ * non-deterministic and network-dependent, which is not what they are testing.
+ * 'ambiguous' reproduces the picker path deterministically.
+ */
+function pinResolution(result) {
+  internals.chainResolver.resolve = async () => result;
+}
+const AMBIG_MULTI = { status: 'ambiguous', candidates: ['base', 'ethereum'], agreement: true };
+pinResolution(AMBIG_MULTI);
+
 /** Feed one update through the real middleware chain. */
 async function feed(update) {
   stub.sent.length = 0;

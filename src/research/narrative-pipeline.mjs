@@ -30,17 +30,83 @@ import { buildNarrative, firstUsefulParagraph, sanitiseText, MAX_DESCRIPTION_CHA
 import { mintFacts } from './onchain-metadata.mjs';
 
 /** Known launchpads, recognised from pair/dex identity rather than guessed. */
+/**
+ * Venue hints. `kind` matters for the wording, because the two are different claims:
+ *
+ *   kind: 'dex'       -> the token TRADES here now. Observed from the live pair.
+ *   kind: 'launchpad' -> the token's page EXISTS on a launchpad. A launchpad mints its
+ *                        tokens, so an address-scoped token page is evidence of where it
+ *                        was created - but it is NOT a trading venue, and saying
+ *                        "trading on flap.sh" would be false (ANT trades on PancakeSwap).
+ */
 const LAUNCHPAD_HINTS = [
-  { id: 'pumpfun', label: 'pump.fun', match: /pump(\.fun)?/i },
-  { id: 'raydium', label: 'Raydium', match: /raydium/i },
-  { id: 'meteora', label: 'Meteora', match: /meteora/i },
-  { id: 'fourmeme', label: 'four.meme', match: /four\.?meme/i },
-  { id: 'pancakeswap', label: 'PancakeSwap', match: /pancake/i },
-  { id: 'uniswap', label: 'Uniswap', match: /uniswap/i },
-  { id: 'aerodrome', label: 'Aerodrome', match: /aerodrome/i },
+  { id: 'pumpfun', label: 'pump.fun', kind: 'launchpad', match: /pump(\.fun)?/i },
+  { id: 'raydium', label: 'Raydium', kind: 'dex', match: /raydium/i },
+  { id: 'meteora', label: 'Meteora', kind: 'dex', match: /meteora/i },
+  { id: 'fourmeme', label: 'four.meme', kind: 'launchpad', match: /four\.?meme/i },
+  // BNB Chain launchpad. Verified: ANT's only published link is a flap.sh token page
+  // (https://flap.sh/bnb/0x...), and flap.sh's own record carries an empty description,
+  // so the launch venue is provable while prose is genuinely absent.
+  { id: 'flap', label: 'flap.sh', kind: 'launchpad', match: /flap\.sh/i },
+  { id: 'pancakeswap', label: 'PancakeSwap', kind: 'dex', match: /pancake/i },
+  { id: 'uniswap', label: 'Uniswap', kind: 'dex', match: /uniswap/i },
+  { id: 'aerodrome', label: 'Aerodrome', kind: 'dex', match: /aerodrome/i },
 ];
 
 /** Phrases that make website prose useless as a summary. */
+/**
+ * Markers of a MARKET-DATA PANEL rather than prose about the project.
+ *
+ * Why this exists: the ANT (BSC) card produced this as its "narrative" —
+ *
+ *   TOKEN INFO 24h Vol $755.76K LIQ $115.38K MCAP $542.3K Holders 5,986
+ *   24h Exchange -30.99% FDV $542.3K Circulation 1B Max Supply 1B ...
+ *
+ * That is the launchpad's stats table, scraped off the page. It says nothing about
+ * what the token IS, and the OWNER explicitly ruled generic contract facts out of
+ * narrative. A stats panel is not prose and must not be shown as a description.
+ */
+const STAT_PANEL = [
+  /\b(24h|1h|6h)\s+(vol|volume|change|high|low)\b/i,
+  /\b(mcap|market\s*cap)\b/i,
+  /\b(liq|liquidity)\b/i,
+  /\bfdv\b/i,
+  /\b(circulation|circulating)\b/i,
+  /\bmax\s+supply\b/i,
+  /\btotal\s+supply\b/i,
+  /\$[\d.,]+\s*[kmb]\b/i,
+  /\bholders?\s*[: ]\s*[\d,]{3,}/i,
+  /\btaxes?\s*[: ]?\s*\d/i,
+  /\bcreate\s*time\b/i,
+  /\bcreator\s*:\s*0x/i,
+];
+
+/**
+ * True when the text reads like a data panel rather than a sentence about the project.
+ *
+ * Heuristic, deliberately conservative: it takes several independent markers, or a
+ * very high digit/punctuation density, to reject text. A real description that happens
+ * to mention a dollar figure once still passes.
+ */
+export function isStatPanel(text) {
+  if (!text || typeof text !== 'string') return true;
+  const t = text.trim();
+  if (t.length < 40) return true;
+
+  const markers = STAT_PANEL.filter((re) => re.test(t)).length;
+  if (markers >= 4) return true;
+
+  // Digit density: a stats table is mostly numbers and separators.
+  const digits = (t.match(/[\d$%.,]/g) ?? []).length;
+  if (t.length >= 60 && digits / t.length > 0.34) return true;
+
+  // Sentence shape: real prose has runs of words with no digits between them.
+  const longishRun = /[A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+){7,}/.test(t);
+  if (!longishRun && digits / Math.max(t.length, 1) > 0.18) return true;
+
+  return false;
+}
+
 const BOILERPLATE = [
   /enable javascript/i,
   /please turn on javascript/i,
@@ -83,7 +149,10 @@ export function htmlToText(html, { maxChars = 6_000 } = {}) {
 /** True when the extracted text is a cookie wall or an error page, not content. */
 export function isBoilerplate(text) {
   if (!text || text.length < 60) return true;
-  return BOILERPLATE.some((re) => re.test(text));
+  if (BOILERPLATE.some((re) => re.test(text))) return true;
+  // A trading-stats panel is not a description, even though it is real text off the
+  // real project page. Without this the ANT card showed volume/liquidity as its story.
+  return isStatPanel(text);
 }
 
 /**
@@ -100,18 +169,48 @@ export function detectLaunchpad(result) {
   const dexId = String(result?.market?.dexId ?? '').trim();
   // Only the DEX id is strong enough to name a marketplace. A website domain or a
   // token NAME containing "pancake" proves nothing at all.
-  const hay = [dexId, result?.market?.pairAddress, result?.chartUrl].filter(Boolean).join(' ');
+  // Evidence haystack: the observed pair venue, plus the project's published link ONLY
+  // when that link is a token page for THIS address (e.g. flap.sh/bnb/0x...). A bare
+  // website domain is not proof of venue, and a social handle containing a brand name
+  // is weaker still, so neither is included on its own.
+  const addr = String(result?.token?.address ?? '').toLowerCase();
+  const site = String(result?.project?.website ?? '').toLowerCase();
+  const siteIsTokenPage = Boolean(addr) && site.includes(addr);
+  const hay = [
+    dexId,
+    result?.market?.pairAddress,
+    result?.chartUrl,
+    siteIsTokenPage ? site : null,
+  ].filter(Boolean).join(' ');
   for (const l of LAUNCHPAD_HINTS) {
-    if (l.match.test(hay)) {
-      return {
-        id: l.id,
-        label: l.label,
-        // Provenance is deliberate: observed venue, not launch origin.
-        evidence: `observed from the current ${dexId || 'pair'} pair`,
-        claimClass: 'verified',
-        statement: `Currently trading on ${l.label}`,
-      };
-    }
+    if (!l.match.test(hay)) continue;
+
+    // WHERE the evidence came from decides the claim, not the venue's own category.
+    //
+    //   dexId / pair  -> the token TRADES on this venue right now, always. pump.fun
+    //                    pairs report dexId 'pumpfun', so "trading on pump.fun" is an
+    //                    observation about the live pair.
+    //   token page    -> the address has a page on this launchpad. That proves where it
+    //                    was minted, NOT where it trades. ANT's page is flap.sh while
+    //                    its pairs are PancakeSwap, so "trading on flap.sh" would be false.
+    const fromTokenPage = siteIsTokenPage && l.match.test(site);
+    const fromPair = l.match.test(dexId);
+
+    // A bare namesake domain is not evidence of anything.
+    if (!fromTokenPage && !fromPair) continue;
+
+    return {
+      id: l.id,
+      label: l.label,
+      kind: l.kind,
+      evidence: fromPair
+        ? `observed from the current ${dexId || 'pair'} pair`
+        : `address-scoped token page on ${new URL(site).hostname}`,
+      claimClass: 'verified',
+      statement: fromPair
+        ? `Currently trading on ${l.label}`
+        : `Launched via ${l.label}`,
+    };
   }
   return null;
 }
@@ -126,7 +225,7 @@ export function chooseSummary(candidates) {
   if (!usable.length) return null;
   // GeckoTerminal first: broadest coverage, and the most current for new tokens.
   // CoinGecko is now SUPPLEMENTARY, not the backbone.
-  const rank = { geckoterminal: 0, metaplex: 1, coingecko: 2, website: 3, market: 4 };
+  const rank = { geckoterminal: 0, metaplex: 1, 'onchain-meta': 2, coingecko: 3, website: 4, market: 5 };
   return usable.sort((a, b) => (rank[a.source] ?? 9) - (rank[b.source] ?? 9))[0];
 }
 
@@ -149,6 +248,8 @@ export function composeNarrative({
   mint = null,
   /** Metaplex off-chain JSON, when reachable. */
   metaplex = null,
+  /** EVM on-chain metadata document (`metaURI()`), when the contract declares one. */
+  onchainMeta = null,
 } = {}) {
   const candidates = [];
 
@@ -170,6 +271,18 @@ export function composeNarrative({
       source: 'metaplex',
       evidence: 'project-claim',
       label: 'Project description (token metadata)',
+    });
+  }
+
+  // EVM on-chain metadata. The contract itself declares this document for this exact
+  // address, so it is the project describing itself - the same evidence class as a
+  // GeckoTerminal description, and available where that one is absent.
+  if (onchainMeta?.description && !gtToken?.description) {
+    candidates.push({
+      text: onchainMeta.description,
+      source: 'onchain-meta',
+      evidence: 'project-claim',
+      label: 'Token metadata (on-chain)',
     });
   }
 

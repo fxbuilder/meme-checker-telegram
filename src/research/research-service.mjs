@@ -24,6 +24,20 @@ import {
 } from './x-source.mjs';
 import { researchCache, cacheKey, TTL_MS, xBudget } from './research-cache.mjs';
 import * as premiumPreview from './premium-preview.mjs';
+import { fetchOnchainMetadata } from './evm-metadata.mjs';
+
+/**
+ * First candidate that is a usable non-empty string.
+ *
+ * Exists because `a ? b : c ?? d` parses as `a ? b : (c ?? d)`, which silently skipped
+ * every fallback whenever the first condition was true — the ANT narrative bug.
+ */
+function firstNonEmpty(...candidates) {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return null;
+}
 
 /**
  * Everything known about a token's narrative and X presence.
@@ -154,11 +168,21 @@ export async function researchToken({
   // A CoinGecko description is the highest-value source, so a successful one skips
   // the website fetch entirely. For a fresh memecoin with no listing, the website is
   // usually the only prose that exists, so it is worth one bounded request.
+  //
+  // OPERATOR PRECEDENCE BUG, fixed here: this used to read
+  //   gt?.status === 'ok' ? (gt.token?.website ?? null) : null ?? scanResult...
+  // which parses as `ok ? website : (null ?? scanResult ?? ...)`. So whenever
+  // GeckoTerminal answered - even with NO website - the DexScreener website from the
+  // scan was never reached. That is exactly why ANT (BSC) reported "No reliable
+  // narrative available" while holding a published project site: its website is only
+  // in DexScreener's info.websites (a flap.sh launch page), and GeckoTerminal returned
+  // no website at all. Each candidate is now evaluated independently.
   let websiteText = null;
-  const websiteUrl = gt?.status === 'ok' ? (gt.token?.website ?? null) : null
-    ?? scanResult?.project?.website
-    ?? (prof?.status === 'ok' ? prof.data?.homepage : null)
-    ?? null;
+  const websiteUrl = firstNonEmpty(
+    gt?.status === 'ok' ? gt.token?.website : null,
+    scanResult?.project?.website,
+    prof?.status === 'ok' ? prof.data?.homepage : null,
+  );
 
   const needsWebsite = includeWebsite
     && websiteUrl
@@ -179,6 +203,32 @@ export async function researchToken({
     }
   }
 
+  // ---- on-chain metadata (EVM) --------------------------------------------
+  // The token contract's own metadata URI. This matters on BNB Chain and similar,
+  // where launchpad tokens publish nothing to GeckoTerminal, CoinGecko or DexScreener,
+  // yet still declare a metadata document on-chain. It is ADDRESS-SCOPED (the contract
+  // is asked directly) so identity is safe, and it costs one RPC call plus one JSON GET.
+  //
+  // Verified live on ANT: metadata reachable, `description` present but empty. That is
+  // a real answer - "the project published no prose" - and stays null.
+  let onchainMeta = null;
+  const isEvm = getChain(chain)?.kind === 'evm';
+  if (isEvm && !(gt?.status === 'ok' && (gt.token?.description ?? '').trim())) {
+    const mKey = cacheKey('evm-meta', chain, address);
+    try {
+      const mRes = await cache.cached(
+        mKey,
+        TTL_MS.description,
+        () => fetchOnchainMetadata(chain, address, { fetchImpl }),
+        { ttlOnFailure: TTL_MS.failure },
+      );
+      if (mRes?.status === 'ok' || mRes?.status === 'empty') onchainMeta = mRes;
+      if (!out.fromCache) out.requests += 1;
+    } catch {
+      // A metadata read that fails is not a reason to lose the rest of the narrative.
+    }
+  }
+
   // ---- compose from every source that actually produced something ----------
   const composed = composeNarrative({
     result: scanResult
@@ -189,6 +239,7 @@ export async function researchToken({
     gtToken: gt?.status === 'ok' ? gt.token : null,
     mint,
     metaplex,
+    onchainMeta,
   });
 
   out.narrative = {
@@ -206,12 +257,23 @@ export async function researchToken({
       coingecko: prof?.status ?? 'not-consulted',
       onchain: mint ? 'ok' : (chain === 'solana' ? 'not-read' : 'unsupported-chain'),
       metaplex: metaplex ? 'ok' : (chain === 'solana' ? 'not-found' : 'unsupported-chain'),
+      onchainMeta: onchainMeta?.status ?? (isEvm ? 'not-consulted' : 'unsupported-chain'),
     },
   };
 
   // Keep the CoinGecko-declared links available for the X section's project handle.
   if (!out.narrative.links && prof?.status === 'ok') {
     out.narrative.links = { twitter: prof.data?.twitter, homepage: prof.data?.homepage };
+  }
+  // The contract's own metadata declares the project's links. Fill only gaps - a link
+  // from the token contract is as authoritative as any, but should not overwrite one the
+  // scan already established.
+  if (onchainMeta && (onchainMeta.twitter || onchainMeta.website)) {
+    out.narrative.links = {
+      ...(out.narrative.links ?? {}),
+      twitter: out.narrative.links?.twitter ?? onchainMeta.twitter ?? null,
+      website: out.narrative.links?.website ?? onchainMeta.website ?? null,
+    };
   }
 
   // ---- X discovery (credentialed; honestly unavailable without a key) -----

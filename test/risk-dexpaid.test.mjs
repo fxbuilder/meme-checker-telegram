@@ -302,8 +302,13 @@ test('Solana with an EMPTY creators array reports no dev, not "Known"', () => {
   assert.equal(q.value, '—');
 });
 
-test('Solana with a real creator reports its holding', () => {
+test('Solana reports the creator address but NOT a holding from creators[].percent', () => {
+  // ROUND 2 CORRECTION. `creators[].percent` on a Metaplex record is that creator's
+  // share of ROYALTIES, not a share of token supply. The old assertion (0.05 -> 5%)
+  // published a royalty split as if it were a token holding - an invented risk figure.
+  // A real Solana holding comes from RugCheck's creatorBalance.
   const r = normalizeRisk('solana', { holder_count: '10', creators: [{ address: 'Dev111', percent: '0.05' }] });
   assert.equal(r.dev.address, 'Dev111');
-  assert.equal(r.dev.balancePercentage, 5);
+  assert.equal(r.dev.role, 'creator');
+  assert.equal(r.dev.balancePercentage, null, 'royalty share must never become a holding');
 });

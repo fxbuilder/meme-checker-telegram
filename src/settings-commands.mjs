@@ -9,7 +9,7 @@
  */
 
 import { canChangeSettings, isOwner } from './access.mjs';
-import { buildLeaderboard, buildGroupSummary, renderLeaderboard, renderGroupPnl, LB_PERIODS } from './leaderboard.mjs';
+import { buildLeaderboard, buildGroupSummary, buildTopCalls, renderLeaderboard, renderGroupPnl, LB_PERIODS } from './leaderboard.mjs';
 
 function esc(v) {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -35,10 +35,22 @@ export async function handleLeaderboard(ctx, deps) {
   const period = deps.period ?? '7d';
 
   const calls = scopedCalls(deps.store, chatId);
-  const board = buildLeaderboard(calls, { period });
   const groupTitle = deps.store.doc.groups?.[String(chatId)]?.title ?? ctx.chat.title ?? null;
 
-  const out = renderLeaderboard({ groupTitle, board, page: 0 });
+  // All three sections are built from the SAME period and the SAME eligible sample, so
+  // the header, the stats block and the call list can never disagree with each other.
+  const board = buildLeaderboard(calls, { period });
+  const summary = buildGroupSummary(calls, { period });
+  const topCalls = buildTopCalls(calls, { period });
+
+  const out = renderLeaderboard({
+    groupTitle,
+    board,
+    summary,
+    topCalls,
+    chatId,
+    botUsername: deps.botUsername ?? null,
+  });
   await ctx.reply(out.text, {
     parse_mode: 'HTML',
     disable_web_page_preview: true,
@@ -157,14 +169,26 @@ export async function handleBoardCallback(ctx, deps) {
   }
 
   const periodId = parts[1] && LB_PERIODS.some((p) => p.id === parts[1]) ? parts[1] : '7d';
-  const page = kind === 'lb' ? Number(parts[2] ?? 0) || 0 : 0;
+  // `lb:<period>:<expanded>` — the third field is now the Top-10 expansion flag, not a
+  // page number. Accepting either keeps an older message's buttons working.
+  const expanded = kind === 'lb' && String(parts[2] ?? '0') === '1';
 
   const calls = scopedCalls(deps.store, chatId);
   const groupTitle = deps.store.doc.groups?.[String(chatId)]?.title ?? ctx.chat.title ?? null;
 
+  // Rebuild every section from the newly selected period so the three blocks always
+  // agree. Rendering only the caller list would leave stale stats above a fresh list.
   const out = kind === 'gp'
     ? renderGroupPnl({ groupTitle, summary: buildGroupSummary(calls, { period: periodId }) })
-    : renderLeaderboard({ groupTitle, board: buildLeaderboard(calls, { period: periodId }), page });
+    : renderLeaderboard({
+      groupTitle,
+      board: buildLeaderboard(calls, { period: periodId }),
+      summary: buildGroupSummary(calls, { period: periodId }),
+      topCalls: buildTopCalls(calls, { period: periodId }),
+      chatId,
+      botUsername: deps.botUsername ?? null,
+      expanded,
+    });
 
   await ctx.answerCbQuery();
   try {

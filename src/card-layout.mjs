@@ -143,6 +143,13 @@ export function resolveQuickCheck(key, result) {
         return { label: 'Transfer Fee', value: `${pct.toFixed(2)}%`, tone };
       }
 
+      // Verified non-applicability. A legacy SPL token has no fee concept at all, which
+      // is a real finding and is stated as N/A. It is NOT a dash: a dash means we could
+      // not measure something that does exist.
+      if (t?.kind === 'not-applicable') {
+        return { label: 'Tax', value: 'N/A', tone: 'muted' };
+      }
+
       if (!t || (t.buy == null && t.sell == null)) {
         return { label: 'Tax', value: DASH, tone: 'muted' };
       }
@@ -184,10 +191,16 @@ export function resolveQuickCheck(key, result) {
       return { label: 'LP Locked', value: `${locked.toFixed(0)}%`, tone };
     }
     case 'dev': {
-      // "Creator Holds" is the creator's CURRENT balance, not dev history.
-      // Mislabeling it as a dev verdict would be a data-safety bug.
+      // "Creator Holds" is the creator's CURRENT balance, not dev history, and not a
+      // dev-trading verdict. Mislabeling it would be a data-safety bug.
+      //
+      // The LABEL follows the role the provider actually reported, because a creator
+      // (who minted the token) and a contract owner (who controls it now) are different
+      // parties. Calling an owner a creator - or vice versa - attributes a holding to
+      // the wrong address.
       if (unsupported) return { label: 'Creator Holds', value: NA, tone: 'muted' };
       const d = risk?.dev;
+      const roleLabel = d?.role === 'owner' ? 'Owner Holds' : 'Creator Holds';
       if (!d || (!d.address && d.balancePercentage == null)) {
         return { label: 'Creator Holds', value: DASH, tone: 'muted' };
       }
@@ -196,9 +209,11 @@ export function resolveQuickCheck(key, result) {
         const shown = d.balancePercentage > 0 && d.balancePercentage < 0.1
           ? '<0.1%'
           : `${d.balancePercentage.toFixed(1)}%`;
-        return { label: 'Creator Holds', value: shown, tone };
+        return { label: roleLabel, value: shown, tone };
       }
-      return { label: 'Creator Holds', value: 'Known', tone: 'muted' };
+      // Address known, balance unknown. "Known" would read as "no holding", so it is
+      // described as an address we could not measure.
+      return { label: roleLabel, value: 'Known', tone: 'muted' };
     }
     default:
       return { label: key, value: DASH, tone: 'muted' };

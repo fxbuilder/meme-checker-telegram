@@ -159,10 +159,24 @@ export function normalizeRugCheck(raw) {
 
   // Transfer fee. A percentage of 0 is only meaningful once we know the standard:
   // legacy SPL tokens have no fee concept at all.
+  //
+  // THREE STATES, and collapsing any two of them is a data-safety bug:
+  //   token-2022 + fee measured      -> { kind: 'transfer-fee', pct }   "Transfer Fee 2.5%"
+  //   token-2022, fee NOT reported   -> { kind: 'transfer-fee', pct: null }  "—"
+  //   legacy SPL, verified          -> { kind: 'not-applicable' }      "N/A"
+  //
+  // "N/A" is a real finding: the concept does not exist for this token standard. It is
+  // not the same as "we failed to measure it", which must stay a dash. Stating N/A
+  // requires the standard to be KNOWN, so an unrecognised program string yields null.
   const feePct = num(raw.transferFee?.pct);
-  const tax = standard === 'token-2022'
-    ? { kind: 'transfer-fee', pct: feePct, maxAmount: num(raw.transferFee?.maxAmount) }
-    : null;
+  let tax;
+  if (standard === 'token-2022') {
+    tax = { kind: 'transfer-fee', pct: feePct, maxAmount: num(raw.transferFee?.maxAmount) };
+  } else if (standard === 'spl-token') {
+    tax = { kind: 'not-applicable' };
+  } else {
+    tax = null;
+  }
 
   const lp = lpFromMarkets(raw.markets);
   const holders = holdersFromTop(raw.topHolders, { total: num(raw.totalHolders) });
@@ -187,8 +201,13 @@ export function normalizeRugCheck(raw) {
       state: lp.state,
       poolsScanned: lp.poolsScanned,
     } : null,
+    // `creator` on a RugCheck report is the mint authority that created the token, and
+    // `creatorBalance` is that address's CURRENT token balance - a token holding, not a
+    // royalty share. The role is recorded so the card can say "Creator" truthfully
+    // rather than labelling any address it happens to hold as the creator.
     dev: raw.creator ? {
       address: raw.creator,
+      role: 'creator',
       balancePercentage: creatorPct,
     } : null,
     holders: {

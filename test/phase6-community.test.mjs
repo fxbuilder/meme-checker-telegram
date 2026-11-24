@@ -10,8 +10,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildLeaderboard, buildGroupSummary, summariseCaller, rankCallers,
-  renderLeaderboard, renderGroupPnl,
+  buildLeaderboard, buildGroupSummary, buildTopCalls, summariseCaller, rankCallers,
+  renderLeaderboard, renderGroupPnl, chainEmoji,
 } from '../src/leaderboard.mjs';
 import { renderSettings } from '../src/settings-commands.mjs';
 
@@ -54,8 +54,10 @@ test('an unmeasured call is eligible but reported as unmeasured, not dropped', (
   assert.equal(row.measuredCalls, 1);
   assert.equal(row.unmeasuredCalls, 1);
 
-  const text = renderLeaderboard({ groupTitle: 'g', board }).text;
-  assert.match(text, /not yet observed/i);
+  // The redesigned board states this inline on the caller row rather than as a
+  // separate "not yet observed" sentence, but it must still be stated.
+  const text = renderLeaderboard({ groupTitle: 'g', board, summary: buildGroupSummary([call('u:1', 'A', 1, 3), call('u:1', 'B', 2, null)], { period: '7d', now: NOW }) }).text;
+  assert.match(text, /unobserved|without an observed peak/i);
 });
 
 test('a caller with no measured calls sorts below one with evidence', () => {
@@ -122,31 +124,92 @@ test('hit rate outranks best peak', () => {
 // ---- rendering -----------------------------------------------------------
 
 test('every performance number carries its sample size', () => {
-  const board = buildLeaderboard([call('u:1', 'A', 1, 5), call('u:2', 'B', 1, 0.5)], { period: '7d', now: NOW });
-  const text = renderLeaderboard({ groupTitle: 'sissooo1', board }).text;
-  assert.match(text, /2 callers · 2 calls/);
+  const calls = [call('u:1', 'A', 1, 5), call('u:2', 'B', 1, 0.5)];
+  const text = renderLeaderboard({
+    groupTitle: 'sissooo1',
+    board: buildLeaderboard(calls, { period: '7d', now: NOW }),
+    summary: buildGroupSummary(calls, { period: '7d', now: NOW }),
+    topCalls: buildTopCalls(calls, { period: '7d', now: NOW }),
+  }).text;
+  // Both counts are explicit, and the hit rate carries its fraction.
+  assert.match(text, /Total calls: <b>2<\/b>/);
+  assert.match(text, /Unique callers: <b>2<\/b>/);
+  assert.match(text, /\(1\/2\)/, 'the hit rate shows how many of how many');
   assert.match(text, /not realised trading profit/i);
-  assert.match(text, /Losers are included/i);
+  assert.match(text, /Losing calls stay in the stats/i);
 });
 
 test('an empty board says so instead of showing a zero-filled table', () => {
-  const text = renderLeaderboard({ groupTitle: 'g', board: buildLeaderboard([], { period: '7d', now: NOW }) }).text;
+  const text = renderLeaderboard({
+    groupTitle: 'g',
+    board: buildLeaderboard([], { period: '7d', now: NOW }),
+    summary: buildGroupSummary([], { period: '7d', now: NOW }),
+    topCalls: [],
+  }).text;
   assert.match(text, /No calls in this period/i);
+  assert.match(text, /No measured calls in this period/i);
+  // A zero-filled table would be a fabricated performance claim.
+  assert.doesNotMatch(text, /Median peak: <b>0/);
 });
 
-test('pagination pages the rows and clamps out-of-range pages', () => {
-  const calls = Array.from({ length: 25 }, (_, i) => call(`u:${String(i).padStart(2, '0')}`, `T${i}`, 1, 2 + i / 100));
+test('the collapsed view shows top 3 and expands to top 10', () => {
+  const calls = Array.from({ length: 12 }, (_, i) => call(`u:${String(i).padStart(2, '0')}`, `T${i}`, 1, 2 + i / 100));
   const board = buildLeaderboard(calls, { period: '7d', now: NOW });
-  const out = renderLeaderboard({ groupTitle: 'g', board, page: 99 });
-  assert.match(out.text, /page 3\/3/, 'an out-of-range page clamps to the last page');
+  const summary = buildGroupSummary(calls, { period: '7d', now: NOW });
+  const topCalls = buildTopCalls(calls, { period: '7d', now: NOW });
+
+  const collapsed = renderLeaderboard({ groupTitle: 'g', board, summary, topCalls });
+  const expanded = renderLeaderboard({ groupTitle: 'g', board, summary, topCalls, expanded: true });
+
+  const countRows = (t) => (t.match(/^[🥇🥈🥉]|^\d+\. /gm) ?? []).length;
+  assert.ok(countRows(collapsed.text) < countRows(expanded.text), 'expanding shows more callers');
+  assert.match(collapsed.text, /more in the top 10/i);
+  assert.match(expanded.text, /more callers/i);
+
+  // The toggle button reflects the current state.
+  const btn = collapsed.keyboard[1].find((b) => /Show top/.test(b.text));
+  assert.ok(btn, 'an expand control exists');
+  assert.match(btn.callback_data, /:1$/, 'tapping it requests the expanded view');
 });
 
-test('the period buttons mark the active period', () => {
-  const board = buildLeaderboard([call('u:1', 'A', 1, 5)], { period: '7d', now: NOW });
-  const out = renderLeaderboard({ groupTitle: 'g', board });
+test('the period buttons mark the active period and preserve the expanded view', () => {
+  const calls = [call('u:1', 'A', 1, 5)];
+  const board = buildLeaderboard(calls, { period: '7d', now: NOW });
+  const out = renderLeaderboard({ groupTitle: 'g', board, expanded: true });
   const labels = out.keyboard[0].map((b) => b.text);
   assert.ok(labels.some((l) => l.startsWith('• 1W')), 'the selected period is marked');
   assert.ok(out.keyboard[0].every((b) => b.callback_data.startsWith('lb:')), 'period buttons are callbacks');
+  // Switching period must keep the same view, or the three sections drift apart.
+  assert.ok(out.keyboard[0].every((b) => b.callback_data.endsWith(':1')), 'expansion survives a period change');
+});
+
+test('the three sections are all present and share one period', () => {
+  const calls = [call('u:1', 'A', 1, 5), call('u:2', 'B', 2, 1.2)];
+  const board = buildLeaderboard(calls, { period: '7d', now: NOW });
+  const out = renderLeaderboard({
+    groupTitle: 'sissooo1',
+    board,
+    summary: buildGroupSummary(calls, { period: '7d', now: NOW }),
+    topCalls: buildTopCalls(calls, { period: '7d', now: NOW }),
+  }).text;
+
+  assert.match(out, /TOP CALLERS/);
+  assert.match(out, /GROUP STATS/);
+  assert.match(out, /TOP 10 CALLS/);
+  // One period label governs the whole message.
+  assert.equal((out.match(/\b1W\b/g) ?? []).length >= 2, true, 'the period appears in header and stats');
+});
+
+test('a chain emoji is attached to each top call', () => {
+  const calls = [{ ...call('u:1', 'FIONA', 1, 3), chain: 'ethereum' }];
+  const out = renderLeaderboard({
+    groupTitle: 'g',
+    board: buildLeaderboard(calls, { period: '7d', now: NOW }),
+    summary: buildGroupSummary(calls, { period: '7d', now: NOW }),
+    topCalls: buildTopCalls(calls, { period: '7d', now: NOW }),
+  }).text;
+  assert.match(out, /\$FIONA/);
+  assert.match(out, /\u{1F537}|🔷/u, 'ethereum glyph');
 });
 
 // ---- group summary -------------------------------------------------------

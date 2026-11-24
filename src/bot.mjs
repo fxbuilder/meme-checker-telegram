@@ -45,6 +45,8 @@ import {
   isGroupChat,
 } from './call-commands.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
+import { chainResolver } from './chain-resolver.mjs';
+import { renderHelp, documentedCommands } from './help.mjs';
 import {
   loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
   extractCustomEmojiIds, detectPackLink, listPackStickers, CARD_EMOJI_SLOTS,
@@ -406,7 +408,7 @@ bot.start(async ctx => {
     'Your quick Meme Coin research assistant.',
     '',
     '🔎 <b>What you can do:</b>',
-    '• Post any Solana or BNB Chain contract address in the chat',
+    '• Post any contract address in the chat — 15 chains supported',
     '• Use <code>/check &lt;address&gt;</code> to check manually',
     '• Use <code>/help</code> to see all commands',
     '',
@@ -427,46 +429,25 @@ bot.start(async ctx => {
   await ctx.reply(text, { parse_mode: 'HTML', ...kb });
 });
 
-bot.help(async ctx => {
-  if (ctx.from?.is_bot) return;
-  const text = [
-    '📖 <b>MEME CHECKER — Help</b>',
-    '',
-    '<b>Commands:</b>',
-    '• <code>/start</code> — Introduction',
-    '• <code>/help</code> — This message',
-    '• <code>/check &lt;address&gt;</code> — Check a token',
-    '• <code>/check &lt;chain&gt; &lt;address&gt;</code> — Check on a specific chain',
-    '• <code>/chains</code> — Supported networks and what each can show',
-    '• <code>/call &lt;address&gt;</code> — Record a call (groups)',
-    '• <code>/calls</code> — Recent calls in this group',
-    '• <code>/fc &lt;address&gt;</code> — Who called it first',
-    '• <code>/pnl [n|address]</code> — Shareable PnL card',
-    '• <code>/callsettings</code> — Auto-call and minimum market cap',
-    '• <code>/alerts</code> — Smart alert settings',
-    '• <code>/narrative &lt;address&gt;</code> — Token story with sources',
-    '• <code>/risk &lt;address&gt;</code> — Holders, contract, tax, liquidity',
-    '• <code>/dev &lt;address&gt;</code> — Creator address and holding',
-    '• <code>/bundle &lt;address&gt;</code> — What bundle checks can and cannot show',
-    '• <code>/lb</code> — Group caller leaderboard',
-    '• <code>/gpnl</code> — Group performance summary',
-    '• <code>/settings</code> — Group scan and alert settings',
-    '• <code>/x &lt;address&gt;</code> — Cached X preview',
-    '• <code>/kol &lt;@user&gt;</code> — Recorded public calls by an account',
-    '• <code>/compact</code> — Compact card (default)',
-    '• <code>/detail</code> — Detailed card',
-    '• <code>/about</code> — About Meme Checker',
-    '• <code>/website</code> — Open the website',
-    '',
-    '<b>Auto-detect:</b>',
-    'Paste a Solana or EVM contract address in the chat and Meme Checker will scan it.',
-    'A 0x address can exist on several networks, so you will be asked to pick one.',
-    '',
-    '<b>Cooldowns:</b> 15 s per user. Duplicate addresses in the same chat are skipped for 60 s.',
-  ].join('\n');
+bot.command('help', handleHelp);
+bot.help(handleHelp);
 
-  await ctx.reply(text, { parse_mode: 'HTML' });
-});
+/**
+ * /help — generated from the command catalogue and the chain registry.
+ *
+ * The previous handler was a hand-written array that still called Meme Checker a
+ * "Solana or BNB Chain" bot after 15 chains shipped, and described a chain picker for
+ * every EVM paste after automatic resolution replaced it. The text now comes from
+ * src/help.mjs so it moves with the code.
+ */
+async function handleHelp(ctx) {
+  if (ctx.from?.is_bot) return;
+  const { text, links } = renderHelp({ websiteBase: WEBSITE_BASE || null, premiumUrl: PREMIUM_URL || null });
+  const kb = links.length
+    ? Markup.inlineKeyboard([links.map((l) => Markup.button.url(l.text, l.url))])
+    : {};
+  await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...kb });
+}
 
 bot.command('about', async ctx => {
   if (ctx.from?.is_bot) return;
@@ -777,9 +758,12 @@ bot.on('message', async (ctx, next) => {
   const det = detectAll(msgText, { defaultEvmChain: DEFAULT_EVM });
   if (!det.candidates.length) return next();
 
-  // An EVM address is valid on 13 chains. Scanning the wrong one wastes a
-  // request and shows the wrong token, so offer the chains instead of guessing.
-  // The default is still one tap away and is first in the list.
+  // An EVM address is valid on 13 chains, so the chain must be established before
+  // scanning - but asking the user to pick from 13 buttons is the wrong default when
+  // the token exists on exactly one of them.
+  //
+  // Resolve first, from two address-scoped, keyless indexers. Only genuine ambiguity
+  // (the same contract deployed on several supported chains) reaches a picker.
   if (det.kind === 'evm' && det.ambiguous && det.hasOwnProperty('evmChains')) {
     // Carry the ORIGINAL author and message through the picker, so that:
     //   - the eventual call is attributed to whoever pasted the contract, not the
@@ -807,7 +791,37 @@ bot.on('message', async (ctx, next) => {
         }
       } catch (_) { /* picker still works without call recording */ }
     }
-    await sendChainPicker(ctx, det.candidates[0].address, pending);
+    // ---- automatic chain resolution -------------------------------------
+    const evmAddress = det.candidates[0].address;
+    let resolution = null;
+    try {
+      resolution = await chainResolver.resolve(evmAddress);
+    } catch (err) {
+      console.warn('[bot] chain resolution failed:', err?.message ?? err);
+    }
+
+    if (resolution?.status === 'resolved') {
+      // One supported chain holds this exact contract: scan it, no prompt.
+      const chain = resolution.chain;
+      await scanResolvedEvm(ctx, chain, evmAddress, pending);
+      return;
+    }
+
+    if (resolution?.status === 'ambiguous' && Array.isArray(resolution.candidates) && resolution.candidates.length > 1) {
+      // Several genuine deployments. Present ONLY the chains that were evidenced.
+      await sendChainPicker(ctx, evmAddress, pending, {
+        chains: resolution.candidates,
+        reason: 'multiple',
+      });
+      return;
+    }
+
+    // 'not-found' or 'unavailable': the picker is still the honest fallback, because a
+    // new token may simply not be indexed yet. The wording says which case it is.
+    await sendChainPicker(ctx, evmAddress, pending, {
+      reason: resolution?.status ?? 'unknown',
+      detail: resolution?.detail ?? null,
+    });
     return;
   }
 
@@ -893,7 +907,10 @@ function boardDeps(ctx) {
     store: callStore,
     policy: accessPolicy,
     isGroup: (c) => isGroupChat(c),
-    period: null,
+    // Default period for a fresh open is 1D, matching every other caller surface.
+    period: '1d',
+    // Needed to mint clickable Caller Profile deep links in the board.
+    botUsername: ctx?.botInfo?.username ?? BOT_USERNAME ?? null,
   };
 }
 
@@ -1203,13 +1220,21 @@ bot.command('pnl', async ctx => {
  * Ask which chain a bare 0x… address belongs to.
  * Callback data stays well under Telegram's 64-byte limit: "c:<chain>:<addr>".
  */
-async function sendChainPicker(ctx, address, pending = null) {
-  const chains = Object.values(CHAINS).filter((c) => c.kind === 'evm' && c.market);
+async function sendChainPicker(ctx, address, pending = null, opts = {}) {
+  const { chains: narrowed = null, reason = null, detail = null } = opts;
+
+  // When the resolver identified specific chains, offer ONLY those. A generic 13-chain
+  // list would invite the user to pick a chain where the contract provably does not
+  // exist, and that scan would return the wrong token or an empty card.
+  const chains = narrowed?.length
+    ? narrowed.map((id) => CHAINS[id]).filter(Boolean)
+    : Object.values(CHAINS).filter((c) => c.kind === 'evm' && c.market);
+
   // 2 per row keeps labels readable on mobile.
   const rows = [];
   for (let i = 0; i < chains.length; i += 2) {
     rows.push(chains.slice(i, i + 2).map((c) => {
-      const mark = c.id === DEFAULT_EVM ? '★ ' : '';
+      const mark = c.id === DEFAULT_EVM && !narrowed ? '★ ' : '';
       return Markup.button.callback(`${mark}${c.name}`, `c:${c.id}:${address}`);
     }));
   }
@@ -1220,12 +1245,64 @@ async function sendChainPicker(ctx, address, pending = null) {
   // prompt, and replying to the user's message with it would visually bury the CA.
   // The ORIGINAL message id travels in the stash so the final card can answer it.
 
+  // Wording must match what actually happened. "Found on 2 chains" and "I could not
+  // check" are different statements and must never share a sentence.
+  let preamble;
+  if (narrowed?.length > 1) {
+    preamble = `This contract exists on <b>${narrowed.length} supported chains</b>, so the choice is yours.`;
+  } else if (reason === 'unavailable') {
+    preamble = 'I could not reach the chain indexers just now, so I cannot tell which chain this is on.';
+  } else if (reason === 'not-found') {
+    preamble = 'I found no supporting pool for this contract yet, which is normal for a very new token. Pick the chain if you know it.';
+  } else {
+    preamble = 'A 0x address can exist on several networks, so I will not guess.';
+  }
+
   await ctx.reply(
     `<b>Which chain is this address on?</b>\n\n<code>${escHtml(address)}</code>\n\n` +
-    `A 0x address can exist on several networks, so I will not guess.\n` +
-    `★ marks the default. You can also type <code>/check base ${escHtml(address.slice(0, 10))}…</code>`,
+    `${preamble}\n` +
+    `You can also type <code>/check base ${escHtml(address.slice(0, 10))}…</code>`,
     { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
   );
+}
+
+/**
+ * Scan an EVM address whose chain the resolver has already established.
+ *
+ * This mirrors the auto-detection path exactly - same auto-call handling, same reply
+ * anchoring, same single card - because a resolved paste and an explicitly-chained
+ * command must not diverge in attribution. Without the shared path an auto-resolved
+ * scan silently stopped recording calls and stopped replying to the original message.
+ */
+async function scanResolvedEvm(ctx, chain, address, pending = null) {
+  const skipRecording = justScanRequested.delete(String(ctx.chat?.id));
+
+  let callOutcome = null;
+  if (isGroupChat(ctx) && !skipRecording && pending?.autoCall) {
+    try {
+      const identity = pending.identity ?? resolveCaller(ctx.message, ctx.chat);
+      if (isAttributable(identity)) {
+        const result = await scan({ chain, address });
+        callOutcome = await recordCall({
+          store: callStore,
+          scanResult: result,
+          caller: identity,
+          chatId: ctx.chat.id,
+          source: 'auto',
+          messageId: pending?.messageId ?? ctx.message?.message_id ?? null,
+          messageDate: pending?.messageDate ?? ctx.message?.date ?? null,
+        });
+      }
+    } catch (err) {
+      console.warn('[bot] auto-call failed on resolved chain (card continues):', err?.message ?? err);
+    }
+  }
+
+  // Reply to the ORIGINAL contract message, not to whatever prompt preceded this card.
+  await runScan(ctx, chain, address, {
+    justRecorded: callOutcome,
+    replyTargetMessageId: pending?.messageId ?? ctx.message?.message_id ?? null,
+  });
 }
 
 function escHtml(v) {
@@ -1508,6 +1585,9 @@ export const internals = {
   // The exact store instance the handlers use, so tests seed and assert against
   // the same object instead of a second instance that races the load cache.
   callStore, accessPolicy,
+  // The shared chain resolver, so tests can stub provider responses instead of
+  // depending on a live network call for whether a picker appears.
+  chainResolver,
 };
 
 // ---- Launch ----------------------------------------------------------------

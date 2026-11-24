@@ -182,27 +182,56 @@ function lpLockFrom(lpRows) {
   };
 }
 
-/** Dev / creator info. Present on EVM; Solana reports `creators`. */
+/**
+ * Dev / creator info.
+ *
+ * FOUR DIFFERENT THINGS are reported by providers under similar names, and conflating
+ * them produces a false risk verdict:
+ *
+ *   creator            the address that minted the token. The original author.
+ *   developer holding   the creator's CURRENT token balance, as % of supply.
+ *   owner / authority   who controls the contract or mint right now. Not the author.
+ *   metadata authority  who can update the token's name/symbol/URI. Not the author.
+ *
+ * `role` records which one a value actually is, so the renderer can label it honestly
+ * instead of calling every address "Creator".
+ *
+ * Solana note: `creators[].percent` on a Metaplex record is that creator's share of
+ * ROYALTIES, not a share of the token supply. Treating it as a holding would invent a
+ * percentage, so it is never used as `balancePercentage`.
+ */
 function devFrom(row, kind) {
   if (kind === 'solana') {
-    // An EMPTY creators array means the provider has no creator record. Returning
-    // an object of nulls here would render as "Dev: Known", implying we found one.
+    // An EMPTY creators array means the provider has no creator record. Returning an
+    // object of nulls here would render as "Dev: Known", implying we found one.
     const creators = Array.isArray(row?.creators) ? row.creators : [];
     const first = creators[0];
     if (!first?.address) return null;
     return {
       address: first.address,
-      balancePercentage: pct(first.percent),
+      role: 'creator',
+      // Deliberately null: see the royalty-share note above. A real holding figure for
+      // Solana comes from RugCheck's creatorBalance, which is a token balance.
+      balancePercentage: null,
+      verifiedCreator: first.verified === true ? true : (first.verified === false ? false : null),
     };
   }
+
   const creator = row?.creator_address;
   const owner = row?.owner_address;
   const creatorPct = pct(row?.creator_percent);
+
   if (!creator && !owner && creatorPct === null) return null;
+
+  // When the provider supplies a holding percentage it is the CREATOR's share. If only
+  // an owner is known, the address is an owner with no creator identity, so it is
+  // labelled accordingly and no holding is claimed.
+  const hasCreator = Boolean(creator);
   return {
-    address: creator ?? null,
+    address: creator ?? owner ?? null,
+    role: hasCreator ? 'creator' : 'owner',
     ownerAddress: owner ?? null,
-    balancePercentage: creatorPct,
+    balancePercentage: hasCreator ? creatorPct : null,
   };
 }
 
@@ -304,7 +333,18 @@ export function mergeRisk(primary, fallback) {
     security: { ...(primary.security ?? {}) },
     tax: primary.tax ?? fallback.tax ?? null,
     lpLock: primary.lpLock ?? fallback.lpLock ?? null,
-    dev: primary.dev ?? fallback.dev ?? null,
+    // A block WITH a measured holding outranks one that only names an address,
+    // regardless of which provider supplied it. Otherwise a fallback that knows the
+    // creator's address but not the balance would erase a real percentage.
+    dev: (() => {
+      const a = primary.dev;
+      const b = fallback.dev;
+      if (!a) return b ?? null;
+      if (!b) return a;
+      if (a.balancePercentage != null) return a;
+      if (b.balancePercentage != null) return { ...b, address: b.address ?? a.address };
+      return a;
+    })(),
     // Record where each block came from, so the UI can be precise.
     sources: { ...(primary.sources ?? {}) },
   };
