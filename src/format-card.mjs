@@ -325,11 +325,22 @@ function buildActions(result, { websiteBase, premiumUrl, addBotUrl, botUsername,
   const resolvedAddBot = isAcceptableUrl(addBotUrl) ? addBotUrl
     : (botUsername ? `https://t.me/${encodeURIComponent(botUsername)}?startgroup=true` : null);
 
-  // THE TOKEN-RESULT CARD HAS EXACTLY ONE INLINE BUTTON: Add to Group.
-  // Chart, Full Analysis, Premium and Website were removed at the owner's
-  // request. Only the real startgroup link is used — never a synthesized URL.
+  // Card buttons: Add to Group, plus a Refresh action when the card can identify
+  // what to re-scan.
+  //
+  // Chart, Full Analysis, Premium and Website were removed at the owner's request.
+  // Only the real startgroup link is used - never a synthesized URL.
+  //
+  // REFRESH carries a callback (`r:<chain>:<address>`), not a URL. It re-reads market
+  // data through the existing provider path and edits this card in place, so it must
+  // never create a second card or a second call record.
   const buttons = [];
   if (resolvedAddBot) buttons.push([{ text: '➕ Add to Group', url: resolvedAddBot }]);
+
+  const refreshData = result?.refreshData;
+  if (typeof refreshData === 'string' && refreshData.length > 0 && refreshData.length <= 64) {
+    buttons.push([{ text: '🔄 Refresh', callback_data: refreshData }]);
+  }
   return buttons;
 }
 

@@ -152,9 +152,22 @@ function buildKeyboard(buttons) {
   );
 }
 
-async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
+async function runScan(ctx, chain, address, {
+  view = CARD_VIEW,
+  /**
+   * The message the card must reply to.
+   *
+   * On a chain-picker callback, `ctx.message` is the PICKER, not the user's original
+   * contract paste. Replying to the picker strands the result away from the CA and
+   * answers the wrong message. The original id is therefore threaded through the
+   * pending-scan state and passed in explicitly.
+   */
+  replyToMessageId = undefined,
+  /** Group id the scan belongs to; a callback may carry a different chat object. */
+  chatId: chatIdOverride = undefined,
+} = {}) {
   const userId = ctx.from?.id ?? 0;
-  const chatId = ctx.chat?.id ?? 0;
+  const chatId = chatIdOverride ?? ctx.chat?.id ?? 0;
 
   const gate = checkCooldown({ userId, chatId, address });
   if (gate.blocked) {
@@ -262,6 +275,13 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     }
   }
 
+  // The Refresh button needs a callback that identifies the token. Attached here
+  // rather than inside format-card so the renderer stays free of routing concerns.
+  // 4A/D: "r:<chain>:<address>" - well inside Telegram's 64-byte callback limit.
+  if (result?.status === 'ok' && chain && address) {
+    result.refreshData = `r:${chain}:${address}`;
+  }
+
   const { text, buttons } = formatCard(result, {
     mockLabel:   SCAN_MODE === 'mock',
     websiteBase: WEBSITE_BASE,
@@ -297,7 +317,7 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     text,
     buttons,
     imageUrl,
-    replyToMessageId: ctx.message?.message_id ?? null,
+    replyToMessageId: replyToMessageId !== undefined ? replyToMessageId : (ctx.message?.message_id ?? null),
   });
 
   if (!sent.ok) {
@@ -728,21 +748,28 @@ bot.on('message', async (ctx, next) => {
   // request and shows the wrong token, so offer the chains instead of guessing.
   // The default is still one tap away and is first in the list.
   if (det.kind === 'evm' && det.ambiguous && det.hasOwnProperty('evmChains')) {
-    // Carry the original author and message through the picker so the eventual
-    // call is attributed to whoever pasted the contract, not whoever tapped.
-    let pending = null;
+    // Carry the ORIGINAL author and message through the picker, so that:
+    //   - the eventual call is attributed to whoever pasted the contract, not the
+    //     person who tapped a chain, and
+    //   - the result card replies to the CA message rather than to the prompt.
+    //
+    // The message reference is stashed UNCONDITIONALLY. An earlier version only
+    // stashed it when auto-call was enabled, so in manual mode the final card had no
+    // origin to reply to and fell back to answering the picker.
+    const pending = {
+      identity: null,
+      messageId: ctx.message?.message_id ?? null,
+      messageDate: ctx.message?.date ?? null,
+      autoCall: false,
+    };
     if (isGroupChat(ctx)) {
       try {
         const settings = callStore.groupSettings(ctx.chat.id, { title: ctx.chat.title ?? null });
         if (settings.autoCall === 'auto' && !justScanRequested.has(String(ctx.chat.id))) {
           const identity = resolveCaller(ctx.message, ctx.chat);
           if (isAttributable(identity)) {
-            pending = {
-              identity,
-              messageId: ctx.message?.message_id ?? null,
-              messageDate: ctx.message?.date ?? null,
-              autoCall: true,
-            };
+            pending.identity = identity;
+            pending.autoCall = true;
           }
         }
       } catch (_) { /* picker still works without call recording */ }
@@ -1114,6 +1141,10 @@ async function sendChainPicker(ctx, address, pending = null) {
   rows.push([Markup.button.callback('✖️ Cancel', 'c:cancel')]);
   if (pending) stashPendingScan({ ...pending, chatId: ctx.chat.id, address });
 
+  // The picker itself is deliberately NOT a reply to the CA: it is an interactive
+  // prompt, and replying to the user's message with it would visually bury the CA.
+  // The ORIGINAL message id travels in the stash so the final card can answer it.
+
   await ctx.reply(
     `<b>Which chain is this address on?</b>\n\n<code>${escHtml(address)}</code>\n\n` +
     `A 0x address can exist on several networks, so I will not guess.\n` +
@@ -1168,7 +1199,187 @@ bot.action(/^c:(.+)$/, async ctx => {
     }
   }
 
-  await runScan(ctx, chain, address.toLowerCase());
+  // The card answers the ORIGINAL contract message, which is the conversation the
+  // user actually started. The picker was deleted above, so replying to it would
+  // target a message that no longer exists.
+  await runScan(ctx, chain, address.toLowerCase(), {
+    replyToMessageId: pending?.messageId ?? null,
+  });
+});
+
+// ---- Refresh: re-read market data and edit the card in place (4A/D) --------
+
+/**
+ * In-flight refresh guard, keyed by chat+token.
+ *
+ * A user can tap Refresh repeatedly. Without this, each tap would fire its own
+ * provider fetch and its own edit; overlapping edits on one message produce a
+ * "message is not modified" storm and multiply provider load.
+ */
+const refreshInFlight = new Set();
+
+/** Per-chat+token cooldown so Refresh cannot become a polling loop. */
+const REFRESH_COOLDOWN_MS = Math.max(0, Number(process.env.REFRESH_COOLDOWN_MS) || 8_000);
+const lastRefreshAt = new Map();
+
+function refreshKey(chatId, chain, address) {
+  return `${chatId}:${chain}:${String(address).toLowerCase()}`;
+}
+
+/**
+ * `r:<chain>:<address>` — re-scan and EDIT the existing card.
+ *
+ * Rules from the plan, and why each is here:
+ *  - Edit in place, never send a new card: duplicate cards in a group are noise and
+ *    make the First Caller attribution ambiguous.
+ *  - Never insert a call or touch entry MC / caller: Refresh is a read, not an action.
+ *    A refresh that recorded a call would let anyone "call" a token by tapping.
+ *  - Keep the last valid values on failure, never zeros: a provider hiccup must not
+ *    make a token look dead.
+ *  - Zero paid X requests: research uses the cache-only path.
+ */
+bot.action(/^r:(.+)$/, async ctx => {
+  const data = ctx.match[1];
+  const sep = data.indexOf(':');
+  const chain = data.slice(0, sep);
+  const address = data.slice(sep + 1);
+
+  if (!chain || !address) {
+    await ctx.answerCbQuery('Bad request');
+    return;
+  }
+
+  const chatId = ctx.chat?.id ?? ctx.callbackQuery?.message?.chat?.id;
+  const messageId = ctx.callbackQuery?.message?.message_id ?? null;
+  if (!chatId || !messageId) {
+    await ctx.answerCbQuery('Cannot refresh here');
+    return;
+  }
+
+  const key = refreshKey(chatId, chain, address);
+
+  // One refresh at a time per token per chat.
+  if (refreshInFlight.has(key)) {
+    await ctx.answerCbQuery('Already refreshing');
+    return;
+  }
+
+  const now = Date.now();
+  const since = now - (lastRefreshAt.get(key) ?? 0);
+  if (since < REFRESH_COOLDOWN_MS) {
+    const wait = Math.ceil((REFRESH_COOLDOWN_MS - since) / 1000);
+    await ctx.answerCbQuery(`Please wait ${wait}s`);
+    return;
+  }
+
+  refreshInFlight.add(key);
+  try {
+    await ctx.answerCbQuery('Refreshing…');
+
+    const result = await scan({ chain, address });
+
+    // A failed provider fetch must not blank the card. Answer honestly and stop.
+    if (!result || result.status !== 'ok') {
+      await ctx.answerCbQuery('Could not refresh — keeping current values', { show_alert: false }).catch(() => {});
+      return;
+    }
+
+    // Re-attach the group's own First Call so the refreshed card keeps attribution.
+    let firstCall = null;
+    let callerToken = null;
+    if (isGroupChat(ctx)) {
+      try {
+        firstCall = callStore.firstCall(chatId, chain, address);
+        if (firstCall?.callerKey) {
+          callerToken = mintCallerToken(chatId, firstCall.callerKey, DEFAULT_PERIOD);
+        }
+      } catch { /* attribution is optional; the card still refreshes */ }
+    }
+
+    // Reuse cached narrative/research only. `xCacheOnly` guarantees no paid X call.
+    let researchLines = null;
+    try {
+      const research = await researchToken({
+        chain,
+        address,
+        symbol: result?.token?.symbol ?? null,
+        cache: researchCache,
+        budget: xBudget,
+        includePosts: true,
+        xCacheOnly: true,
+      });
+      if (research?.narrative?.available && !result.narrative?.summary) {
+        result.narrative = {
+          summary: cardNarrativeLines(research.narrative),
+          source: research.narrative.summarySource,
+          evidence: research.narrative.summaryClass,
+        };
+      }
+      researchLines = { premiumTeaser: true, premiumUrl: PREMIUM_URL || null };
+    } catch { /* narrative is optional enrichment */ }
+
+    if (result?.status === 'ok' && chain && address) {
+      result.refreshData = `r:${chain}:${address}`;
+    }
+
+    const { text, buttons } = formatCard(result, {
+      mockLabel: SCAN_MODE === 'mock',
+      websiteBase: WEBSITE_BASE,
+      premiumUrl: PREMIUM_URL,
+      botUsername: BOT_USERNAME,
+      emojiTheme: activeEmojiTheme,
+      view: CARD_VIEW,
+      firstCall,
+      callerToken,
+      research: researchLines,
+    });
+
+    // Edit the existing card. A photo caption and a text card are edited through
+    // different Telegram methods, and we try both rather than guessing the current
+    // kind: the card may have fallen back to text when the image was unavailable.
+    const keyboard = buttons?.length ? { inline_keyboard: buttons } : undefined;
+    let edited = false;
+    try {
+      await ctx.telegram.editMessageCaption(chatId, messageId, undefined, text, {
+        parse_mode: 'HTML',
+        ...(keyboard ? { reply_markup: keyboard } : {}),
+      });
+      edited = true;
+    } catch (err) {
+      const desc = String(err?.description ?? err?.message ?? '');
+      // Not a caption (text card), or nothing changed. Both are handled below.
+      if (!/message is not modified/i.test(desc)) {
+        try {
+          await ctx.telegram.editMessageText(chatId, messageId, undefined, text, {
+            parse_mode: 'HTML',
+            link_preview_options: { is_disabled: true },
+            ...(keyboard ? { reply_markup: keyboard } : {}),
+          });
+          edited = true;
+        } catch (err2) {
+          const d2 = String(err2?.description ?? err2?.message ?? '');
+          if (/message is not modified/i.test(d2)) {
+            edited = true; // values genuinely unchanged — the card is already correct
+          } else {
+            console.warn('[bot] refresh edit failed:', d2);
+          }
+        }
+      } else {
+        edited = true;
+      }
+    }
+
+    if (!edited) {
+      // Exactly one concise fallback, in the same chat. Never a duplicate card.
+      await ctx.reply('Could not update this card. Tap Refresh again in a moment.').catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[bot] refresh failed:', err?.message ?? err);
+    await ctx.answerCbQuery('Refresh failed').catch(() => {});
+  } finally {
+    lastRefreshAt.set(key, Date.now());
+    refreshInFlight.delete(key);
+  }
 });
 
 // ---- Card view toggle via inline button ------------------------------------

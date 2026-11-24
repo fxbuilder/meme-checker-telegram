@@ -87,6 +87,11 @@ export async function deliverCard({
           fellBack: false, fallbackReason: null, captionLength: visibleLength(caption), detail: null,
         };
       } catch (err) {
+        if (replyToMessageId && isMissingReplyTarget(err)) {
+          // The original CA was deleted. Deliver the card anyway, unanchored, rather
+          // than answering a message that no longer exists.
+          return sendTextFallback({ telegram, chatId, text, keyboard, replyToMessageId: null, visLen, reason: 'original message unavailable' });
+        }
         // Fall through to the text card. The reason is reported, not swallowed.
         const reason = err?.description ?? err?.message ?? 'photo send failed';
         return sendTextFallback({ telegram, chatId, text, keyboard, replyToMessageId, visLen, reason });
@@ -101,6 +106,15 @@ export async function deliverCard({
 
   // ---- 2. No image → plain text card ----------------------------------
   return sendTextFallback({ telegram, chatId, text, keyboard, replyToMessageId, visLen, reason: null });
+}
+
+/**
+ * True when Telegram rejected a send only because the reply target no longer exists.
+ * The card itself is fine; the conversation it was anchored to is gone.
+ */
+function isMissingReplyTarget(err) {
+  const d = String(err?.description ?? err?.message ?? '');
+  return /message to be replied not found|replied message not found|message_id_invalid|MESSAGE_ID_INVALID|reply message not found/i.test(d);
 }
 
 /** The single text send. Used directly and as the photo fallback. */
@@ -120,6 +134,12 @@ async function sendTextFallback({ telegram, chatId, text, keyboard, replyToMessa
       fellBack: Boolean(reason), fallbackReason: reason, captionLength: null, detail: null,
     };
   } catch (err) {
+    // The reply target may have been deleted between the tap and the send. Retrying
+    // once WITHOUT the anchor is the difference between the user getting their card
+    // and getting nothing.
+    if (replyToMessageId && isMissingReplyTarget(err)) {
+      return sendTextFallback({ telegram, chatId, text, keyboard, replyToMessageId: null, visLen, reason: 'original message unavailable' });
+    }
     return {
       ok: false, kind: 'text', messageId: null, text: null, entities: [], customEmoji: 0,
       buttons: 0, fellBack: Boolean(reason), fallbackReason: reason,
