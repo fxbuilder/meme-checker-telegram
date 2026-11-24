@@ -202,9 +202,12 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
           symbol: result?.token?.symbol ?? null,
           cache: researchCache,
           budget: xBudget,
-          // No X posts on a card: discovery is credentialed, slow and costly, and a
-          // card only ever needs the counts. /x exists for the detail.
+          // No X search on a card. Discovery costs one billed request and needs a 5s
+          // pacing gap, while this scan has a 2.5s ceiling - so a scan would be
+          // charged, wait, and abandon the request. The card shows only posts that
+          // are ALREADY cached; /x does the real paced fetch.
           includePosts: true,
+          xCacheOnly: true,
         }),
         new Promise((resolve) => setTimeout(() => resolve(null), RESEARCH_TIMEOUT_MS)),
       ]);
@@ -222,6 +225,21 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
           xLine: cardXLine(research.x),
           kolLine: cardKolLine(research.x),
         };
+
+        // Persist genuine public-call evidence so /kol can retrieve it later.
+        // Separate from group calls, and idempotent per (handle, post id).
+        try {
+          if (research.x?.available && (research.x.posts?.length ?? 0) > 0) {
+            callStore.recordXCallsFromResearch(research, {
+              chain,
+              address,
+              symbol: result?.token?.symbol ?? null,
+            });
+          }
+        } catch (err) {
+          // Evidence persistence must never break a scan.
+          console.warn('[bot] x-call persistence skipped:', err?.message ?? err);
+        }
       }
     } catch (err) {
       console.warn('[bot] research enrichment skipped:', err?.message ?? err);
@@ -772,6 +790,16 @@ function researchDeps() {
     cache: researchCache,
     budget: xBudget,
     defaultEvmChain: DEFAULT_EVM,
+    /**
+     * /kol reads recorded public X call evidence.
+     *
+     * This was NEVER WIRED, so /kol could only ever answer "no calls recorded" no
+     * matter what had actually been discovered - an inert command pretending to be
+     * a working one. It now reads the store's xCalls map, which is separate from
+     * group calls so a KOL's post can never appear as a group member's call.
+     */
+    recordedCallsForHandle: (handle) => callStore.recordedXCallsForHandle(handle),
+    kolCoverage: 'Recorded from public X posts this bot has observed; not the account\'s full trading record.',
   };
 }
 

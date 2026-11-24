@@ -26,8 +26,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { classifyPost } from './research/x-source.mjs';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * How many delivery attempts one alert may take before it is abandoned.
@@ -63,6 +64,19 @@ function emptyDoc() {
      * writes it, so a restart or a second observer cannot re-send an alert.
      */
     alerts: {},
+    /**
+     * Phase 4 public X call evidence.
+     *
+     * DELIBERATELY SEPARATE from `calls`. A Telegram group call is a record of what
+     * a member of THIS group did; a public X call is what a stranger posted on X.
+     * Merging them would let a KOL's post contaminate a group's caller stats, and
+     * would leak group call history into /kol. They share a file for operational
+     * simplicity but never share a code path.
+     *
+     * Keyed by a stable composite so the same post can never be recorded twice:
+     *   `${authorHandle.toLowerCase()}:${postId}`
+     */
+    xCalls: {},
   };
 }
 
@@ -90,6 +104,13 @@ export function migrate(docRaw) {
     // untouched, so a v1 file keeps every record and gains an empty alert map.
     doc.alerts = doc.alerts && typeof doc.alerts === 'object' ? doc.alerts : {};
     doc.schemaVersion = 2;
+    migrated = true;
+  }
+
+  if (from < 3) {
+    // v2 had no public X call evidence. Additive only.
+    doc.xCalls = doc.xCalls && typeof doc.xCalls === 'object' ? doc.xCalls : {};
+    doc.schemaVersion = 3;
     migrated = true;
   }
 
@@ -271,6 +292,96 @@ export class CallStore {
   /** Distinct chains among the recorded calls for one address in one group. */
   recordedChainsForAddress(chatId, address) {
     return [...new Set(this.recordedCallsForAddress(chatId, address).map((c) => c.chain))];
+  }
+
+  // ---- Phase 4: public X call evidence ----------------------------------
+  // Separate from `calls` on purpose. See the xCalls comment in emptyDoc().
+
+  /**
+   * Record one public X call, once.
+   *
+   * Idempotent by (authorHandle, postId): re-discovering the same post is a no-op,
+   * so a re-scan or a second process cannot inflate a KOL's recorded call count.
+   *
+   * @returns {{added:boolean, key?:string, reason?:string}}
+   */
+  async recordXCall(entry) {
+    this.load();
+    const author = String(entry?.authorHandle ?? '').replace(/^@/, '').trim();
+    const postId = String(entry?.postId ?? '').trim();
+    if (!author || !postId) return { added: false, reason: 'missing-identity' };
+
+    // Only a genuine public call against a matched contract is evidence.
+    if (entry?.role !== 'public-call') return { added: false, reason: 'not-a-call' };
+    if (!entry?.containsContract) return { added: false, reason: 'no-contract-match' };
+
+    const key = `${author.toLowerCase()}:${postId}`;
+    if (this.doc.xCalls[key]) return { added: false, reason: 'duplicate' };
+
+    this.doc.xCalls[key] = {
+      authorHandle: author,
+      postId,
+      chain: entry.chain ?? null,
+      address: entry.address ?? null,
+      symbol: entry.symbol ?? null,
+      // Entry market cap is recorded ONLY when the caller supplied a verified one.
+      // /kol must never present an unverifiable entry as a number.
+      entryMarketCapUsd: Number.isFinite(entry.entryMarketCapUsd) ? entry.entryMarketCapUsd : null,
+      text: String(entry.text ?? '').slice(0, 280),
+      url: entry.url ?? null,
+      createdAt: entry.createdAt ?? null,
+      observedAt: new Date().toISOString(),
+    };
+    this.doc.updatedAt = new Date().toISOString();
+    await this.persist();
+    return { added: true, key };
+  }
+
+  /** Every recorded public call by one handle, newest first. */
+  recordedXCallsForHandle(handle) {
+    this.load();
+    const want = String(handle ?? '').replace(/^@/, '').toLowerCase();
+    if (!want) return [];
+    return Object.values(this.doc.xCalls)
+      .filter((e) => String(e.authorHandle).toLowerCase() === want)
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  }
+
+  /** All recorded public calls for one canonical token. */
+  recordedXCallsForToken(chain, address) {
+    this.load();
+    const addr = String(address ?? '').trim();
+    if (!addr) return [];
+    return Object.values(this.doc.xCalls).filter((e) => {
+      if (String(e.chain) !== String(chain)) return false;
+      // Reuse the same address normalisation as group calls.
+      return normaliseAddress(chain, e.address) === normaliseAddress(chain, addr);
+    });
+  }
+
+  /** Persist every public call found in a research result. Idempotent. */
+  async recordXCallsFromResearch(research, { chain, address, symbol } = {}) {
+    this.load();
+    const posts = research?.x?.posts ?? [];
+    let added = 0;
+    for (const p of posts) {
+      const role = classifyPost(p, { projectHandle: research?.x?.projectHandle ?? null });
+      if (role !== 'public-call') continue;
+      const res = await this.recordXCall({
+        authorHandle: p.authorHandle,
+        postId: p.id,
+        chain,
+        address,
+        symbol,
+        text: p.text,
+        url: p.url,
+        createdAt: p.createdAt,
+        role,
+        containsContract: p.containsContract,
+      });
+      if (res.added) added += 1;
+    }
+    return { added };
   }
 
   /** The call that owns first-caller attribution for (chat, chain, address). */

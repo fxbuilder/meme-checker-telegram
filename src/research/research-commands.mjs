@@ -327,7 +327,13 @@ export function renderKolProfile({ handle, entries, coverage, limit = 6 }) {
 
   for (const e of entries.slice(0, limit)) {
     const sym = e.symbol ? `$${e.symbol}` : (e.name ?? 'token');
-    const when = e.observedAt ? timeAgo(e.observedAt) : 'time unknown';
+    // timeAgo() takes epoch MILLISECONDS. Passing an ISO string returned '' for
+    // every row, which rendered as a dangling "· " - the same class of defect as
+    // the old "just now ago". Parse the timestamp, and fall back to the text the
+    // caller actually has rather than dropping the date entirely.
+    const stamp = e.createdAt ?? e.observedAt ?? null;
+    const ms = stamp ? Date.parse(stamp) : NaN;
+    const when = Number.isFinite(ms) ? timeAgo(ms) : 'date unknown';
     // Entry market cap is only shown when it was verifiable.
     const entry = Number.isFinite(e.entryMarketCapUsd) ? fmtUsd(e.entryMarketCapUsd) : null;
     L.push(`• <b>${esc(clip(sym, 18))}</b> · ${esc(when)}`);

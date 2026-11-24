@@ -115,6 +115,21 @@ const METRIC_ALIASES = {
   bookmarks: ['bookmarks', 'bookmarkCount', 'bookmark_count'],
 };
 
+/**
+ * Raw X v2 nests these under public_metrics with names that do not follow one
+ * pattern: replies is reply_count, reposts is retweet_count, views is
+ * impression_count. Listed explicitly, because deriving them with a regex turned
+ * "replies" into "replie_count" and silently nulled two metrics.
+ */
+const V2_PUBLIC_METRIC_KEYS = {
+  likes: 'like_count',
+  reposts: 'retweet_count',
+  replies: 'reply_count',
+  quotes: 'quote_count',
+  views: 'impression_count',
+  bookmarks: 'bookmark_count',
+};
+
 /** A missing metric is null, never 0. Zero engagement and unknown differ. */
 function asNumber(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -144,18 +159,28 @@ export function normalisePost(raw, { chain, address, symbol } = {}) {
   if (!id || typeof text !== 'string') return null;
 
   // Author identity: GetXAPI uses author.userName, Sorsa user.screen_name, raw X v2
-  // uses author.username. Stable handle only - a display name is not identity.
+  // uses author.username or the includes.users entry referenced by author_id. Stable
+  // handle only - a display name is not identity.
+  const v2User = Array.isArray(raw.includes?.users) && raw.author_id != null
+    ? raw.includes.users.find((u) => String(u?.id) === String(raw.author_id))
+    : null;
   const author = raw.author?.userName
     ?? raw.user?.screen_name
     ?? raw.author?.username
     ?? raw.author?.handle
     ?? raw.authorHandle
+    ?? v2User?.username
     ?? null;
-  const authorName = raw.author?.name ?? raw.user?.name ?? null;
-  const authorFollowers = asNumber(raw.author?.followers ?? raw.user?.followers_count);
+  const authorName = raw.author?.name ?? raw.user?.name ?? v2User?.name ?? null;
+  const authorFollowers = asNumber(
+    raw.author?.followers
+      ?? raw.user?.followers_count
+      ?? v2User?.followers_count
+      ?? v2User?.public_metrics?.followers_count,
+  );
   // A provider reporting neither verification flag has verified nothing, so this
   // stays null rather than guessing false.
-  const verifiedFlags = [raw.author?.isVerified, raw.author?.isBlueVerified, raw.user?.verified];
+  const verifiedFlags = [raw.author?.isVerified, raw.author?.isBlueVerified, raw.user?.verified, v2User?.verified];
   const authorVerified = verifiedFlags.some((f) => f === true) ? true
     : verifiedFlags.every((f) => f === undefined || f === null) ? null : false;
 
@@ -166,6 +191,7 @@ export function normalisePost(raw, { chain, address, symbol } = {}) {
   for (const k of METRIC_KEYS) {
     metrics[k] = asNumber(
       pick(raw, METRIC_ALIASES[k])
+      ?? raw.public_metrics?.[V2_PUBLIC_METRIC_KEYS[k]]
       ?? raw.public_metrics?.[k]
       ?? raw.metrics?.[k],
     );
@@ -175,7 +201,7 @@ export function normalisePost(raw, { chain, address, symbol } = {}) {
     id: String(id),
     // Prefer a provider-supplied post URL when it is a real post link; otherwise
     // derive it from author + id. We never emit a URL we cannot ground.
-    url: (typeof raw.url === 'string' && /^https?:\/\/(www\.)?(twitter|x)\.com\/[^/]+\/status\/\d+/.test(raw.url))
+    url: (typeof raw.url === 'string' && /^https:\/\/(www\.)?(twitter|x)\.com\/[^/]+\/status\/\d+(?:[?#].*)?$/.test(raw.url))
       ? raw.url
       : (author ? `https://x.com/${String(author).replace(/^@/, '')}/status/${id}` : null),
     authorHandle: typeof author === 'string' ? author.replace(/^@/, '') : null,

@@ -50,7 +50,7 @@ const caller = { id: 42, displayName: 'Foxy', username: 'foxy' };
 test('a missing store file loads as empty without throwing', () => {
   const s = tmpStore().load();
   assert.equal(s.doc.calls.length, 0);
-  assert.equal(s.doc.schemaVersion, 2);
+  assert.equal(s.doc.schemaVersion, 3);
 });
 
 test('calls survive a restart (new store instance, same file)', async () => {
@@ -84,11 +84,13 @@ test('a corrupt file is quarantined and the store starts clean', () => {
 test('an older schema is migrated rather than rejected', () => {
   const { doc, migrated } = migrate({ calls: [{ id: 'c1' }], groups: undefined, schemaVersion: 0 });
   assert.equal(migrated, true);
-  // v0 -> v1 -> v2 in one pass: calls and groups are preserved, alert state added.
-  assert.equal(doc.schemaVersion, 2);
+  // v0 -> v1 -> v2 -> v3 in one pass: calls and groups preserved, alert state and
+  // public X call evidence added. Migration must be additive, never destructive.
+  assert.equal(doc.schemaVersion, 3);
   assert.equal(doc.calls.length, 1);
   assert.deepEqual(doc.groups, {});
   assert.deepEqual(doc.alerts, {});
+  assert.deepEqual(doc.xCalls, {});
 });
 
 test('a newer schema is refused instead of being silently downgraded', () => {

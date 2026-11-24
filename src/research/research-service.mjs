@@ -49,6 +49,16 @@ export async function researchToken({
   scanResult = null,
   /** Disable the website fetch (used by cheap card enrichment and by tests). */
   includeWebsite = true,
+  /**
+   * Card enrichment mode: use X posts ONLY if they are already cached.
+   *
+   * WHY. A scan card wants the "17 posts / 11 accounts" line, but making a scan pay
+   * for an X search is wrong twice over: it costs $0.001 per scan, and the scan has a
+   * hard 2.5s timeout while provider pacing needs 5s - so the request would be
+   * charged, awaited, abandoned at the timeout, and the money spent for nothing.
+   * /x does the real, paced fetch; the card shows what is already known.
+   */
+  xCacheOnly = false,
 } = {}) {
   const out = {
     narrative: { available: false, reason: 'not-attempted' },
@@ -154,7 +164,19 @@ export async function researchToken({
   // reserve() both charges the request AND waits for the provider's spacing floor.
   // Charging without pacing is what let two back-to-back searches return 200 then
   // 429 - the 429 was billed and returned nothing.
-  const willRequest = !cache.has(postsKey) && !cache.inflight.has(postsKey);
+  const cachedPosts = cache.has(postsKey);
+
+  // Card enrichment never pays for a search it cannot wait for.
+  if (xCacheOnly && !cachedPosts) {
+    out.x = {
+      available: false,
+      status: { available: false, reason: 'not-fetched', detail: 'X posts are fetched by /x, not by a scan.' },
+      posts: [],
+    };
+    return out;
+  }
+
+  const willRequest = !cachedPosts && !cache.inflight.has(postsKey);
   if (willRequest && !(await budget.reserve())) {
     out.x = {
       available: false,

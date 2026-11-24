@@ -144,6 +144,23 @@ test('Sorsa-style fields still map through the same normaliser', () => {
   assert.equal(p.metrics.reposts, 2);
 });
 
+test('raw X v2 includes.users fields map to the author and public metrics', () => {
+  const p = normalisePost({
+    id: 'v2-1', text: `buy ${CA}`, created_at: '2026-03-01T00:00:00Z', author_id: 'u-1',
+    includes: { users: [{ id: 'u-1', username: 'v2_user', name: 'V2 User', public_metrics: { followers_count: 99 }, verified: true }] },
+    public_metrics: { like_count: 4, retweet_count: 3, reply_count: 2, quote_count: 1, impression_count: 88, bookmark_count: 5 },
+  }, { chain: 'ethereum', address: CA, symbol: 'P' });
+  assert.equal(p.authorHandle, 'v2_user');
+  assert.equal(p.authorFollowers, 99);
+  assert.equal(p.authorVerified, true);
+  assert.deepEqual(p.metrics, { likes: 4, reposts: 3, replies: 2, quotes: 1, views: 88, bookmarks: 5 });
+});
+
+test('malformed provider URLs are not emitted as post links', () => {
+  const p = normalisePost({ id: '3', text: 'hi', author: { userName: 'alice' }, url: 'https://x.com/alice/status/3.evil' }, {});
+  assert.equal(p.url, 'https://x.com/alice/status/3');
+});
+
 test('a post with no text is dropped rather than reported empty', () => {
   assert.equal(normalisePost({ id: '1', author: { userName: 'a' } }, {}), null);
   assert.equal(normalisePost({ id: '1', text: '   ', author: { userName: 'a' } }, {}), null);
