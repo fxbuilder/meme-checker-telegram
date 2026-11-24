@@ -106,10 +106,10 @@ test('narrative shown when source is present', () => {
   assert.ok(text.includes('dog-themed'));
 });
 
-test('Full Analysis button is built from fullAnalysisUrl', () => {
+test('no Full Analysis button is rendered on the token card (removed by owner)', () => {
   const { buttons } = formatCard(SOL_OK);
   const flat = buttons.flat();
-  assert.ok(flat.some(b => b.text.includes('Full Analysis') && b.url.includes('solana')));
+  assert.ok(!flat.some(b => b.text.includes('Analysis')));
 });
 
 test('Full Analysis button is omitted when fullAnalysisUrl is null (no synthesized link)', () => {
@@ -165,10 +165,12 @@ test('http (non-https) fullAnalysisUrl is rejected', () => {
   assert.equal(flat.find(b => b.text.includes('View Full Analysis')), undefined);
 });
 
-test('valid https fullAnalysisUrl is accepted', () => {
+test('a valid fullAnalysisUrl does NOT create a button on the token card', () => {
   const withReal = { ...SOL_OK, fullAnalysisUrl: 'https://app.memechecker.io/check/solana/FiXtUrE111111111111111111111111111111111111' };
-  const flat = formatCard(withReal).buttons.flat();
-  assert.ok(flat.some(b => b.text.includes('View Full Analysis') && b.url.includes('memechecker.io')));
+  const flat = formatCard(withReal, { botUsername: 'MemeCheckerBot' }).buttons.flat();
+  assert.equal(flat.length, 1, 'exactly one button, the Add-to-Group action');
+  assert.ok(!flat.some(b => b.text.includes('Analysis')));
+  assert.ok(!flat.some(b => String(b.url).includes('memechecker.io')));
 });
 
 test('Full Analysis section shows an availability note when there is no CTA', () => {
@@ -186,64 +188,48 @@ test('availability note is absent when the CTA exists', () => {
 
 // ---- §9 button order --------------------------------------------------------
 
-test('§9 Row 1 is Full Analysis when fullAnalysisUrl set', () => {
+// ---- Token-card actions: EXACTLY ONE (owner decision, final UI baseline) ----
+// The former §9 multi-button order (Full Analysis / Premium / Explore / Add Bot)
+// was superseded by an explicit owner instruction: the token-result card carries
+// exactly one inline button, Add to Group. Chart was removed entirely. This is
+// the documented final baseline, not an omission.
+
+test('the token card has exactly one inline button', () => {
   const { buttons } = formatCard(SOL_OK, {
     websiteBase: 'https://app.memechecker.io',
     premiumUrl:  'https://app.memechecker.io/pricing',
     botUsername: 'MemeCheckerBot',
   });
-  assert.equal(buttons.length, 3);
-  assert.ok(buttons[0][0].text.includes('Full Analysis'));
+  const flat = buttons.flat();
+  assert.equal(flat.length, 1, `expected exactly one button, got ${flat.length}`);
 });
 
-test('§9 Row 2 has Premium then Explore when both configured', () => {
+test('the single button is Add to Group and uses the real startgroup flow', () => {
+  const { buttons } = formatCard(SOL_OK, { botUsername: 'MemeCheckerBot' });
+  const flat = buttons.flat();
+  assert.equal(flat.length, 1);
+  assert.ok(flat[0].text.includes('Add to Group'));
+  assert.ok(flat[0].url.endsWith('?startgroup=true'), `unexpected url: ${flat[0].url}`);
+  assert.ok(flat[0].url.startsWith('https://t.me/'));
+});
+
+test('configured website and premium never add buttons to the token card', () => {
   const { buttons } = formatCard(SOL_OK, {
     websiteBase: 'https://app.memechecker.io',
     premiumUrl:  'https://app.memechecker.io/pricing',
-  });
-  const row2 = buttons[1];
-  assert.ok(row2[0].text.includes('Premium'));
-  assert.ok(row2[1].text.includes('Explore'));
-});
-
-test('§9 Row 3 is Add Bot to Group when botUsername set', () => {
-  const { buttons } = formatCard(SOL_OK, {
-    websiteBase: 'https://app.memechecker.io',
     botUsername: 'MemeCheckerBot',
   });
-  const last = buttons[buttons.length - 1];
-  assert.ok(last[0].text.includes('Add'));
-  assert.ok(last[0].url.includes('t.me/MemeCheckerBot'));
+  const texts = buttons.flat().map((b) => b.text).join(' ');
+  assert.ok(!texts.includes('Premium'));
+  assert.ok(!texts.includes('Explore'));
+  assert.ok(!texts.includes('Chart'));
+  assert.ok(!texts.includes('Analysis'));
 });
 
-test('§9 Row 3 omitted when no botUsername or addBotUrl', () => {
-  const { buttons } = formatCard(SOL_OK, { websiteBase: 'https://app.memechecker.io' });
-  const flat = buttons.flat();
-  assert.equal(flat.find(b => b.text.includes('Add')), undefined);
+test('no button at all when no bot username is known', () => {
+  const { buttons } = formatCard(SOL_OK, {});
+  assert.equal(buttons.flat().length, 0);
 });
-
-test('Premium button uses dedicated premiumUrl, not websiteBase/pricing', () => {
-  const { buttons } = formatCard(SOL_OK, {
-    websiteBase: 'https://app.memechecker.io',
-    premiumUrl:  'https://premium.memechecker.io/vip',
-  });
-  const flat = buttons.flat();
-  const btn = flat.find(b => b.text.includes('Premium'));
-  assert.ok(btn?.url.startsWith('https://premium.memechecker.io/vip'));
-  assert.ok(!btn?.url.includes('/pricing'));
-});
-
-test('Premium button omitted when premiumUrl is empty and websiteBase alone is set', () => {
-  // premiumUrl independent of websiteBase — no auto-derivation
-  const { buttons } = formatCard(SOL_OK, {
-    websiteBase: 'https://app.memechecker.io',
-    premiumUrl:  '',
-  });
-  const flat = buttons.flat();
-  assert.equal(flat.find(b => b.text.includes('Premium')), undefined);
-});
-
-// ---- Emoji theme ------------------------------------------------------------
 
 test('standard emoji used by default (no theme)', () => {
   const { text } = formatCard(SOL_OK);

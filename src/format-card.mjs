@@ -194,13 +194,11 @@ function buildSecurity(result, e) {
     return rows;
   }
 
-  // A one-line scope note keeps the numbers from reading as a safety verdict.
-  // Only shown when there is something to qualify.
+  // A capability caveat is kept ONLY when it states a real limitation (no source
+  // covers this chain). The former "Signals only, not a safety verdict..." note
+  // was removed at the owner's request and is deliberately not replaced.
   const anyData = pairs.some((p) => p.value !== '—' && p.value !== 'n/a');
-  if (anyData) {
-    rows.push('');
-    rows.push("<i>Signals only, not a safety verdict. Top 10 is the provider's top accounts as returned.</i>");
-  } else if (result?.riskStatus === 'unsupported') {
+  if (!anyData && result?.riskStatus === 'unsupported') {
     rows.push('');
     rows.push('<i>No on-chain risk source covers this chain yet.</i>');
   }
@@ -229,27 +227,17 @@ function buildNarrative(result, e, mode = 'standard') {
  * omitted, never rendered as a dead or fake button.
  */
 function buildActions(result, { websiteBase, premiumUrl, addBotUrl, botUsername, view }) {
-  const chartUrl = isAcceptableUrl(result?.chartUrl) ? result.chartUrl : null;
-  const analysisUrl = isAcceptableUrl(result?.fullAnalysisUrl) ? result.fullAnalysisUrl : null;
   const resolvedWebsite = isAcceptableUrl(websiteBase)
     ? `${websiteBase}?utm_source=telegram&utm_medium=group_bot&utm_campaign=explore` : null;
   const resolvedPremium = isAcceptableUrl(premiumUrl) ? premiumUrl : null;
   const resolvedAddBot = isAcceptableUrl(addBotUrl) ? addBotUrl
     : (botUsername ? `https://t.me/${encodeURIComponent(botUsername)}?startgroup=true` : null);
 
+  // THE TOKEN-RESULT CARD HAS EXACTLY ONE INLINE BUTTON: Add to Group.
+  // Chart, Full Analysis, Premium and Website were removed at the owner's
+  // request. Only the real startgroup link is used — never a synthesized URL.
   const buttons = [];
-  const row1 = [];
-  if (chartUrl) row1.push({ text: '📈 Chart', url: chartUrl });
-  if (analysisUrl) row1.push({ text: '🔍 View Full Analysis', url: analysisUrl });
-  if (row1.length) buttons.push(row1);
-
-  const row2 = [];
-  if (resolvedPremium) row2.push({ text: '🔐 Premium', url: resolvedPremium });
-  if (resolvedWebsite) row2.push({ text: '🌐 Explore', url: resolvedWebsite });
-  if (row2.length) buttons.push(row2);
-
   if (resolvedAddBot) buttons.push([{ text: '➕ Add to Group', url: resolvedAddBot }]);
-
   return buttons;
 }
 
@@ -412,6 +400,10 @@ export function formatCard(result, {
   }
 
   // ===== NARRATIVE ========================================================
+  // VARIANT A (owner-selected final baseline) always shows the NARRATIVE section.
+  // An absent narrative is ONE line of honest copy, not an empty heading, so it
+  // does not reserve excessive space — and the section's presence is part of the
+  // approved structure, so it is not conditionally dropped.
   lines.push('');
   lines.push(sectionTitle(e('🧠'), 'NARRATIVE'));
   lines.push('');

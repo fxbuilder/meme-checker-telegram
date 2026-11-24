@@ -15,6 +15,8 @@ import { detectAll, parseChainHint, DEFAULT_EVM_CHAIN as DETECT_DEFAULT_EVM } fr
 import { checkCooldown } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
+import { deliverCard } from './delivery.mjs';
+import { resolveTokenImage } from './media.mjs';
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
 import {
   loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
@@ -93,23 +95,44 @@ async function runScan(ctx, chain, address, { view = CARD_VIEW } = {}) {
     view,
   });
 
-  const keyboard = buildKeyboard(buttons);
-
-  try {
-    if (loadingMsg) {
-      await ctx.telegram.editMessageText(
-        chatId, loadingMsg.message_id, undefined,
-        text,
-        { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard }
-      );
-    } else {
-      await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard });
+  // Resolve a VERIFIED project image before sending. Only a fetched, validated
+  // image is used, and only for a successful scan. A miss is a text card.
+  let imageUrl = null;
+  if (result?.status === 'ok') {
+    try {
+      const img = await resolveTokenImage(result);
+      imageUrl = img?.url ?? null;
+      if (img) console.log(`[bot] image: ${img.kind} ${img.bytes}B for ${chain}:${address.slice(0, 10)}…`);
+    } catch (err) {
+      console.warn('[bot] image resolution failed:', err?.message ?? err);
     }
-  } catch (err) {
-    // editMessageText can fail if the message was deleted; fall back to new reply
-    console.error('[bot] edit failed, sending fresh reply:', err?.message);
-    await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true, ...keyboard });
   }
+
+  // ONE delivery per scan: photo-with-caption, or text. Never both.
+  const sent = await deliverCard({
+    telegram: {
+      sendPhoto: (chat, url, opts) => ctx.telegram.sendPhoto(chat, url, opts),
+      sendMessage: (chat, body, opts) => ctx.telegram.sendMessage(chat, body, opts),
+    },
+    chatId,
+    text,
+    buttons,
+    imageUrl,
+    replyToMessageId: ctx.message?.message_id ?? null,
+  });
+
+  if (!sent.ok) {
+    console.error('[bot] delivery failed:', sent.detail);
+  }
+  if (sent.fellBack) {
+    console.warn(`[bot] card fell back to text: ${sent.fallbackReason}`);
+  }
+
+  // The "scanning" placeholder must not survive the result — however it was sent.
+  if (loadingMsg) {
+    await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+  }
+  return sent;
 }
 
 // ---- Commands --------------------------------------------------------------

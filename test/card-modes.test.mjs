@@ -297,26 +297,41 @@ test('normal data raises no inconsistency note', () => {
 
 // ---- Actions --------------------------------------------------------------
 
-test('STANDARD exposes chart and add-to-group, and omits dead destinations', () => {
+test('STANDARD carries exactly one button: Add to Group', () => {
+  // Owner decision, final baseline: Chart, Full Analysis, Premium and Explore
+  // were removed from the token card. One action remains.
   const { buttons } = formatCard(result(), { view: 'standard', botUsername: 'TestBot' });
   const flat = buttons.flat();
-  assert.ok(flat.some((b) => b.text.includes('Chart') && b.url.includes('dexscreener')));
-  assert.ok(flat.some((b) => b.text.includes('Add to Group')));
-  assert.ok(!flat.some((b) => b.text.includes('Analysis')), 'must not render an inactive analysis button');
+  assert.equal(flat.length, 1, `expected exactly one button, got ${flat.length}`);
+  assert.ok(flat[0].text.includes('Add to Group'));
+  assert.ok(flat[0].url.endsWith('?startgroup=true'));
 });
 
-test('Analysis button appears only when the token URL is real', () => {
+test('no Chart button exists in any mode', () => {
+  for (const view of ['standard', 'short', 'detailed']) {
+    const flat = formatCard(result(), { view, botUsername: 'TestBot' }).buttons.flat();
+    assert.ok(!flat.some((b) => b.text.includes('Chart')), `${view} rendered a Chart button`);
+  }
+});
+
+test('a real analysis URL still does not add a button', () => {
   const withUrl = result({ fullAnalysisUrl: 'https://app.memechecker.io/check/bsc/0xabc' });
-  const { buttons } = formatCard(withUrl, { view: 'standard' });
-  assert.ok(buttons.flat().some((b) => b.text.includes('Analysis')));
+  const flat = formatCard(withUrl, { view: 'standard', botUsername: 'TestBot' }).buttons.flat();
+  assert.equal(flat.length, 1);
+  assert.ok(!flat.some((b) => b.text.includes('Analysis')));
 });
 
-test('placeholder and credentialed URLs never become buttons in any mode', () => {
+test('no button ever carries a placeholder, credentialed or non-HTTPS URL', () => {
   for (const view of ['standard', 'short', 'detailed']) {
     for (const bad of ['https://meme-checker.example/x', 'https://u:p@real.io/x', 'http://insecure.io/x']) {
-      const { buttons } = formatCard(result({ fullAnalysisUrl: bad, chartUrl: bad }), { view });
-      assert.ok(!buttons.flat().some((b) => b.url === bad), `${view} used an unacceptable URL`);
-      assert.ok(!buttons.flat().some((b) => b.text.includes('Chart')), `${view} used a bad chart URL`);
+      const flat = formatCard(
+        result({ fullAnalysisUrl: bad, chartUrl: bad }),
+        { view, botUsername: 'TestBot', websiteBase: bad, premiumUrl: bad },
+      ).buttons.flat();
+      assert.ok(!flat.some((b) => b.url === bad), `${view} used an unacceptable URL`);
+      for (const b of flat) {
+        assert.ok(b.url.startsWith('https://'), `${view} produced a non-HTTPS button: ${b.url}`);
+      }
     }
   }
 });

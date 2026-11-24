@@ -66,6 +66,14 @@ async function dispatch(key, opts = {}) {
     getCustomEmojiStickers: async (ids) => ids.map(fakeStickers),
     getStickerSet: async () => ({ stickers: [{ emoji: '🚀', custom_emoji_id: '9999999999999999999' }] }),
     getMe: async () => ({ username: 'TestBot' }),
+    // Delivery layer surface. sendPhoto is stubbed to FAIL so the offline suite
+    // exercises the text path deterministically (no network in unit tests).
+    sendPhoto: async () => { const e = new Error('offline: photo disabled'); e.description = 'offline: photo disabled'; throw e; },
+    sendMessage: async (chat, text, opts) => {
+      out.push({ type: 'reply', text, opts });
+      return { message_id: 4242, text, entities: [], reply_markup: opts?.reply_markup };
+    },
+    deleteMessage: async () => out.push({ type: 'delete' }),
   };
   const ctx = {
     message: { text, entities },

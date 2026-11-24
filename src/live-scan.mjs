@@ -239,15 +239,25 @@ export function pairAge(createdAtMs, nowMs = Date.now()) {
  */
 function mediaLinks(pairs, primary) {
   let logo = null;
+  let header = null;
   let chart = null;
-  // Logo may appear on any matching pair, not only the deepest.
+  // Image fields may appear on any matching pair, not only the deepest. Both are
+  // read from the address-scoped payload, so they are bound to this exact
+  // contract, never to a ticker match.
   for (const p of pairs) {
-    const img = p?.info?.imageUrl;
-    if (!logo && isAcceptableUrl(img)) { logo = img; break; }
+    if (!header) {
+      const h = p?.info?.header;
+      if (isAcceptableUrl(h)) header = h;
+    }
+    if (!logo) {
+      const img = p?.info?.imageUrl;
+      if (isAcceptableUrl(img)) logo = img;
+    }
+    if (header && logo) break;
   }
   const pairUrl = primary?.url;
   if (isAcceptableUrl(pairUrl)) chart = pairUrl;
-  return { logo, chart };
+  return { logo, header, chart };
 }
 
 /**
@@ -306,6 +316,9 @@ export function normalizePairs(request, pairs, { nowMs = Date.now() } = {}) {
     mode: 'live',
     status: 'ok',
     token: { chain, address, name, symbol, logo: media.logo },
+    // Verified-image candidates for the Telegram card. `header` is a real banner
+    // asset, not the web-UI mockup screenshot.
+    media: { header: media.header, logo: media.logo },
     chartUrl: media.chart,
     market: {
       priceUsd: num(primary?.priceUsd),

@@ -5,7 +5,8 @@ Meme Checker trả kết quả quét token trên **15 chain** ngay trong Telegra
 Bot có **ba chế độ hiển thị**: `standard` (mặc định), `short` và `detailed`. Xem [docs/card-redesign.md](docs/card-redesign.md) và [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md).
 
 - **Bot staging** [@MemeCheckerStagingBot](https://t.me/MemeCheckerStagingBot)
-- **Nhánh làm việc** `mc/card-ui-v2` (chưa push)
+- **Nhánh làm việc** `mc/final-ui` (chưa push)
+- **BASELINE UI CHÍNH THỨC** [docs/final-ui-baseline.md](docs/final-ui-baseline.md) — đã khoá, không thiết kế lại
 - **Tài liệu UI và chain** [docs/card-ui-and-chains.md](docs/card-ui-and-chains.md)
 - **Checklist nghiệm thu** [docs/acceptance-checklist.md](docs/acceptance-checklist.md)
 

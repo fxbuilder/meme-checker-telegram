@@ -195,18 +195,18 @@ export function allQuickChecksEmpty(result) {
 const TONE_DOT = { good: '🟢', warn: '🟡', bad: '🔴', plain: '⚪', muted: '⚪' };
 
 /**
- * One aligned metric row: "Label: value".
- * A fixed label width aligns values down the card, which is what makes a dense
- * panel scannable instead of noisy. Values are escaped here.
+ * One metric row: "Label: value", single space after the colon.
+ *
+ * Space-padding to force a value column was tried and REMOVED: Telegram renders
+ * captions in a PROPORTIONAL font, so N spaces are not a fixed width. Measured
+ * in a 14.5px system font, the padded prefixes came out 58/81/96/78px for rows
+ * that were supposed to line up — the "alignment" made the block look ragged,
+ * not clean. Column alignment in Telegram is only achievable with <pre>, which
+ * cannot mix bold/link entities, so uniform single spacing is the honest choice.
+ * Values are escaped here.
  */
-export function metricRow(label, value, { pad = 0 } = {}) {
-  // Pad AFTER the colon so values start in one column:
-  //   Price:            $1.53
-  //   Market Cap:       $534.00M
-  // Padding before the colon ("Price     :") reads as a typo.
-  const l = String(label);
-  const gap = pad > 0 ? ' '.repeat(Math.max(1, pad - l.length + 1)) : ' ';
-  return `${esc(l)}:${gap}${esc(value)}`;
+export function metricRow(label, value) {
+  return `${esc(String(label))}: ${esc(value)}`;
 }
 
 export function sectionTitle(emoji, title) {
@@ -218,10 +218,9 @@ export function sectionTitle(emoji, title) {
  * the group so every value starts at the same column.
  */
 export function alignedRows(pairs) {
-  const pad = pairs.reduce((m, p) => Math.max(m, String(p.label).length), 0);
   return pairs.map((p) => {
     const prefix = p.icon ? `${p.icon} ` : '';
-    return prefix + metricRow(p.label, p.value, { pad });
+    return prefix + metricRow(p.label, p.value);
   });
 }
 
