@@ -12,7 +12,7 @@ import { classifyPost, normalisePost, dedupePosts } from '../src/research/x-sour
 const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 
 const post = (text, extra = {}) => normalisePost({
-  id: String(Math.random()), text, author: { userName: 'a' }, createdAt: '2026-01-01T00:00:00Z', ...extra,
+  id: String(Math.floor(Math.random() * 1e18)), text, author: { userName: 'a' }, createdAt: '2026-01-01T00:00:00Z', ...extra,
 }, { chain: 'solana', address: BONK, symbol: 'BONK' });
 
 // ---- regressions measured on live data ----------------------------------

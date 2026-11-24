@@ -85,18 +85,32 @@ export function isBoilerplate(text) {
   return BOILERPLATE.some((re) => re.test(text));
 }
 
-/** Recognise a launchpad from the pair/dex identity the scan already returned. */
+/**
+ * Recognise the marketplace a token TRADES ON, from the pair identity the scan
+ * already returned.
+ *
+ * WHAT THIS DOES NOT PROVE: that the token LAUNCHED there. A token bought on
+ * pump.fun and migrated to a Raydium pool reports `dexId: raydium`, so saying
+ * "Launched on Raydium" would be a fabricated launch history from a string match.
+ * The verified statement is "currently trading on X"; anything stronger is an
+ * inference and is labelled as one.
+ */
 export function detectLaunchpad(result) {
-  const hay = [
-    result?.market?.dexId,
-    result?.market?.pairAddress,
-    result?.chartUrl,
-    result?.project?.website,
-    result?.name,
-    result?.token?.name,
-  ].filter(Boolean).join(' ');
+  const dexId = String(result?.market?.dexId ?? '').trim();
+  // Only the DEX id is strong enough to name a marketplace. A website domain or a
+  // token NAME containing "pancake" proves nothing at all.
+  const hay = [dexId, result?.market?.pairAddress, result?.chartUrl].filter(Boolean).join(' ');
   for (const l of LAUNCHPAD_HINTS) {
-    if (l.match.test(hay)) return { id: l.id, label: l.label, evidence: 'detected from pair or link identity' };
+    if (l.match.test(hay)) {
+      return {
+        id: l.id,
+        label: l.label,
+        // Provenance is deliberate: observed venue, not launch origin.
+        evidence: `observed from the current ${dexId || 'pair'} pair`,
+        claimClass: 'verified',
+        statement: `Currently trading on ${l.label}`,
+      };
+    }
   }
   return null;
 }
@@ -160,8 +174,10 @@ export function composeNarrative({ result, profile = null, websiteText = null } 
   }
   if (launchpad) {
     claims.push({
-      class: 'verified',
-      text: `Launched on ${launchpad.label}`,
+      // "Currently trading on" is directly observed from the pair. Launch ORIGIN is
+      // not, so it is never asserted.
+      class: launchpad.claimClass ?? 'verified',
+      text: launchpad.statement ?? `Currently trading on ${launchpad.label}`,
       source: launchpad.evidence,
     });
   }

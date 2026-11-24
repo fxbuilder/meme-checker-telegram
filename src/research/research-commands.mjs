@@ -137,8 +137,19 @@ export function renderNarrative({ target, research, chainName }) {
   L.push('<b>Summary</b>');
   L.push(esc(n.summary));
   L.push('');
-  // The label is not decoration: this is the project describing itself.
-  L.push(`<i>Project's own description — unverified claim. Source: ${esc(n.summarySource)}</i>`);
+  // THE LABEL MUST MATCH THE ACTUAL SOURCE. This used to hardcode "Project's own
+  // description", but the pipeline can select a market provider's blurb instead - so
+  // third-party text was presented as the project describing itself. Each evidence
+  // class now gets its own wording.
+  const PROVENANCE = {
+    'project-claim': "Project's own description — unverified claim",
+    reported: 'Third-party market description — reported, not verified',
+    verified: 'Verified from on-chain data',
+    inference: 'Inferred — not directly stated by any source',
+    unknown: 'Source unclear — treat as unverified',
+  };
+  const provenance = PROVENANCE[n.summaryClass] ?? 'Unverified description';
+  L.push(`<i>${esc(provenance)}. Source: ${esc(n.summarySource)}</i>`);
 
   if (n.claims?.length) {
     L.push('');

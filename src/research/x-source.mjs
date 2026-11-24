@@ -151,7 +151,13 @@ function pick(obj, names) {
  */
 export function normalisePost(raw, { chain, address, symbol } = {}) {
   if (!raw || typeof raw !== 'object') return null;
-  const id = raw.id_str ?? raw.id ?? raw.tweet_id;
+  const rawId = raw.id_str ?? raw.id ?? raw.tweet_id;
+  // X status ids are numeric. Accepting any truthy value let a malformed payload
+  // become https://x.com/alice/status/abc - a link that looks real but cannot exist.
+  const id = (typeof rawId === 'string' || typeof rawId === 'number')
+    && /^\d{1,25}$/.test(String(rawId).trim())
+    ? String(rawId).trim()
+    : null;
   const rawText = raw.full_text ?? raw.text ?? raw.content;
   // No text means no post identity we can report. Dropped, not filled with ''.
   if (typeof rawText !== 'string' || rawText.trim() === '') return null;
@@ -318,7 +324,9 @@ export async function searchTokenPosts({ chain, address, symbol, order = 'popula
  * UI never implies a verified post means a verified narrative.
  */
 export async function verifyPostUrl(url, { expectHandle = null, fetchImpl = globalThis.fetch, timeoutMs = 8_000 } = {}) {
-  if (typeof url !== 'string' || !/^https:\/\/(twitter|x)\.com\/[A-Za-z0-9_]+\/status\/\d+/.test(url)) {
+  // End-anchored. An unanchored pattern accepted /status/123.evil, so a crafted URL
+  // could reach oEmbed verification while pointing outside the intended post shape.
+  if (typeof url !== 'string' || !/^https:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_]{1,15}\/status\/\d{1,25}(?:[?#].*)?$/.test(url)) {
     return { verified: false, reason: 'not-a-post-url' };
   }
   const endpoint = `${OEMBED_ENDPOINT}?url=${encodeURIComponent(url)}`;

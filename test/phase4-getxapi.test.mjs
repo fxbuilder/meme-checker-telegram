@@ -146,7 +146,7 @@ test('Sorsa-style fields still map through the same normaliser', () => {
 
 test('raw X v2 includes.users fields map to the author and public metrics', () => {
   const p = normalisePost({
-    id: 'v2-1', text: `buy ${CA}`, created_at: '2026-03-01T00:00:00Z', author_id: 'u-1',
+    id: '1880000000000000001', text: `buy ${CA}`, created_at: '2026-03-01T00:00:00Z', author_id: 'u-1',
     includes: { users: [{ id: 'u-1', username: 'v2_user', name: 'V2 User', public_metrics: { followers_count: 99 }, verified: true }] },
     public_metrics: { like_count: 4, retweet_count: 3, reply_count: 2, quote_count: 1, impression_count: 88, bookmark_count: 5 },
   }, { chain: 'ethereum', address: CA, symbol: 'P' });
@@ -242,7 +242,10 @@ test('a token with no CoinGecko listing but a website still gets a narrative', (
   assert.equal(composed.summaryClass, 'project-claim');
   assert.equal(composed.summarySource, 'Official website');
   assert.equal(composed.launchpad?.label, 'pump.fun');
-  assert.ok(composed.claims.some((c) => c.class === 'verified' && /Launched on pump\.fun/.test(c.text)));
+  assert.ok(composed.claims.some((c) => c.class === 'verified' && /Currently trading on pump\.fun/.test(c.text)),
+    'the verified claim is the OBSERVED venue, not a launch history');
+  assert.ok(!composed.claims.some((c) => /Launched on/.test(c.text)),
+    'launch origin must never be asserted from a current pair');
 });
 
 test('CoinGecko is preferred over a website when both exist', () => {
