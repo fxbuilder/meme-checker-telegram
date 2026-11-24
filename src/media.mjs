@@ -57,6 +57,18 @@ function isBlockedHostname(hostname) {
   return false;
 }
 
+/**
+ * True when a URL is safe for this bot to fetch at all.
+ *
+ * Exported because Phase 4 fetches website PROSE with the same requirements as
+ * images: HTTPS only, no private/loopback/link-local/metadata hosts, no odd ports.
+ * A second copy of this logic would drift, and an SSRF hole is the kind of drift
+ * that matters.
+ */
+export function isSafeExternalUrl(url) {
+  return isSafeImageUrl(url);
+}
+
 /** True when a URL is safe to fetch as an image source. */
 export function isSafeImageUrl(url) {
   if (!isAcceptableUrl(url)) return false;

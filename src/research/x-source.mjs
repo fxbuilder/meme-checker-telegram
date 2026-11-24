@@ -24,18 +24,36 @@
  * ticker across chains. `containsContract` records the only strong signal.
  */
 
+import { getxapiConfigured, searchWithGetXApi } from './getxapi.mjs';
+
 const SORSA_ENDPOINT = 'https://api.sorsa.io/v3/search-tweets';
 const OEMBED_ENDPOINT = 'https://publish.twitter.com/oembed';
 const TIMEOUT_MS = 15_000;
 
-/** The only X provider the owner's existing research validated. */
+/**
+ * Which backend answers. GetXAPI is primary because it is the integration recovered
+ * from the existing research project with a verified wire contract; Sorsa stays
+ * available because its adapter was also built and its pagination differs.
+ *
+ * X_PROVIDER names the preferred backend explicitly. Silent precedence would make
+ * cost and provenance depend on which env var happened to be set.
+ */
 export function sorsaKey() {
   const k = process.env.SORSA_API_KEY;
   return typeof k === 'string' && k.trim().length > 0 ? k.trim() : null;
 }
 
+export function preferredProvider(env = process.env) {
+  const named = String(env.X_PROVIDER ?? '').trim().toLowerCase();
+  if (named === 'getxapi' || named === 'sorsa') return named;
+  // No explicit preference: use whichever credential exists, GetXAPI first.
+  if (getxapiConfigured(env)) return 'getxapi';
+  if (sorsaKey()) return 'sorsa';
+  return null;
+}
+
 export function xDiscoveryConfigured() {
-  return sorsaKey() !== null;
+  return preferredProvider() !== null;
 }
 
 /**
@@ -47,11 +65,13 @@ export function xDiscoveryStatus() {
     return {
       available: false,
       reason: 'not-configured',
+      // Name the exact variable so the owner knows what to set.
       detail: 'No X search credential is configured, so public post discovery is unavailable. '
-        + 'Individual post links can still be verified.',
+        + 'Set GETXAPI_KEY (or SORSA_API_KEY) to enable it. Individual post links can still be verified.',
+      requiredEnv: 'GETXAPI_KEY',
     };
   }
-  return { available: true, reason: 'configured' };
+  return { available: true, reason: 'configured', provider: preferredProvider() };
 }
 
 // ---- normalisation --------------------------------------------------------
@@ -75,10 +95,39 @@ export function containsTicker(text, symbol) {
 
 const METRIC_KEYS = ['likes', 'reposts', 'replies', 'quotes', 'views', 'bookmarks'];
 
+/**
+ * Field-name aliases per provider, recovered from the existing project's adapter
+ * (src/lib/getxapi.ts) rather than guessed:
+ *   GetXAPI  : likeCount / retweetCount / replyCount / quoteCount / viewCount /
+ *              bookmarkCount, author.userName, author.name, author.followers,
+ *              author.isVerified | author.isBlueVerified, isReply, isQuote,
+ *              quotedTweetId, createdAt, text
+ *   Sorsa    : likes / retweets / replies / quotes / views / bookmarks,
+ *              user.screen_name, created_at, full_text
+ *   Raw X v2 : public_metrics.{like_count,...}
+ */
+const METRIC_ALIASES = {
+  likes: ['likes', 'likeCount', 'like_count', 'favorite_count'],
+  reposts: ['reposts', 'retweets', 'retweetCount', 'retweet_count'],
+  replies: ['replies', 'replyCount', 'reply_count'],
+  quotes: ['quotes', 'quoteCount', 'quote_count'],
+  views: ['views', 'viewCount', 'view_count', 'impression_count'],
+  bookmarks: ['bookmarks', 'bookmarkCount', 'bookmark_count'],
+};
+
 /** A missing metric is null, never 0. Zero engagement and unknown differ. */
 function asNumber(v) {
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/** First present alias wins. */
+function pick(obj, names) {
+  for (const n of names) {
+    if (obj?.[n] !== undefined && obj?.[n] !== null) return obj[n];
+  }
+  return undefined;
 }
 
 /**
@@ -88,28 +137,58 @@ function asNumber(v) {
 export function normalisePost(raw, { chain, address, symbol } = {}) {
   if (!raw || typeof raw !== 'object') return null;
   const id = raw.id_str ?? raw.id ?? raw.tweet_id;
-  const text = raw.full_text ?? raw.text ?? raw.content;
+  const rawText = raw.full_text ?? raw.text ?? raw.content;
+  // No text means no post identity we can report. Dropped, not filled with ''.
+  if (typeof rawText !== 'string' || rawText.trim() === '') return null;
+  const text = rawText;
   if (!id || typeof text !== 'string') return null;
 
-  const author = raw.user?.screen_name ?? raw.author?.username ?? raw.authorHandle ?? null;
+  // Author identity: GetXAPI uses author.userName, Sorsa user.screen_name, raw X v2
+  // uses author.username. Stable handle only - a display name is not identity.
+  const author = raw.author?.userName
+    ?? raw.user?.screen_name
+    ?? raw.author?.username
+    ?? raw.author?.handle
+    ?? raw.authorHandle
+    ?? null;
+  const authorName = raw.author?.name ?? raw.user?.name ?? null;
+  const authorFollowers = asNumber(raw.author?.followers ?? raw.user?.followers_count);
+  // A provider reporting neither verification flag has verified nothing, so this
+  // stays null rather than guessing false.
+  const verifiedFlags = [raw.author?.isVerified, raw.author?.isBlueVerified, raw.user?.verified];
+  const authorVerified = verifiedFlags.some((f) => f === true) ? true
+    : verifiedFlags.every((f) => f === undefined || f === null) ? null : false;
+
   const createdAtRaw = raw.created_at ?? raw.createdAt ?? null;
   const createdAt = createdAtRaw ? new Date(createdAtRaw) : null;
 
   const metrics = {};
   for (const k of METRIC_KEYS) {
-    metrics[k] = asNumber(raw[k] ?? raw.public_metrics?.[k] ?? raw.metrics?.[k]);
+    metrics[k] = asNumber(
+      pick(raw, METRIC_ALIASES[k])
+      ?? raw.public_metrics?.[k]
+      ?? raw.metrics?.[k],
+    );
   }
 
   return {
     id: String(id),
-    // Built from id + author only. We never emit a URL we did not derive this way.
-    url: author ? `https://x.com/${author}/status/${id}` : null,
+    // Prefer a provider-supplied post URL when it is a real post link; otherwise
+    // derive it from author + id. We never emit a URL we cannot ground.
+    url: (typeof raw.url === 'string' && /^https?:\/\/(www\.)?(twitter|x)\.com\/[^/]+\/status\/\d+/.test(raw.url))
+      ? raw.url
+      : (author ? `https://x.com/${String(author).replace(/^@/, '')}/status/${id}` : null),
     authorHandle: typeof author === 'string' ? author.replace(/^@/, '') : null,
+    authorName: typeof authorName === 'string' && authorName.trim() ? authorName.trim() : null,
+    authorFollowers,
+    authorVerified,
     text,
     createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toISOString() : null,
     metrics,
-    isReply: Boolean(raw.is_reply ?? raw.in_reply_to_status_id_str),
-    isQuote: Boolean(raw.is_quote_status ?? raw.quoted_status_id_str),
+    isReply: raw.isReply === true || Boolean(raw.is_reply ?? raw.in_reply_to_status_id_str),
+    isQuote: raw.isQuote === true
+      || Boolean(raw.is_quote_status ?? raw.quoted_status_id_str)
+      || (typeof raw.quotedTweetId === 'string' && raw.quotedTweetId.length > 0),
     containsContract: containsContract(text, address, chain),
     containsTicker: containsTicker(text, symbol),
     // How strongly this post can be tied to the token. Only 'contract' is strong.
@@ -149,9 +228,32 @@ export function dedupePosts(posts) {
  * @returns {Promise<{status:string, posts?:Array, requests?:number}>}
  */
 export async function searchTokenPosts({ chain, address, symbol, order = 'popular', fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
-  const key = sorsaKey();
-  if (!key) return { status: 'not-configured', posts: [], requests: 0 };
+  if (!xDiscoveryConfigured()) return { status: 'not-configured', posts: [], requests: 0 };
   if (typeof fetchImpl !== 'function') return { status: 'provider-error', posts: [], requests: 0 };
+
+  const provider = preferredProvider();
+
+  // ---- GetXAPI (recovered integration, primary) --------------------------
+  if (provider === 'getxapi') {
+    // `-filter:retweets` keeps the page focused on original posts; the provider
+    // accepts standard X search operators.
+    const res = await searchWithGetXApi({
+      query: `${address} -filter:retweets`,
+      product: order === 'latest' ? 'Latest' : 'Top',
+      fetchImpl,
+      timeoutMs,
+    });
+    if (res.status !== 'ok') {
+      return { status: res.status, posts: [], requests: res.requests ?? 0, detail: res.detail, provider };
+    }
+    const posts = dedupePosts((res.tweets ?? [])
+      .map((r) => normalisePost(r, { chain, address, symbol }))
+      .filter(Boolean));
+    return { status: 'ok', posts, requests: res.requests ?? 1, provider, nextCursor: res.nextCursor ?? null };
+  }
+
+  // ---- Sorsa (fallback, kept because its adapter is already built) -------
+  const key = sorsaKey();
 
   // Contract first. A ticker query alone is never used as the primary search.
   const query = `${address} -filter:retweets`;

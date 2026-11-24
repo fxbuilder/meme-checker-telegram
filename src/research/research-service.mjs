@@ -14,6 +14,8 @@
 
 import { getChain } from '../chains.mjs';
 import { fetchContractProfile, buildNarrative } from './narrative-source.mjs';
+import { composeNarrative, htmlToText, isBoilerplate } from './narrative-pipeline.mjs';
+import { fetchWebsiteText } from './website-fetch.mjs';
 import {
   searchTokenPosts, summariseKols, xDiscoveryStatus, coverageNote,
 } from './x-source.mjs';
@@ -39,6 +41,14 @@ export async function researchToken({
   cache = researchCache,
   budget = xBudget,
   now = Date.now(),
+  /**
+   * The market scan result, when the caller already has one. Passing it lets the
+   * narrative pipeline use evidence that has ALREADY been fetched (project links,
+   * provider blurb, pair identity) instead of repeating those requests.
+   */
+  scanResult = null,
+  /** Disable the website fetch (used by cheap card enrichment and by tests). */
+  includeWebsite = true,
 } = {}) {
   const out = {
     narrative: { available: false, reason: 'not-attempted' },
@@ -54,17 +64,73 @@ export async function researchToken({
   const prof = await cache.cached(profKey, TTL_MS.description, () => fetchContractProfile(chain, address, { fetchImpl }));
   out.fromCache = cache.stats().misses === before.misses;
 
-  if (prof?.status === 'ok') {
-    out.narrative = buildNarrative({
-      chain, address, profile: prof.data, chainName: getChain(chain)?.name,
-    });
-    out.requests += out.fromCache ? 0 : 1;
-  } else {
+  if (!out.fromCache) out.requests += 1;
+
+  // A chain with no CoinGecko slug AND no website to read has no prose source at
+  // all. Say that plainly instead of the generic "no description" state, because the
+  // two mean different things: one is a coverage gap, the other is an empty project.
+  const hasWebsiteFromScan = Boolean(scanResult?.project?.website);
+  if (prof?.status === 'unsupported-chain' && !hasWebsiteFromScan) {
     out.narrative = {
       available: false,
-      reason: prof?.status ?? 'provider-error',
-      detail: prof?.detail ?? null,
+      reason: 'unsupported-chain',
+      detail: prof.detail ?? null,
+      claimable: false,
     };
+    return out;
+  }
+
+  // ---- website prose (only when the scan did not already supply a description) --
+  // A CoinGecko description is the highest-value source, so a successful one skips
+  // the website fetch entirely. For a fresh memecoin with no listing, the website is
+  // usually the only prose that exists, so it is worth one bounded request.
+  let websiteText = null;
+  const websiteUrl = scanResult?.project?.website
+    ?? (prof?.status === 'ok' ? prof.data?.homepage : null)
+    ?? null;
+
+  const needsWebsite = includeWebsite
+    && websiteUrl
+    && !(prof?.status === 'ok' && (prof.data?.description ?? '').trim().length >= 80);
+
+  if (needsWebsite) {
+    const wKey = cacheKey('site-text', chain, websiteUrl);
+    const siteRes = await cache.cached(
+      wKey,
+      TTL_MS.description,
+      () => fetchWebsiteText(websiteUrl, { fetchImpl }),
+      { ttlOnFailure: TTL_MS.failure },
+    );
+    if (siteRes?.status === 'ok') {
+      const text = htmlToText(siteRes.text);
+      if (!isBoilerplate(text)) websiteText = text;
+      if (!out.fromCache) out.requests += 1;
+    }
+  }
+
+  // ---- compose from every source that actually produced something ----------
+  const composed = composeNarrative({
+    result: scanResult
+      ? { token: { chain, address, symbol, name }, ...scanResult }
+      : { token: { chain, address, symbol, name } },
+    profile: prof?.status === 'ok' ? prof.data : null,
+    websiteText,
+  });
+
+  out.narrative = {
+    ...composed,
+    chain,
+    address,
+    chainName: getChain(chain)?.name ?? chain,
+    // Provider status is kept separately so the UI can distinguish "no description
+    // was published" from "the provider failed".
+    providerStatus: prof?.status ?? 'provider-error',
+    providerDetail: prof?.detail ?? null,
+  };
+
+  // Keep the CoinGecko-declared links available for the X section's project handle.
+  if (!out.narrative.links && prof?.status === 'ok') {
+    out.narrative.links = { twitter: prof.data?.twitter, homepage: prof.data?.homepage };
   }
 
   // ---- X discovery (credentialed; honestly unavailable without a key) -----
@@ -100,7 +166,9 @@ export async function researchToken({
   );
 
   const posts = postsRes?.posts ?? [];
-  const projectHandle = out.narrative?.links?.twitter ?? null;
+  const projectHandle = out.narrative?.links?.twitter
+    ?? (prof?.status === 'ok' ? prof.data?.twitter : null)
+    ?? null;
   const kols = summariseKols(posts, { projectHandle });
   const uniqueAccounts = new Set(posts.map((p) => p.authorHandle).filter(Boolean)).size;
 
