@@ -275,6 +275,70 @@ simply do not have a V2 pair above the $10k depth floor. So the answer is honest
 
 Neither is done, and I am not claiming the target is met.
 
+## 7d. Three LP defects found by chasing an inconsistency
+
+Comparing measurement output across chains exposed three defects that no single-chain test
+would have shown. Base tokens labelled `v4` correctly said *"V2 maths does not apply"* while
+Elysium tokens — for which DexScreener sends **no labels at all** — showed a bare dash. Same
+physical situation, two different answers.
+
+### Defect 1: the LP read never ran on chains without GoPlus
+
+`fetchRisk` returned early through `fetchFallbackRisk()` for any chain with no GoPlus entry,
+and the LP block sat **below** that early return. So Elysium, HyperEVM and MegaETH never
+attempted an LP read — not because it was impossible, but because of where a block of code
+happened to sit.
+
+The block is now a shared `withLpIntel()` helper called from **both** paths, and it runs on
+every provider outcome, including a provider error: *"the security provider is down" says
+nothing about whether liquidity can be pulled.*
+
+### Defect 2: a revert and a network hiccup were the same value
+
+`rpcCall` collapsed revert, no-code, timeout and 5xx into a single `null`. That meant "this
+pool is a V3/V4 position" and "the RPC hiccuped" were indistinguishable — the same
+false-assurance trap as reporting burned liquidity from a dust balance, just pointed the
+other way.
+
+It now returns `{ value }` or `{ why }`, and only `revert` / `no-code` count as evidence of a
+position-based pool:
+
+| Signal | Meaning | Result |
+| --- | --- | --- |
+| `revert` | the contract refused `totalSupply()` | **position-based pool** — a V2 pair always implements it |
+| `no-code` | nothing deployed at the address | pool type determined |
+| `transport` | timeout, 5xx, DNS | **unknown** — "not a finding about the pool" |
+
+Verified live: Elysium's pool → `unsupported-position-type`; a deliberately dead RPC →
+`unknown`, with the detail stating it is not a finding about the pool.
+
+### Defect 3: the ambiguous dash the owner flagged
+
+`classifyLiquidity({ positionType: 'v3-v4' })` returned `unknown`, so a pool we had
+**positively identified** rendered a bare `—` — identical to a field never checked. It now
+returns kind `position-pool`, state determined, **severity `unknown`** so it can never
+display a green reassurance, and the card reads `LP: V3/V4`.
+
+Previously the label path and the revert path each had their own sentence; both now call one
+`UNSUPPORTED_DETAIL()`.
+
+### All five LP states, live
+
+| Token | Card reads | Tone |
+| --- | --- | --- |
+| pre-graduation pump.fun | `LP: Bonding curve` | medium |
+| BONK | `LP Burned: 100%` | none (real burn, 1,287 pools) |
+| CAKE | `LP: Unlocked` | high (read its $755k V2 pair) |
+| Elysium pool | `LP: V3/V4` | muted |
+| BRETT | `LP: V3/V4` | muted |
+
+### Effect on the coverage number
+
+This does **not** raise the determined-rate above the measured 9%. It converts silent
+dashes into honest statements of pool type, and it stops three chains from skipping the read
+entirely. The determined-rate can only rise with V3/V4 position-manager reads (§7c), which
+are not implemented.
+
 ## 8. Latency and cost
 
 - **No paid API was added.** Everything above is free and keyless.
