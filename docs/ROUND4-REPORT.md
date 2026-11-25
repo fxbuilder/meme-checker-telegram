@@ -139,7 +139,7 @@ All three previously failed at least one of these.
 | **HyperEVM + Elysium have no holder/concentration/tax data** | GoPlus `/supported_chains` (46 chains) excludes both; GeckoTerminal returns `holders: null` | A paid holder indexer. None free verified |
 | **GoPlus returns at most 10 holder rows**, often including the burn address | Live response shows `holders` length exactly 10 with `0x…dEaD` at slot 1 | No free alternative found |
 | **Robinhood tax** | GoPlus reports none for Pons tokens | Needs a sell simulation (see below) |
-| **LP lock on V3/V4 pools** | `totalSupply()` reverts on V3; V4 has no fungible LP token | Position-manager NFT read; research subagent did not report back |
+| **LP lock on V3/V4 pools** | `totalSupply()` reverts on V3; V4 has no fungible LP token | Position-manager NFT read (`positions(tokenId)`); needs tokenId discovery, not done |
 | **Verified locker detection** | No locker deployment verified live on any priority chain | Would need per-locker ABI reads; not attempted without a verified address |
 
 **Deliberately not done:** no read-only buy/sell simulation was implemented. Doing it
@@ -148,6 +148,70 @@ public RPCs for Robinhood/HyperEVM/Elysium support state overrides. Shipping an 
 simulation would risk reporting a fabricated tax figure, which is worse than `—`.
 
 ---
+
+## 7b. LP research findings, verified and integrated
+
+The LP/locker research returned after the first report. I re-verified every claim myself
+before shipping any of it, and it exposed **a correctness bug in existing code**.
+
+### The bug: pre-graduation tokens were reported as "LP burned 100%"
+
+`lpMint === 1111…1111` was treated as "the LP mint was destroyed, therefore the liquidity
+is burned". Verified live against a pre-graduation pump.fun token
+(`BoSrCHeCk…pump`, `launchpad.platform = 'pump_fun'`, `marketType = 'pump_fun'`):
+
+```
+marketType: pump_fun
+mintLP == system program: true
+lp.lpLockedPct: 100, lp.lpLocked: 8570797, lp.lpUnlocked: 0
+```
+
+The **same sentinel**, on a token still on its bonding curve — liquidity that does not
+exist as a pool at all. So the scanner showed a confident, green "burned 100%" for a token
+with no pool. Bonding-curve market types are now their own state and are never counted as
+burned or locked pool liquidity. BONK still correctly reports burned (99.99%, 1,287 pools).
+
+### Second false-assurance: dust at a locker
+
+Any balance `> 0` at a locker address returned `state: 'locked'`. Verified live on a BSC
+pair where PinkLock held a negligible fraction — the pool reported **LOCKED with
+`lockedPercentage: 0`**. A meaningful lock now requires ≥1% of LP supply.
+
+### Verified locker allowlist (finally populated)
+
+Every address below was code-checked by me on that exact chain with `eth_getCode`:
+
+| Chain | Locker | Address | Code |
+| --- | --- | --- | --- |
+| ethereum | UNCX | `0x147aeca171a79466fe9e2c03f21b45155ff403f8` | 20,985 B |
+| ethereum | PinkLock | `0x71B5759d73262FBb223956913ecF4ecC51057641` | 20,622 B |
+| bsc | UNCX | `0xd8c5BB7137021D93e70B7814C697BED303573b21` | 20,389 B |
+| bsc | UNCX V4 | `0xA55d5Ce984E9e933732cDF51095AF8F3fb374ac8` | 20,985 B |
+| bsc | PinkLock | `0x407993575c91ce7643a4d4ccacc9a98c36ee1bbe` | 20,622 B |
+| robinhood | UNCX | `0x128A800cBc615cc110Bff16E475865c67631603A` | 20,985 B |
+
+**Team.Finance was rejected:** the same address has different bytecode on ETH (4,482 bytes)
+and BSC (13,860 bytes). Same address ≠ same contract, so a cross-chain assumption would be
+unsafe.
+
+### Pons launch phase
+
+`getLaunchedToken()` on the documented factory `0x7eD598Bc…` returns the launch record.
+Word **10** is the phase (2 = pool-created = graduated); verified live on TEXEL. An earlier
+reading of word 12 hit a zero word. Words 7 and 8 (200 = poolFee, 185 = tickSpacing)
+confirm alignment.
+
+The token address must **echo back at word 0**, because a factory that does not know the
+token returns **fifteen zero words rather than reverting** — which decodes as phase 0 and
+would report a graduated token as pre-graduation. PONS correctly returns `no-factory`
+(it came from a different factory generation).
+
+### Still NOT proven: Pons "permanently locked liquidity"
+
+Pons docs state liquidity is "one full-range position minted at graduation straight into the
+locker, which has no way to release it". The phase is confirmed live, but **the locker
+address and position tokenId were not located on-chain**. That claim therefore remains
+documented-only, and the scanner does not assert it.
 
 ## 8. Latency and cost
 
