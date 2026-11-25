@@ -158,32 +158,77 @@ five same-ticker candidates.
 
 ## Measured coverage
 
-Baseline and after, same 35 addresses:
+Baseline vs after, **same 35 pinned addresses**, both runs on this branch. The "after" run is
+the one with the corrected narrative harness.
 
-| Field | Baseline | After | Note |
+| Field | Baseline | After | Δ |
 | --- | --- | --- | --- |
-| holders | 77% | **91%** | Elysium 0% → 100% |
-| top10 | 74% | **83%** | Elysium 0% → 100% |
-| tax | 69% | 63%* | *provider flakiness, verified by re-run |
-| lp | 40% | 37%* | *no regression — see below |
-| dev | 60% | 60% | unchanged |
-| narrative | 0% (harness artifact) | see corrected run | first harness never called `researchToken` |
-| consistency | 100% | 100% | |
+| narrative | **0%** (harness artifact) | **57%** (20/35 measured) | +57 |
+| holders | 77% | **91%** | +14 |
+| top10 | 74% | **83%** | +9 |
+| tax | 69% | **74%** | +5 |
+| lp | 40% | 40% | 0 |
+| dev | 60% | **74%** | +14 |
+| dexPaid | 0% | 0% | 0 |
+| consistency | 100% | **100%** | — |
+
+### By chain (after)
+
+| Chain | n | nar | holders | top10 | tax | lp | dev |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| solana | 5 | 20% | 100% | 100% | 100% | 100% | 100% |
+| bsc | 6 | 50% | 100% | 100% | 83% | 83% | 100% |
+| robinhood | 6 | **83%** | 100% | 100% | 100% | 17% | 100% |
+| base | 5 | 40% | 100% | 100% | 100% | 20% | 80% |
+| ethereum | 5 | 20% | 100% | **40%** | 100% | 20% | 100% |
+| elysium | 5 | **100%** | **100%** | **100%** | 0% | 0% | 0% |
+| hyperevm | 3 | **100%** | 0% | 0% | 0% | 33% | 0% |
+
+Elysium went **0% → 100%** on holders, top10 AND narrative. HyperEVM narrative is 100% while
+holders remain 0% — the narrative pipeline reaches it, the holder source does not exist.
+
+### Targets: where they stand
+
+| Target | Measured | Status |
+| --- | --- | --- |
+| Narrative ≥95% where evidence exists | 57% | **not met** |
+| Holders ≥90% | 91% | **met** |
+| Top 10 ≥90% | 83% | **not met** |
+| Applicable tax ≥90% | 74% | **not met** |
+| Determined LP ≥90% | 40% | **not met** |
+| Risk consistency 100% | 100% | **met** |
+| No false-safe indicators | 100% | **met** |
+
+### Why the misses are misses
+
+**Narrative 57%**: 20 measured, 15 `unavailable` — the provider published no description.
+Ethereum is 20% and Solana 20%: those samples include large, well-known tokens whose providers
+carry no `description` field at all (DexScreener pairs have none by design; GeckoTerminal serves
+one only where the project filled it). The gap is source coverage, not extraction.
+
+**Top 10 83%**: ethereum is 40%. GoPlus omits `holders[]` for some established tokens, and a
+concentration figure cannot be computed from absence. Three tokens classify `partial` because
+fewer than 10 holders exist — that is a correct classification, not a miss.
+
+**Tax 74%**: 5 tokens are `not-applicable` (legacy SPL has no buy/sell tax — a real finding),
+11 `unavailable`. Elysium and HyperEVM are 0% because neither has a provider tax source and the
+simulation needs a verified holder (which Elysium's RPC cannot enumerate).
+
+**LP 40%**: unchanged, and correctly so. 14 measured, 21 `unknown`. Every `unknown` is a V3/V4
+pool with no discoverable position: V4's PositionManager is not enumerable by owner, and a pool
+does not list its positions, so discovery needs a graduation/mint/locker event. This is the
+honest ceiling without a paid position indexer.
 
 ### Two apparent regressions investigated, neither a regression
 
-**LP 40% → 37%** was one token: base PEPE `0x52b492a3…` flipping `measured` → `unknown`. Probed
-directly: it has **2 pairs, 0 of them V2**, so `v3` is the correct answer and the baseline had
-caught a transient. The V2 fallback's $10k floor correctly excluded nothing — there was nothing
-to exclude.
+**LP** held at 40% across both corrected runs. An earlier run showed 37% from ONE token — base
+PEPE `0x52b492a3…` flipping `measured` → `unknown`. Probed directly: it has **2 pairs, 0 of them
+V2**, so `v3` is the correct answer and the baseline had caught a transient.
 
-**Tax 69% → 63%** was four tokens flipping both ways. Re-ran each twice: MEME and AI both return
-`{"buy":0,"sell":0}` again, so those are provider throttling. Ethereum TRUMP and MEME *gained*
-tax. Net negative on this run is noise, not code.
-
-Both are why the harness now stores `scanStatus`/`riskStatus` per row — a field that flips
-between runs is a throttle, and that should be readable from stored data rather than requiring
-a re-run to establish.
+**Tax** moved 69% → 74%. Within that, four tokens flipped in both directions. Re-ran each twice:
+MEME and AI return `{"buy":0,"sell":0}` again, so those were provider throttling; ethereum TRUMP
+and MEME gained tax. The harness now stores `scanStatus`/`riskStatus` per row so a flipping field
+can be recognised as a throttle from stored data rather than requiring a re-run.
 
 ## Costs
 
