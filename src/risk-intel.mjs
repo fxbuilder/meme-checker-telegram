@@ -639,6 +639,9 @@ async function withLpIntel(result, { chain, chainId, address, pair, fetchImpl, t
       pairAddress: target.pairAddress,
       rpc: chain.rpc,
       labels: target.labels ?? null,
+      // The TOKEN (not just the pair) is what a position source keys on: Robinhood's Pons
+      // names the graduation position by token, so it must reach this call.
+      token: address,
       fetchImpl,
       timeoutMs,
     });
@@ -656,7 +659,17 @@ async function withLpIntel(result, { chain, chainId, address, pair, fetchImpl, t
         status: result.status === 'ok' ? 'ok' : result.status,
         data: {
           ...baseData,
-          lpLock: { ...(baseData?.lpLock ?? {}), positionType: 'v3-v4', positionTypeDetail: reading.detail },
+          lpLock: {
+            ...(baseData?.lpLock ?? {}),
+            positionType: 'v3-v4',
+            positionTypeDetail: reading.detail,
+            // The reader's position evidence must survive this rebuild. Dropping it here left
+            // the card showing the generic "V3/V4" placeholder for a pool whose lock had
+            // actually been DETERMINED - the determination was computed and then thrown away
+            // one layer up.
+            positions: reading.positions ?? null,
+            sources: { ...(baseData?.lpLock?.sources ?? {}), lpLock: 'onchain-position' },
+          },
         },
         detail: result.detail ?? null,
       };

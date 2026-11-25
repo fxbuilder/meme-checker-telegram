@@ -187,6 +187,27 @@ export function classifyLiquidity(lp) {
   //
   // Severity is deliberately 'unknown' rather than green: a pool we cannot assess is not a
   // safe pool, so it must not display a reassurance.
+  // A V3/V4 pool whose positions WERE resolved is a determination, not a classification.
+  //
+  // This is the difference the owner asked for: "pool type known" is not an answer to "can the
+  // liquidity be pulled". When a graduation or locker event names the position and it is
+  // provably held by a non-upgradeable locker with no withdrawal path, that IS an answer - and
+  // it must render as one, not as the same "V3/V4" placeholder as an unresolvable pool.
+  if (lp.positions?.status === 'determined' && lp.positions.classification) {
+    const cls = lp.positions.classification;
+    if (cls === 'permanently-locked') {
+      return { state: FIELD_STATE.VERIFIED, severity: 'none', kind: 'position-locked', value: null, permanent: true };
+    }
+    if (cls === 'locked') {
+      return { state: FIELD_STATE.VERIFIED, severity: 'low', kind: 'position-locked', value: null, permanent: false };
+    }
+    if (cls === 'withdrawable') {
+      return { state: FIELD_STATE.VERIFIED, severity: 'high', kind: 'position-withdrawable', value: null };
+    }
+    // staked-or-inactive and anything else stay honest rather than green.
+    return { state: FIELD_STATE.VERIFIED, severity: 'unknown', kind: 'position-pool', value: null };
+  }
+
   if (lp.positionType === 'v3-v4') {
     return { state: FIELD_STATE.VERIFIED, severity: 'unknown', kind: 'position-pool', value: null };
   }

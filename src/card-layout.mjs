@@ -251,6 +251,20 @@ export function resolveQuickCheck(key, result) {
       if (cls.kind === 'position-pool') {
         return { label: 'LP', value: 'V3/V4', tone: 'muted', cls };
       }
+      // A RESOLVED position is a real verdict about lockability, and the label says which
+      // kind of guarantee it is: permanent (a destroyed or unreleasable lock) versus a
+      // term/owner lock that could end. Summing them would overclaim, as with burned vs locked.
+      if (cls.kind === 'position-locked') {
+        return {
+          label: cls.permanent ? 'LP Locked (perm)' : 'LP Locked',
+          value: 'Yes',
+          tone: cls.severity,
+          cls,
+        };
+      }
+      if (cls.kind === 'position-withdrawable') {
+        return { label: 'LP', value: 'Withdrawable', tone: 'high', cls };
+      }
       if (cls.kind === 'locked') {
         return { label: 'LP Locked', value: `${cls.value.toFixed(0)}%`, tone: cls.severity, cls };
       }

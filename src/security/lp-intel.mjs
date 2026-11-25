@@ -166,7 +166,7 @@ async function rpcCall(rpc, to, data, { fetchImpl = globalThis.fetch, timeoutMs 
  * @returns {Promise<{state:string, burnedPercentage:number|null, lockedPercentage:number|null,
  *                    scope:string, poolAddress:string, detail?:string}>}
  */
-export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, token = null, fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const scope = `v2:${String(pairAddress).toLowerCase()}`;
   const base = { poolAddress: pairAddress, scope };
 
@@ -176,11 +176,18 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
   // recognised. Measured: the highest-liquidity CAKE pairs on BSC are all v3.
   const tag = Array.isArray(labels) ? labels.map((l) => String(l).toLowerCase()) : [];
   if (tag.includes('v3') || tag.includes('v4')) {
+    // A labelled V3/V4 pool gets the SAME position-discovery attempt as one proven by a
+    // revert. Without this the label path short-circuits first and a Pons token - which the
+    // DEX labels 'v4' - would never reach the graduation lookup that CAN determine its lock.
+    const posFromLabel = await assessPositionsForPool({
+      chain, poolAddress: pairAddress, token, rpc, fetchImpl, timeoutMs,
+    });
     return {
       ...base,
       state: 'unsupported-position-type',
       burnedPercentage: null,
       lockedPercentage: null,
+      positions: posFromLabel,
       // Deliberately the SAME sentence the revert path produces: one physical situation
       // must not be described two ways depending on how it was discovered.
       detail: UNSUPPORTED_DETAIL(tag),
@@ -344,4 +351,88 @@ export function mergeLpIntel(providerBlock, chainReading) {
     return { ...providerBlock, onchainAttempted: true };
   }
   return null;
+}
+
+/**
+ * Discover and assess positions that belong to a specific pool.
+ *
+ * POSITION IDS ARE NOT GUESSABLE. A pool does not expose its position ids, and on V4 the
+ * positions live in a separate PositionManager keyed by a derived poolId. This function
+ * therefore reports what it could NOT do rather than inventing a determination: with no
+ * verified locker event for the pool it returns `{status:'not-discovered'}` and the caller
+ * keeps the honest "pool type known, lock state not measurable" wording.
+ *
+ * That is deliberate. Extrapolating a single locked position to "the pool is locked" is the
+ * exact overclaim the owner flagged, and reporting a percentage derived from incomparable
+ * liquidity units is worse than reporting none.
+ */
+export async function assessPositionsForPool({ chain, poolAddress, ownerHint = null, token = null, rpc = null, fetchImpl, timeoutMs } = {}) {
+  const managers = (await import('./positions.mjs')).POSITION_MANAGERS[chain];
+
+  // ROBINHOOD HAS A VERIFIED POSITION SOURCE: Pons emits PoolGraduated(token, positionId, ...)
+  // which names the exact position, so a Pons token's LP lock is determinable rather than
+  // merely classifiable. Verified live on TEXEL: position 4231454, owned by the Pons launch
+  // locker, which exposes no withdrawal path and is not a proxy.
+  if (chain === 'robinhood' && token && rpc) {
+    try {
+      const pons = await import('./pons.mjs');
+      const positions = await import('./positions.mjs');
+      const grad = await pons.findGraduationPosition(rpc, token, { fetchImpl, timeoutMs });
+      if (grad.status === 'ok') {
+        const [assessment, withdrawability] = await Promise.all([
+          pons.assessV4Position(rpc, grad.positionId, { fetchImpl, timeoutMs }),
+          positions.probeWithdrawability(rpc, pons.PONS.v2.locker, { fetchImpl, timeoutMs }),
+        ]);
+        if (assessment.status === 'ok') {
+          const cls = positions.classifyPosition(
+            { ...assessment, version: 'v4', isKnownLocker: assessment.isPonsLocker, lockerName: 'Pons launch locker' },
+            withdrawability,
+          );
+          return {
+            status: 'determined',
+            positionId: grad.positionId,
+            owner: assessment.owner,
+            classification: cls.state,
+            lockerName: cls.lockerName ?? null,
+            // The pool's liquidity, reported as POOL context - never as a per-position share.
+            poolLiquidity: assessment.poolLiquidity,
+            scope: 'position',
+            detail: cls.detail,
+            evidence: `PoolGraduated at block ${grad.blockNumber}`,
+          };
+        }
+      }
+      return {
+        status: grad.status === 'ok' ? 'assessment-failed' : grad.status,
+        detail: grad.detail ?? 'graduation found but assessment failed',
+        determination: 'pool-type-only',
+      };
+    } catch (err) {
+      return { status: 'error', detail: String(err?.message ?? err), determination: 'pool-type-only' };
+    }
+  }
+
+  if (!managers) {
+    return {
+      status: 'no-manager',
+      detail: `no position manager configured for ${chain}`,
+      // Recorded so a reader knows the pool type was determined but the lock state was not.
+      determination: 'pool-type-only',
+    };
+  }
+
+  // Without a known locker edge (a graduation event, a mint receipt, a position-manager log
+  // for this pool) there is no id to look up. V4's PositionManager is not enumerable by owner
+  // (verified: tokenOfOwnerByIndex reverts), and the pool does not list its positions.
+  return {
+    status: 'not-discovered',
+    detail: 'no verified position source for this pool; a position id must come from a '
+      + 'graduation event, a mint receipt or a locker log',
+    managersConfigured: [
+      ...(managers.v3 ?? []).map((m) => ({ version: 'v3', name: m.name })),
+      ...(managers.v4 ?? []).map((m) => ({ version: 'v4', name: m.name })),
+    ],
+    determination: 'pool-type-only',
+    ownerHint,
+  };
 }
