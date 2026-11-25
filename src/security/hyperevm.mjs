@@ -20,15 +20,24 @@
  *
  * So this module ships two things:
  *
- *   1. An OPTIONAL Etherscan-V2 adapter. It is free to obtain a key; when one is configured
- *      holders and supply come from the explorer's index. Without a key it reports
- *      `not-configured` and explicitly says this is a capability gap, NOT evidence that a
- *      token has no holders.
+ *   1. An OPTIONAL Etherscan-V2 adapter, gated on a key AND on a paid plan.
  *   2. A BOUNDED incremental Transfer indexer for targeted use, which never claims to be a
  *      complete distribution and refuses to run without an explicit budget.
  *
- * The requirement is reported rather than silently absorbed: an owner-created free key is
- * the upgrade path, and nothing here blocks on it.
+ * A FREE KEY DOES NOT UNLOCK HOLDERS - verified against Etherscan's own endpoint metadata
+ * rather than assumed. The published endpoint list tags `tokenholderlist`, `tokenholdercount`,
+ * `topholders` and `tokeninfo` all as **PRO**, and PRO means the paid Standard plan and above.
+ * (An earlier version of this file said a free key would work. That was wrong, and it is
+ * corrected here rather than left for the owner to discover after signing up.)
+ *
+ * HyperEVM compounds it: per Etherscan's supported-chains page, HyperEVM Mainnet (999)
+ * community endpoints are free only until **2026-11-30**, and require **Lite or above** from
+ * 2026-12-01. Holder endpoints are PRO on top of that.
+ *
+ * So this adapter is NOT a free upgrade path for HyperEVM holders. It is kept because it is
+ * correct and will work if a paid plan is ever approved, and because it documents the exact
+ * blocker. The requirement is stated rather than silently absorbed, and nothing else depends on
+ * it: HyperEVM renders holders as unknown with the reason, never as zero.
  */
 
 const TIMEOUT_MS = 15_000;
@@ -67,12 +76,19 @@ export async function readHyperEvmExplorer(address, {
     // about the token, and the whole point of this file is to avoid exactly that.
     return {
       status: 'not-configured',
-      detail: `${HYPEREVM_KEY_ENV} is unset - holder data for HyperEVM needs a free Etherscan V2 key`,
+      detail: `${HYPEREVM_KEY_ENV} is unset - holder data for HyperEVM needs an Etherscan V2 key `
+        + 'on a PAID plan (holder endpoints are PRO; free keys cannot access them)',
       requirement: {
         envVar: HYPEREVM_KEY_ENV,
-        howToGet: 'https://etherscan.io/myapikey (free tier; no card)',
+        // Stated precisely so the owner does not create a free key and find it rejected.
+        minimumPlan: 'Standard (PRO) or above for tokenholderlist / tokenholdercount / topholders',
+        freeKeyWorks: false,
+        howToGet: 'https://etherscan.io/apis',
         scope: 'Etherscan V2 multichain, chainid=999',
-        note: 'Set locally in .env. Not required for any other milestone.',
+        additionalCaveat: 'HyperEVM community endpoints become Lite-or-above from 2026-12-01',
+        note: 'Optional. Nothing else depends on it; HyperEVM holders render unknown with this reason.',
+        verifiedAgainst: 'https://docs.etherscan.io/endpoint-overview (PRO tags) and '
+          + 'https://docs.etherscan.io/supported-chains',
       },
     };
   }
@@ -96,6 +112,16 @@ export async function readHyperEvmExplorer(address, {
   if (body?.status !== '1' || !Array.isArray(body?.result)) {
     const msg = String(body?.result ?? body?.message ?? 'unknown');
     if (/invalid api key|missing\/invalid/i.test(msg)) return { status: 'unauthorized', detail: msg };
+    // A PLAN refusal is its own outcome. A free key is valid and still cannot read holders, so
+    // reporting this as a generic error would hide the one fact the owner needs: the key is
+    // fine, the subscription is not.
+    if (/pro|subscription|upgrade|plan|not available|unauthori[sz]ed for this endpoint/i.test(msg)) {
+      return {
+        status: 'plan-required',
+        detail: msg,
+        requirement: { minimumPlan: 'Standard (PRO) or above', freeKeyWorks: false },
+      };
+    }
     if (/no transactions|no holders|empty/i.test(msg)) return { status: 'no-data', detail: msg };
     return { status: 'error', detail: msg };
   }

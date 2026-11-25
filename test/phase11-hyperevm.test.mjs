@@ -25,9 +25,32 @@ test('no API key reports not-configured WITH the exact setup requirement', async
   const r = await readHyperEvmExplorer(PURR, { apiKey: null });
   assert.equal(r.status, 'not-configured');
   assert.equal(r.requirement.envVar, HYPEREVM_KEY_ENV);
-  assert.match(r.requirement.howToGet, /etherscan\.io\/myapikey/);
   assert.equal(r.holderCount, undefined, 'a config gap yields no count at all');
-  assert.match(r.detail, /NOT|unset/, 'the wording must not read as an empty result');
+});
+
+test('a FREE key is documented as insufficient, because the holder endpoints are PRO', async () => {
+  // Verified against Etherscan's own endpoint metadata, which tags tokenholderlist,
+  // tokenholdercount, topholders and tokeninfo as PRO (= paid Standard and above). An earlier
+  // version of this module told the owner a free key would work. That was wrong, and the
+  // requirement now states it so nobody signs up for a key that cannot answer.
+  const r = await readHyperEvmExplorer(PURR, { apiKey: null });
+  assert.equal(r.requirement.freeKeyWorks, false);
+  assert.match(r.requirement.minimumPlan, /PRO|Standard/);
+  assert.match(r.detail, /PAID plan/, 'the wording must not imply a free key suffices');
+});
+
+test('a valid free key hitting a PRO endpoint is plan-required, not a generic error', async () => {
+  // The key is FINE. If this reported `error`, the owner would debug their credential instead
+  // of the subscription - the one fact they need is hidden.
+  const r = await readHyperEvmExplorer(PURR, {
+    apiKey: 'a-free-key',
+    fetchImpl: async () => ({
+      ok: true, status: 200,
+      json: async () => ({ status: '0', message: 'NOTOK', result: 'This endpoint requires a PRO subscription.' }),
+    }),
+  });
+  assert.equal(r.status, 'plan-required');
+  assert.equal(r.requirement.freeKeyWorks, false);
 });
 
 test('an empty-string key is treated as unset, not sent', async () => {
