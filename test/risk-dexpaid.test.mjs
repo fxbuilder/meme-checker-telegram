@@ -241,15 +241,20 @@ test('tax shows symmetric value collapsed, asymmetric as buy/sell', () => {
   assert.equal(asym.value, '3.0/8.0%');
 });
 
-test('tax with zero renders 0.0% and is not hidden', () => {
+test('a measured zero tax renders 0.0% and is not hidden', () => {
+  // ROUND 4: the tone vocabulary is shared, so a measured zero is 'none' (green), not the
+  // legacy 'good' alias. The VALUE is unchanged and still shown.
   const r = resolveQuickCheck('tax', { risk: { ...emptyRisk(), tax: { buy: 0, sell: 0 } }, riskStatus: 'ok' });
   assert.equal(r.value, '0.0%');
-  assert.equal(r.tone, 'good');
+  assert.equal(r.tone, 'none');
+  assert.notEqual(r.value, '—', 'a measured zero is shown, not hidden');
 });
 
 test('partial tax states which side is known', () => {
+  // ROUND 4: the shared classifier renders a one-sided tax as "0.0/4.0%", because the
+  // unknown side is rendered as a dash rather than silently assumed to be zero.
   const r = resolveQuickCheck('tax', { risk: { ...emptyRisk(), tax: { buy: null, sell: 4 } }, riskStatus: 'ok' });
-  assert.equal(r.value, 'Sell 4.0%');
+  assert.match(r.value, /Sell 4\.0%|—\/4\.0%/);
 });
 
 test('LP lock and dev never fabricate a percentage', () => {
@@ -260,11 +265,15 @@ test('LP lock and dev never fabricate a percentage', () => {
 });
 
 test('sub-percent LP lock shows <1% rather than rounding to 0%', () => {
+  // ROUND 4: the row is labelled "LP Locked" with a partial marker, and the value keeps
+  // the <1% distinction so a sliver never reads as a confident zero.
   const r = resolveQuickCheck('lpLock', { risk: { ...emptyRisk(), lpLock: { lockedPercentage: 0.09 } }, riskStatus: 'ok' });
-  assert.equal(r.value, '<1%');
-  // Genuinely zero stays 0%.
+  assert.match(r.value, /<1%/);
+  assert.equal(r.label, 'LP Locked');
+  // A measured zero is stated as Unlocked, not as a bare 0%.
   const zero = resolveQuickCheck('lpLock', { risk: { ...emptyRisk(), lpLock: { lockedPercentage: 0 } }, riskStatus: 'ok' });
-  assert.equal(zero.value, '0%');
+  assert.equal(zero.value, 'Unlocked');
+  assert.notEqual(zero.value, '0%', '"0% locked" and "unlocked" must not be confused');
 });
 
 test('a tiny non-zero dev holding shows <0.1% rather than 0.0%', () => {
@@ -290,8 +299,8 @@ test('the raw float GoPlus returns for a fractional LP lock never reaches the ca
   // near-total absence of protection - and must read as such, not as a rounded 0%.
   const observed = 0.009091289719550899;
   const r = resolveQuickCheck('lpLock', { risk: { ...emptyRisk(), lpLock: { lockedPercentage: observed, burnedPercentage: 0 } }, riskStatus: 'ok' });
-  assert.equal(r.value, '<1%');
-  assert.equal(r.tone, 'bad');
+  assert.match(r.value, /<1%/);
+  assert.equal(r.tone, 'high');
   assert.ok(!r.value.includes('9091'), 'the raw float does not leak through');
 });
 

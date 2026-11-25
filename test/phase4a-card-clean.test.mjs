@@ -38,9 +38,16 @@ test('the standard card carries no technical source footer', () => {
   assert.ok(!/GeckoTerminal/.test(card), 'the provider name must not appear on the card');
 });
 
-test('attribution moves into the prose, so a claim is still a claim', () => {
+test('a self-contained description carries attribution without a mechanical preamble', () => {
+  // ROUND 4. This used to require "describes itself", which produced
+  //   "The project describes itself in these terms. TEXEL is the token of Texel..."
+  // - filler in front of a sentence that already reads perfectly. The OWNER flagged the
+  // wording as mechanical. Attribution is now a trailing tag, so the claim is still a
+  // claim but the prose stays natural.
   const out = narrativeProse({ summary: 'Bonk is a dog-themed memecoin on Solana.', evidence: 'project-claim' });
-  assert.match(out, /describes itself/i, 'a self-description must be attributed to the project');
+  assert.match(out, /project description/i, 'provenance is still stated');
+  assert.ok(!/^The project describes itself in these terms/.test(out), 'no mechanical preamble');
+  assert.match(out, /^Bonk is a dog-themed memecoin/, 'the description itself leads');
 });
 
 test('a third-party description is not passed off as the project speaking', () => {

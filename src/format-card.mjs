@@ -282,19 +282,40 @@ export function clipWords(text, { min = 25, max = 45 } = {}) {
  * A claim rendered as a bare sentence reads as fact. This keeps the card honest
  * without a footer.
  */
+/**
+ * Append a compact provenance marker to a self-contained description.
+ *
+ * "TEXEL is the token of Texel..." is the project's own sentence, so it must not be
+ * dressed up with a prefix. Attribution is a short trailing tag instead, which keeps the
+ * prose intact and still tells the reader whose words these are.
+ */
+function appendProvenance(text) {
+  const t = String(text).trim();
+  // Only add the tag once, and never on text that already carries attribution.
+  if (/\b(project|team|according to|official)\b/i.test(t.slice(-40))) return t;
+  return `${t} (project description)`;
+}
+
 export function narrativeProse(n) {
   const raw = clipWords(n.summary);
   if (!raw) return '';
 
   if (n.evidence === 'project-claim') {
-    // Avoid stacking two attributions.
+    // A description that already names its own subject is a complete sentence. Prefixing
+    // it produced "The project describes itself in these terms. TEXEL is the token of
+    // Texel, the onchain GPU cloud..." - mechanical filler in front of something that
+    // reads perfectly well on its own. The OWNER flagged exactly this.
+    //
+    // Attribution matters, so it is carried by a short parenthetical at the END where it
+    // does not interrupt the sentence, and only when the summary does not already open
+    // with the project's name.
     if (/^(the project|its team|the team|according to|we |our )/i.test(raw)) return esc(raw);
 
-    // "The project describes itself as Bonk is a dog coin" is ungrammatical. A
-    // description that already opens with its own subject is introduced with a
-    // separate sentence clause instead of an "as ..." continuation.
-    const opensWithSubject = /^[A-Z][\w$.'’\-]*\s+(is|was|are|were)\b/.test(raw);
-    if (opensWithSubject) return esc(`The project describes itself in these terms. ${raw}`);
+    const opensWithSubject = /^[A-Z][\w$.'\u2019\-]*\s+(is|was|are|were)\b/.test(raw);
+    if (opensWithSubject) {
+      // No preamble: the sentence is already complete. Provenance is appended instead.
+      return esc(appendProvenance(raw));
+    }
     // "describes itself as A community-driven token" needs the article lowered, or the
     // sentence reads like a heading pasted mid-line.
     const lowered = raw.replace(/^(A|An|The)\b/, (m) => m.toLowerCase());

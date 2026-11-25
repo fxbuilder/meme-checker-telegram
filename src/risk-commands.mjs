@@ -21,6 +21,11 @@
 import { fetchRisk } from './risk-intel.mjs';
 import { getChain } from './chains.mjs';
 import { resolveResearchTarget, resolveChainForResearch, ambiguityMessage } from './research/research-commands.mjs';
+import {
+  classifyTop10, classifyTax, classifyTransferFee, classifyLiquidity,
+  classifyCreatorHolding, classifyFlag, classifyHoneypot, classifyRugCheckScore,
+  FIELD_STATE, SEVERITY_ICON, statePlaceholder,
+} from './risk-classify.mjs';
 
 const DASH = '—';
 const NA = 'n/a';
@@ -63,25 +68,37 @@ function fmtInt(v) {
  * Traffic-light judgement for a concentration reading.
  * Returns null when there is nothing to judge - never 'good' by default.
  */
+/**
+ * Concentration severity.
+ *
+ * DELEGATES to the shared engine. This function used to define its own bands (>=50 high,
+ * >=25 elevated, else 'low') and its own colour vocabulary, where 'low' rendered YELLOW.
+ * Combined with the card's separate scale, a 20% token was green on one screen and yellow
+ * on the other. There is now exactly one threshold table, in risk-classify.mjs.
+ */
 export function concentrationTone(pct) {
-  if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return null;
-  const n = Number(pct);
-  if (n >= 50) return 'high';
-  if (n >= 25) return 'elevated';
-  return 'low';
+  const c = classifyTop10(pct);
+  if (c.state !== FIELD_STATE.VERIFIED) return null;
+  return c.severity;
 }
 
 /** Tone for a 0-100 tax value. null when the value is absent. */
 export function taxTone(pct) {
-  if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return null;
-  const n = Number(pct);
-  if (n >= 10) return 'high';
-  if (n > 0) return 'low';
-  return 'none';
+  // DELEGATES to the shared engine so tax bands cannot drift from the card's.
+  const c = classifyTax(pct, null);
+  if (c.state !== FIELD_STATE.VERIFIED) return null;
+  return c.severity;
 }
 
+/**
+ * Severity glyph, from the shared vocabulary.
+ *
+ * The previous mapping returned YELLOW for 'low', which is why a 20% concentration looked
+ * like a warning on this screen and a pass on the card. Severity now comes from one place
+ * and so does its colour.
+ */
 function icon(tone) {
-  return tone === 'high' ? '🔴' : tone === 'elevated' ? '🟠' : tone === 'low' ? '🟡' : tone === 'none' ? '🟢' : '•';
+  return SEVERITY_ICON[tone] ?? SEVERITY_ICON.unknown;
 }
 
 /**

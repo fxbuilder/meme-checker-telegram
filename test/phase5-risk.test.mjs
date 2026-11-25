@@ -111,10 +111,14 @@ test('a concentration above 100 can never be rendered', () => {
   assert.ok(!/111\.1%/.test(t), 'an impossible percentage must never be displayed');
 });
 
-test('concentration tones are thresholds, and null has no tone', () => {
+test('concentration severity comes from the shared engine, and null has no tone', () => {
+  // ROUND 4: this used to assert a local vocabulary ('elevated') that rendered YELLOW for
+  // 'low', which is why a 20% token was green on the card and yellow here. Severity names
+  // now match the shared engine exactly.
   assert.equal(concentrationTone(null), null);
   assert.equal(concentrationTone(10), 'low');
-  assert.equal(concentrationTone(25), 'elevated');
+  assert.equal(concentrationTone(19.98), 'medium', 'the TEXEL case: 19.98 displays as 20.0%');
+  assert.equal(concentrationTone(25), 'medium');
   assert.equal(concentrationTone(50), 'high');
 });
 

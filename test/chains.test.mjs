@@ -15,10 +15,12 @@ import { detectAll, detectCandidates, parseChainHint, EVM_SCANNABLE, isValidForC
 const SOL = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 const EVM = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82';
 
-test('all 16 requested chains are registered', () => {
+test('all requested chains are registered, including Elysium', () => {
+  // Elysium (99901) was added in Round 4 as a priority chain. Verified live:
+  // GeckoTerminal serves an `elysium` network and eth_chainId returns 0x1863d.
   const wanted = ['solana', 'ethereum', 'bsc', 'base', 'arbitrum', 'optimism', 'polygon',
     'avalanche', 'hyperevm', 'monad', 'robinhood', 'unichain', 'berachain', 'abstract',
-    'story', 'megaeth'];
+    'story', 'megaeth', 'elysium'];
   for (const id of wanted) {
     assert.ok(CHAINS[id], `missing chain: ${id}`);
   }
@@ -29,8 +31,8 @@ test('story is registered but not market-scannable (verified zero coverage)', ()
   const story = getChain('story');
   assert.equal(story.market, false);
   assert.ok(!SCANNABLE_CHAINS.includes('story'));
-  // The other 15 must be scannable.
-  assert.equal(SCANNABLE_CHAINS.length, 15);
+  // Every registered chain except story is market-scannable (16 including Elysium).
+  assert.equal(SCANNABLE_CHAINS.length, ALL_CHAIN_IDS.length - 1);
 });
 
 test('every scannable chain has a DexScreener slug and an address kind', () => {
@@ -97,7 +99,10 @@ test('a bare EVM address is ambiguous across EVM chains', () => {
   assert.equal(det.ambiguous, true, 'must flag ambiguity rather than silently pick a chain');
   assert.equal(det.candidates.length, 1);
   assert.equal(det.candidates[0].chain, 'bsc', 'falls back to the default chain');
-  assert.equal(EVM_SCANNABLE.length, 14, 'all EVM scannable chains are offered');
+  // Derived, not hardcoded: a literal count here had to be edited every time a chain
+  // was added, and a stale literal is how a chain silently stops being offered.
+  const expectedEvm = ALL_CHAIN_IDS.filter((id) => CHAINS[id].kind === 'evm' && CHAINS[id].market);
+  assert.equal(EVM_SCANNABLE.length, expectedEvm.length, 'all EVM scannable chains are offered');
   assert.ok(!EVM_SCANNABLE.includes('story'), 'story is not scannable');
 });
 

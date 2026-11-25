@@ -64,6 +64,8 @@ export const CHAINS = {
   hyperevm: {
     id: 'hyperevm', name: 'HyperEVM', short: 'HYPE', kind: 'evm', ds: 'hyperevm',
     market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '🟢',
+    // Verified live: eth_chainId returns 0x3e7 (999) and eth_call works against WHYPE.
+    rpc: 'https://rpc.hyperliquid.xyz/evm', chainId: 999,
   },
   monad: {
     id: 'monad', name: 'Monad', short: 'MON', kind: 'evm', ds: 'monad',
@@ -89,6 +91,18 @@ export const CHAINS = {
   megaeth: {
     id: 'megaeth', name: 'MegaETH', short: 'MEGA', kind: 'evm', ds: 'megaeth',
     market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '⚡',
+  },
+  // Elysium mainnet. Added in Round 4 as a PRIORITY chain.
+  //   goplus : NOT supported - verified against GET /api/v1/supported_chains (46 chains,
+  //            no 99901 and no 'elysium' entry).
+  //   market : GeckoTerminal DOES index it (`elysium` network, real pools observed:
+  //            AGI/HYPE, USDC/WHYPE). DexScreener gave no pairs for the sampled tokens,
+  //            so gt is the market source.
+  //   rpc    : https://elysium.drpc.org answered eth_chainId with 0x1863d (99901).
+  elysium: {
+    id: 'elysium', name: 'Elysium', short: 'ELYS', kind: 'evm', ds: 'elysium',
+    market: true, goplus: null, goplusId: null, dexPaid: false, emoji: '🌿',
+    rpc: 'https://elysium.drpc.org', chainId: 99901,
   },
   story: {
     // Probed with STORY/IP/WIP/IPX/Story Protocol/SPG and token feeds: DexScreener
@@ -125,6 +139,7 @@ const ALIASES = {
   poly: 'polygon', polygon: 'polygon', matic: 'polygon',
   avax: 'avalanche', avalanche: 'avalanche',
   hype: 'hyperevm', hyperevm: 'hyperevm', hyper: 'hyperevm',
+  elys: 'elysium', elysium: 'elysium', ely: 'elysium',
   monad: 'monad', mon: 'monad',
   robinhood: 'robinhood', rh: 'robinhood',
   unichain: 'unichain', uni: 'unichain',

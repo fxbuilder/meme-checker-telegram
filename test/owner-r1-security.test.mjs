@@ -72,13 +72,18 @@ test('no markets at all is null, never "unlocked"', () => {
   assert.equal(lpFromMarkets(null), null);
 });
 
-test('the card says "Burned N%" rather than "0% locked" for burned liquidity', () => {
+test('a burned LP is labelled LP Burned, not put under an LP Locked heading', () => {
+  // ROUND 4. The value used to read "Burned 100%" under the label "LP Locked", which
+  // conflated two different guarantees: a burn is permanent, a lock is not. The OWNER
+  // flagged the ambiguity, so burn and lock now have separate labels.
   const r = resolveQuickCheck('lpLock', {
     risk: { ...emptyRisk(), lpLock: { burnedPercentage: 99.99, lockedPercentage: 0 } },
     riskStatus: 'ok',
   });
-  assert.equal(r.value, 'Burned 100%');
-  assert.equal(r.tone, 'good');
+  assert.equal(r.label, 'LP Burned');
+  assert.equal(r.value, '100%');
+  assert.notEqual(r.label, 'LP Locked', 'a burn must not be filed under lock');
+  assert.equal(r.tone, 'none', 'a full burn is the strongest guarantee available');
 });
 
 // ---- unknown is not zero ------------------------------------------------
@@ -93,12 +98,15 @@ test('a null locked percentage renders a dash, never a fabricated 0%', () => {
   assert.notEqual(r.value, '0%');
 });
 
-test('a genuine zero still renders 0%', () => {
+test('a measured zero lock renders "Unlocked", not a bare 0%', () => {
+  // A measured zero is real and worth stating plainly - it is the difference between
+  // "the liquidity can be pulled" and "we could not tell".
   const r = resolveQuickCheck('lpLock', {
     risk: { ...emptyRisk(), lpLock: { lockedPercentage: 0 } },
     riskStatus: 'ok',
   });
-  assert.equal(r.value, '0%');
+  assert.equal(r.value, 'Unlocked');
+  assert.equal(r.tone, 'high', 'unlocked liquidity is a real risk, not a neutral zero');
 });
 
 // ---- Solana tax vs Token-2022 transfer fee ------------------------------

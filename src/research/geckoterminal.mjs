@@ -51,6 +51,9 @@ export const GT_NETWORK = {
   // (0x39dbed3a…) reported no narrative despite GeckoTerminal returning name, website
   // and twitter for it.
   robinhood: 'robinhood',
+  // Verified live: GeckoTerminal lists an `elysium` network with real pools
+  // (AGI/HYPE, USDC/WHYPE). Elysium is a Round 4 priority chain.
+  elysium: 'elysium',
 };
 
 /** True when this chain has a GeckoTerminal network mapping. */

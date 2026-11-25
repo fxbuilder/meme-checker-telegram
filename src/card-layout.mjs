@@ -21,6 +21,10 @@
  *   never dropped to make the card shorter.
  */
 import { getChain } from './chains.mjs';
+import {
+  classifyTop10, classifyLiquidity, classifyCreatorHolding, classifyTax,
+  classifyTransferFee, FIELD_STATE, iconFor,
+} from './risk-classify.mjs';
 
 export const QUICK_CHECK_KEYS = ['top10', 'holders', 'dexPaid', 'tax', 'lpLock', 'dev'];
 
@@ -105,10 +109,16 @@ export function resolveQuickCheck(key, result) {
 
   switch (key) {
     case 'top10': {
-      const v = risk?.holders?.top10Percentage;
-      if (v == null) return { label: 'Top 10', value: unavailable, tone: 'muted' };
-      const tone = v >= 50 ? 'bad' : v >= 25 ? 'warn' : 'good';
-      return { label: 'Top 10', value: fmtPp(v), tone };
+      // ONE classifier for every surface. This block used to carry its own thresholds
+      // (>=50 bad, >=25 warn) while /risk used concentrationTone(), so a 20% token was
+      // green here and yellow there. Both now call classifyTop10().
+      if (unsupported) return { label: 'Top 10', value: NA, tone: 'muted' };
+      const c = classifyTop10(risk?.holders?.top10Percentage);
+      if (c.state !== FIELD_STATE.VERIFIED) {
+        return { label: 'Top 10', value: DASH, tone: 'muted', cls: c };
+      }
+      // Render the same rounded value the band was computed from.
+      return { label: 'Top 10', value: fmtPp(c.shown ?? c.value), tone: c.severity, cls: c };
     }
     case 'holders': {
       const v = risk?.holders?.total;
@@ -134,61 +144,85 @@ export function resolveQuickCheck(key, result) {
       // applies to every transfer rather than to a trade. Calling it "tax" would be
       // wrong, and treating a missing value as "0%" would be a fabricated all-clear,
       // so it is labelled for what it is.
+      //
+      // Bands come from the SHARED engine so the card and /risk cannot disagree.
       if (t?.kind === 'transfer-fee') {
-        if (t.pct == null) return { label: 'Transfer Fee', value: DASH, tone: 'muted' };
-        const pct = Number(t.pct);
-        if (!Number.isFinite(pct) || pct < 0) return { label: 'Transfer Fee', value: DASH, tone: 'muted' };
-        if (pct === 0) return { label: 'Transfer Fee', value: '0%', tone: 'good' };
-        const tone = pct >= 5 ? 'bad' : 'warn';
-        return { label: 'Transfer Fee', value: `${pct.toFixed(2)}%`, tone };
+        const c = classifyTransferFee(t.pct, 'token-2022');
+        if (c.state !== FIELD_STATE.VERIFIED) {
+          return { label: 'Transfer Fee', value: DASH, tone: 'muted', cls: c };
+        }
+        return {
+          label: 'Transfer Fee',
+          value: c.value === 0 ? '0%' : `${c.value.toFixed(2)}%`,
+          tone: c.severity,
+          cls: c,
+        };
       }
 
       // Verified non-applicability. A legacy SPL token has no fee concept at all, which
       // is a real finding and is stated as N/A. It is NOT a dash: a dash means we could
       // not measure something that does exist.
       if (t?.kind === 'not-applicable') {
-        return { label: 'Tax', value: 'N/A', tone: 'muted' };
+        return { label: 'Tax', value: 'N/A', tone: 'muted', cls: classifyTransferFee(null, 'spl-token') };
       }
 
-      if (!t || (t.buy == null && t.sell == null)) {
-        return { label: 'Tax', value: DASH, tone: 'muted' };
+      const c = classifyTax(t?.buy ?? null, t?.sell ?? null);
+      if (c.state !== FIELD_STATE.VERIFIED) {
+        // An UNKNOWN tax is a dash. It is never 0%.
+        return { label: 'Tax', value: DASH, tone: 'muted', cls: c };
       }
-      if (t.buy == null || t.sell == null) {
-        const only = t.buy != null ? `Buy ${t.buy.toFixed(1)}%` : `Sell ${t.sell.toFixed(1)}%`;
-        return { label: 'Tax', value: only, tone: 'muted' };
+      const { buy, sell } = c.value;
+      // A one-sided measurement names the side it knows. Substituting the known side into
+      // the unknown one would fabricate a symmetric tax.
+      if (c.partial) {
+        const only = buy !== null ? `Buy ${buy.toFixed(1)}%` : `Sell ${sell.toFixed(1)}%`;
+        return { label: 'Tax', value: only, tone: c.severity, cls: c };
       }
-      const hi = Math.max(t.buy, t.sell);
-      const tone = hi >= 10 ? 'bad' : hi > 0 ? 'warn' : 'good';
-      const value = t.buy === t.sell
-        ? `${t.buy.toFixed(1)}%`
-        : `${t.buy.toFixed(1)}/${t.sell.toFixed(1)}%`;
-      return { label: 'Tax (B/S)', value, tone };
+      if (buy !== sell) {
+        return { label: 'Tax (B/S)', value: `${buy.toFixed(1)}/${sell.toFixed(1)}%`, tone: c.severity, cls: c };
+      }
+      if (buy === 0) {
+        return { label: 'Tax (B/S)', value: '0.0%', tone: 'none', cls: c };
+      }
+      return { label: 'Tax (B/S)', value: `${buy.toFixed(1)}%`, tone: c.severity, cls: c };
     }
     case 'lpLock': {
       if (unsupported) return { label: 'LP Locked', value: NA, tone: 'muted' };
       const lp = risk?.lpLock;
-      if (!lp) return { label: 'LP Locked', value: DASH, tone: 'muted' };
 
-      // BURNED and LOCKED are different guarantees and must not be silently summed
-      // into one number. A destroyed LP mint can never be withdrawn; a locked one can
-      // be unlocked when the timer ends. Solana providers report burn explicitly.
+      // BURNED and LOCKED are different guarantees and must not be silently summed into
+      // one number. A destroyed LP mint can never be withdrawn, permanently; a locked one
+      // becomes withdrawable when the term ends. The LABEL now states which one it is,
+      // because "LP Locked: Burned 100%" put a burn under a lock heading and the OWNER
+      // rightly flagged the ambiguity.
       //
-      // NULL GUARD: Number(null) is 0, so a naive isFinite(Number(x)) test turns an
-      // UNKNOWN into a confident "0% (unlocked)". That is a fabricated risk verdict,
-      // and it is exactly the class of bug this block exists to prevent.
-      const toNum = (v) => (v === null || v === undefined || v === '' ? null
-        : (Number.isFinite(Number(v)) ? Number(v) : null));
-      const burned = toNum(lp.burnedPercentage);
-      const locked = toNum(lp.lockedPercentage);
-
-      if (burned !== null && burned >= 50) {
-        return { label: 'LP Locked', value: `Burned ${burned.toFixed(0)}%`, tone: 'good' };
+      // The classification itself (bands, unknown handling, expiry) lives in the shared
+      // engine so this row cannot drift from /risk.
+      const cls = classifyLiquidity(lp);
+      if (cls.state === FIELD_STATE.UNKNOWN) {
+        // Never "unlocked": we could not tell, which is a different statement.
+        return { label: 'LP', value: DASH, tone: 'muted', cls };
       }
-      if (locked === null) return { label: 'LP Locked', value: DASH, tone: 'muted' };
-      // A tiny locked sliver is materially different from none.
-      if (locked > 0 && locked < 1) return { label: 'LP Locked', value: '<1%', tone: 'bad' };
-      const tone = locked >= 90 ? 'good' : locked >= 50 ? 'warn' : 'bad';
-      return { label: 'LP Locked', value: `${locked.toFixed(0)}%`, tone };
+      if (cls.kind === 'burned') {
+        return { label: 'LP Burned', value: `${cls.value.toFixed(0)}%`, tone: cls.severity, cls };
+      }
+      if (cls.kind === 'bonding-curve') {
+        return { label: 'LP', value: 'Bonding curve', tone: 'medium', cls };
+      }
+      if (cls.kind === 'locked') {
+        return { label: 'LP Locked', value: `${cls.value.toFixed(0)}%`, tone: cls.severity, cls };
+      }
+      if (cls.kind === 'partially-locked') {
+        // A sub-1% lock is materially different from none, so it is stated as "<1%"
+        // rather than rounding to a confident "0%". The caller escapes it for HTML.
+        const shown = cls.value > 0 && cls.value < 1 ? '<1%' : `${cls.value.toFixed(0)}%`;
+        return { label: 'LP Locked', value: `Partial ${shown}`, tone: cls.severity, cls };
+      }
+      if (cls.kind === 'unlocked') {
+        // A real, measured zero. Distinct from unknown, and worth showing plainly.
+        return { label: 'LP', value: 'Unlocked', tone: cls.severity, cls };
+      }
+      return { label: 'LP', value: DASH, tone: 'muted', cls };
     }
     case 'dev': {
       // "Creator Holds" is the creator's CURRENT balance, not dev history, and not a
@@ -236,7 +270,17 @@ export function allQuickChecksEmpty(result) {
 // Every security row carries exactly one leading marker so the label column
 // always starts at the same offset. A row with no marker would shift its label
 // and break the alignment that makes the block scannable.
-const TONE_DOT = { good: '🟢', warn: '🟡', bad: '🔴', plain: '⚪', muted: '⚪' };
+/**
+ * Tone dot. Keys are the SHARED severity vocabulary from risk-classify.mjs; the legacy
+ * good/warn/bad aliases are kept so older call sites keep working, and they map to the
+ * same glyphs so the two can never disagree.
+ */
+const TONE_DOT = {
+  none: '🟢', low: '🟢', medium: '🟡', high: '🔴', critical: '🔴',
+  unknown: '⚪', 'not-applicable': '➖',
+  // legacy aliases, same glyphs
+  good: '🟢', warn: '🟡', bad: '🔴', plain: '⚪', muted: '⚪',
+};
 
 /**
  * One metric row: "Label: value", single space after the colon.
