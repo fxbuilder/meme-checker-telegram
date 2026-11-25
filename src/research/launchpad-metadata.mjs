@@ -190,7 +190,15 @@ export async function fetchLaunchpadMetadata(chain, address, {
   if (!candidates.length) return { status: 'no-getter' };
 
   for (const getter of candidates) {
-    const raw = await ethCall(rpc, address, getter.selector, { fetchImpl, timeoutMs });
+    // ONE retry. This getter is often the ONLY prose source for a launchpad token, and
+    // measured live it intermittently failed under a tight probe loop (the Robinhood RPC
+    // throttles bursts). A single retry costs one extra read on failure and prevents a
+    // throttled blip from being cached as "this token has no description".
+    let raw = await ethCall(rpc, address, getter.selector, { fetchImpl, timeoutMs });
+    if (!raw) {
+      await new Promise((r2) => setTimeout(r2, 400));
+      raw = await ethCall(rpc, address, getter.selector, { fetchImpl, timeoutMs });
+    }
     if (!raw) continue; // not this launchpad's token
     const decoded = decodeLaunchpadTuple(getter, raw);
     if (!decoded) continue;

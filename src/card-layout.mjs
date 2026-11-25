@@ -82,15 +82,52 @@ export function fmtPp(v, digits = 1) {
  * True when a market figure looks internally inconsistent enough that the card
  * should say so. Used for a disclosure, never to suppress the number.
  */
+/**
+ * Which specific market figure looks wrong, and why.
+ *
+ * Previously this was one boolean, so the card could only say "some figures look
+ * inconsistent" — true, but useless: the OWNER could not tell whether the price, the market
+ * cap or the volume was the problem, and therefore could not judge whether to trust the
+ * rest of the card. Naming the field and the reason makes the caveat actionable.
+ *
+ * @returns {Array<{field:string, label:string, reason:string, value:number|null}>}
+ */
+export function marketImplausibilities(market) {
+  if (!market) return [];
+  const { marketCapUsd, priceChange24h, priceChange1h, volume24hUsd, liquidityUsd, fdvUsd } = market;
+  const out = [];
+
+  if (Number.isFinite(marketCapUsd) && marketCapUsd > 5e12) {
+    out.push({ field: 'marketCapUsd', label: 'Market Cap', reason: 'above any plausible token valuation', value: marketCapUsd });
+  }
+  if (Number.isFinite(priceChange24h) && Math.abs(priceChange24h) > 1000) {
+    out.push({ field: 'priceChange24h', label: 'Change 24H', reason: 'change exceeds 1000%', value: priceChange24h });
+  }
+  if (Number.isFinite(priceChange1h) && Math.abs(priceChange1h) > 1000) {
+    out.push({ field: 'priceChange1h', label: 'Change 1H', reason: 'change exceeds 1000%', value: priceChange1h });
+  }
+  if (Number.isFinite(volume24hUsd) && Number.isFinite(marketCapUsd) && marketCapUsd > 0
+      && volume24hUsd > marketCapUsd * 100) {
+    out.push({ field: 'volume24hUsd', label: 'Volume 24H', reason: 'volume exceeds market cap by over 100x', value: volume24hUsd });
+  }
+  // A market cap far below the reported FDV usually means a decimals or supply error on a
+  // replica pair, so it is worth naming too.
+  if (Number.isFinite(fdvUsd) && Number.isFinite(marketCapUsd) && marketCapUsd > 0
+      && fdvUsd > marketCapUsd * 1000) {
+    out.push({ field: 'fdvUsd', label: 'FDV', reason: 'FDV exceeds market cap by over 1000x', value: fdvUsd });
+  }
+  // Liquidity that dwarfs the market cap cannot be real: nobody provides more depth than
+  // the asset is worth.
+  if (Number.isFinite(liquidityUsd) && Number.isFinite(marketCapUsd) && marketCapUsd > 0
+      && liquidityUsd > marketCapUsd * 10) {
+    out.push({ field: 'liquidityUsd', label: 'Liquidity', reason: 'liquidity exceeds market cap by over 10x', value: liquidityUsd });
+  }
+  return out;
+}
+
+/** Back-compat boolean form, derived from the detailed list. */
 export function marketLooksImplausible(market) {
-  if (!market) return false;
-  const { marketCapUsd, priceChange24h, priceChange1h, volume24hUsd } = market;
-  if (Number.isFinite(marketCapUsd) && marketCapUsd > 5e12) return true;
-  if (Number.isFinite(priceChange24h) && Math.abs(priceChange24h) > 1000) return true;
-  if (Number.isFinite(priceChange1h) && Math.abs(priceChange1h) > 1000) return true;
-  if (Number.isFinite(volume24hUsd) && Number.isFinite(marketCapUsd) &&
-      marketCapUsd > 0 && volume24hUsd > marketCapUsd * 100) return true;
-  return false;
+  return marketImplausibilities(market).length > 0;
 }
 
 // ---------------------------------------------------------------------------

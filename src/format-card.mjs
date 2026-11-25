@@ -29,7 +29,7 @@
  */
 import { noTheme } from './emoji-theme.mjs';
 import {
-  esc, fmtUsd, fmtPct, fmtInt, fmtPp, marketLooksImplausible,
+  esc, fmtUsd, fmtPct, fmtInt, fmtPp, marketLooksImplausible, marketImplausibilities,
   resolveQuickCheck, quickChecks, securityPairs, alignedRows, sectionTitle,
 } from './card-layout.mjs';
 import { getChain } from './chains.mjs';
@@ -156,10 +156,15 @@ function buildMarket(result, e) {
   }
   rows.push(...alignedRows(pairs));
 
-  // A material inconsistency is disclosed, never hidden to keep the card short.
-  if (marketLooksImplausible(market)) {
+  // A material inconsistency is disclosed, never hidden to keep the card short - and the
+  // WARNING NAMES THE FIELD. "Some figures look inconsistent" told the reader nothing
+  // they could act on; naming the figure lets them decide which parts of the card to
+  // trust.
+  const implausible = marketImplausibilities(market);
+  if (implausible.length) {
     rows.push('');
-    rows.push('<i>⚠️ Some figures look inconsistent for this pair — verify before acting.</i>');
+    const named = implausible.slice(0, 2).map((i) => i.label).join(' and ');
+    rows.push(`<i>⚠️ ${named} look inconsistent for this pair — verify before acting.</i>`);
   }
   return rows;
 }

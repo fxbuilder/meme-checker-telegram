@@ -152,13 +152,24 @@ test('a chain with no RPC yields unsupported-chain, not a false negative', async
 });
 
 test('only documented getters are called - an unknown token is not probed', async () => {
-  let calls = 0;
+  // The rule under test is WHICH selectors are called, not how many times. Each
+  // documented getter now gets one retry (this read is often the only prose source for a
+  // launchpad token, and the Robinhood RPC throttles bursts), so the assertion is on the
+  // distinct selectors probed rather than the raw call count.
+  const probed = new Set();
   const r = await fetchLaunchpadMetadata('robinhood', PONS, {
-    fetchImpl: async () => { calls += 1; return { ok: false, status: 500 }; },
+    fetchImpl: async (_url, opts) => {
+      probed.add(JSON.parse(opts.body).params[0].data.slice(0, 10));
+      return { ok: false, status: 500 };
+    },
   });
   assert.equal(r.status, 'no-getter');
-  assert.equal(calls, LAUNCHPAD_GETTERS.filter((g) => !g.chains || g.chains.includes('robinhood')).length,
-    'exactly the documented getters for this chain, one call each');
+
+  const expected = LAUNCHPAD_GETTERS
+    .filter((g) => !g.chains || g.chains.includes('robinhood'))
+    .map((g) => g.selector);
+  assert.deepEqual([...probed].sort(), expected.sort(),
+    'exactly the documented selectors, nothing guessed');
 });
 
 // ---- RugCheck score ------------------------------------------------------
