@@ -133,6 +133,33 @@ for (const [f, v] of Object.entries(verdicts)) {
   console.log(f.padEnd(11), v.verdict);
 }
 
-const out = { files: runs.map((r) => r.file), sameSample, verdicts };
-fs.writeFileSync(path.join(path.dirname(files[0]), 'stability.json'), JSON.stringify(out, null, 2));
-console.log('\nwrote stability.json');
+// The artifact records the INPUT DIGESTS, so a later reader can tell whether it still describes
+// the results on disk. A stability file citing results that have since been regenerated is a
+// stale claim - and one that has already misled once: an artifact committed from a pair where
+// one input was later deleted still asserted `dexPaid` was a capability limit after the harness
+// had been fixed and the field measured 77%.
+import crypto from 'node:crypto';
+
+const digest = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 16);
+
+const out = {
+  generatedAt: new Date().toISOString(),
+  inputs: runs.map((r, i) => ({ file: r.file, sha256_16: digest(files[i]) })),
+  sameSample,
+  // The totals these inputs produced, so a reader can see immediately whether the artifact still
+  // matches the results files without re-running the comparison.
+  totals: runs.map((r) => ({ file: r.file, ...totalsFromRows(r) })),
+  verdicts,
+};
+const outPath = path.join(path.dirname(files[0]), 'stability.json');
+fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
+console.log(`\nwrote ${path.basename(outPath)} (inputs digested; regenerate if a results file changes)`);
+
+// Warn loudly if an existing artifact no longer matches the current inputs.
+try {
+  const prior = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+  const priorFiles = (prior.inputs ?? []).map((i) => i.file);
+  const nowFiles = runs.map((r) => r.file);
+  const missing = priorFiles.filter((f) => !nowFiles.includes(f) && !fs.existsSync(path.join(path.dirname(files[0]), f)));
+  if (missing.length) console.log(`note: a previous artifact cited ${missing.join(', ')} which no longer exist(s)`);
+} catch { /* first run */ }

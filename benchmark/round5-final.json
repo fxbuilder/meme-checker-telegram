@@ -7,37 +7,58 @@
         "narrative": {
           "n": 5,
           "covered": 1,
-          "pct": 20
+          "pct": 20,
+          "applicableN": 5,
+          "applicablePct": 20,
+          "notApplicable": 0
         },
         "holders": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "tax": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 0,
+          "applicablePct": null,
+          "notApplicable": 5
         },
         "lp": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "dev": {
           "n": 5,
-          "covered": 4,
-          "pct": 80
+          "covered": 5,
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         }
       },
       "bsc": {
@@ -45,37 +66,58 @@
         "narrative": {
           "n": 6,
           "covered": 3,
-          "pct": 50
+          "pct": 50,
+          "applicableN": 6,
+          "applicablePct": 50,
+          "notApplicable": 0
         },
         "holders": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "tax": {
           "n": 6,
           "covered": 5,
-          "pct": 83
+          "pct": 83,
+          "applicableN": 6,
+          "applicablePct": 83,
+          "notApplicable": 0
         },
         "lp": {
           "n": 6,
           "covered": 5,
-          "pct": 83
+          "pct": 83,
+          "applicableN": 6,
+          "applicablePct": 83,
+          "notApplicable": 0
         },
         "dev": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         }
       },
       "robinhood": {
@@ -83,37 +125,58 @@
         "narrative": {
           "n": 6,
           "covered": 5,
-          "pct": 83
+          "pct": 83,
+          "applicableN": 6,
+          "applicablePct": 83,
+          "notApplicable": 0
         },
         "holders": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "tax": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "lp": {
           "n": 6,
           "covered": 1,
-          "pct": 17
+          "pct": 17,
+          "applicableN": 6,
+          "applicablePct": 17,
+          "notApplicable": 0
         },
         "dev": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 6,
           "covered": 6,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 6,
+          "applicablePct": 100,
+          "notApplicable": 0
         }
       },
       "base": {
@@ -121,37 +184,58 @@
         "narrative": {
           "n": 5,
           "covered": 2,
-          "pct": 40
+          "pct": 40,
+          "applicableN": 5,
+          "applicablePct": 40,
+          "notApplicable": 0
         },
         "holders": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "tax": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "lp": {
           "n": 5,
           "covered": 1,
-          "pct": 20
+          "pct": 20,
+          "applicableN": 5,
+          "applicablePct": 20,
+          "notApplicable": 0
         },
         "dev": {
           "n": 5,
           "covered": 4,
-          "pct": 80
+          "pct": 80,
+          "applicableN": 5,
+          "applicablePct": 80,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         }
       },
       "ethereum": {
@@ -159,37 +243,58 @@
         "narrative": {
           "n": 5,
           "covered": 1,
-          "pct": 20
+          "pct": 20,
+          "applicableN": 5,
+          "applicablePct": 20,
+          "notApplicable": 0
         },
         "holders": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 5,
           "covered": 2,
-          "pct": 40
+          "pct": 40,
+          "applicableN": 5,
+          "applicablePct": 40,
+          "notApplicable": 0
         },
         "tax": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "lp": {
           "n": 5,
           "covered": 1,
-          "pct": 20
+          "pct": 20,
+          "applicableN": 5,
+          "applicablePct": 20,
+          "notApplicable": 0
         },
         "dev": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         }
       },
       "elysium": {
@@ -197,37 +302,58 @@
         "narrative": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "holders": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "top10": {
           "n": 5,
           "covered": 5,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 5,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "tax": {
           "n": 5,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 5,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "lp": {
           "n": 5,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 5,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "dev": {
           "n": 5,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 5,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 5,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 5,
+          "applicablePct": 0,
+          "notApplicable": 0
         }
       },
       "hyperevm": {
@@ -235,37 +361,58 @@
         "narrative": {
           "n": 3,
           "covered": 3,
-          "pct": 100
+          "pct": 100,
+          "applicableN": 3,
+          "applicablePct": 100,
+          "notApplicable": 0
         },
         "holders": {
           "n": 3,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 3,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "top10": {
           "n": 3,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 3,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "tax": {
           "n": 3,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 3,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "lp": {
           "n": 3,
           "covered": 1,
-          "pct": 33
+          "pct": 33,
+          "applicableN": 3,
+          "applicablePct": 33,
+          "notApplicable": 0
         },
         "dev": {
           "n": 3,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 3,
+          "applicablePct": 0,
+          "notApplicable": 0
         },
         "dexPaid": {
           "n": 3,
           "covered": 0,
-          "pct": 0
+          "pct": 0,
+          "applicableN": 3,
+          "applicablePct": 0,
+          "notApplicable": 0
         }
       }
     },
@@ -273,37 +420,58 @@
       "narrative": {
         "n": 35,
         "covered": 20,
-        "pct": 57
+        "pct": 57,
+        "applicableN": 35,
+        "applicablePct": 57,
+        "notApplicable": 0
       },
       "holders": {
         "n": 35,
         "covered": 32,
-        "pct": 91
+        "pct": 91,
+        "applicableN": 35,
+        "applicablePct": 91,
+        "notApplicable": 0
       },
       "top10": {
         "n": 35,
         "covered": 29,
-        "pct": 83
+        "pct": 83,
+        "applicableN": 35,
+        "applicablePct": 83,
+        "notApplicable": 0
       },
       "tax": {
         "n": 35,
         "covered": 26,
-        "pct": 74
+        "pct": 74,
+        "applicableN": 30,
+        "applicablePct": 87,
+        "notApplicable": 5
       },
       "lp": {
         "n": 35,
         "covered": 14,
-        "pct": 40
+        "pct": 40,
+        "applicableN": 35,
+        "applicablePct": 40,
+        "notApplicable": 0
       },
       "dev": {
         "n": 35,
-        "covered": 25,
-        "pct": 71
+        "covered": 26,
+        "pct": 74,
+        "applicableN": 35,
+        "applicablePct": 74,
+        "notApplicable": 0
       },
       "dexPaid": {
         "n": 35,
         "covered": 27,
-        "pct": 77
+        "pct": 77,
+        "applicableN": 35,
+        "applicablePct": 77,
+        "notApplicable": 0
       }
     },
     "outcomes": {
@@ -330,8 +498,8 @@
         "unknown": 21
       },
       "dev": {
-        "partial": 25,
-        "unknown": 9,
+        "partial": 26,
+        "unknown": 8,
         "unavailable": 1
       },
       "dexPaid": {
@@ -348,7 +516,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 2862,
+      "ms": 3719,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -409,7 +577,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 4890,
+      "ms": 4280,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -418,7 +586,7 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 1906033
+          "value": 1905941
         },
         "top10": {
           "outcome": "measured",
@@ -470,7 +638,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 5743,
+      "ms": 5822,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -532,7 +700,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 4651,
+      "ms": 4246,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -594,7 +762,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 3763,
+      "ms": 4083,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -603,7 +771,7 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 909995
+          "value": 909989
         },
         "top10": {
           "outcome": "measured",
@@ -656,7 +824,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 6638,
+      "ms": 31944,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -664,11 +832,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 5901
+          "value": 6043
         },
         "top10": {
           "outcome": "measured",
-          "value": 22.72
+          "value": 22.51
         },
         "tax": {
           "outcome": "measured",
@@ -717,7 +885,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 11091,
+      "ms": 1954,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -779,7 +947,7 @@
       "role": "named",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 43622,
+      "ms": 28603,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -788,11 +956,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 980
+          "value": 979
         },
         "top10": {
           "outcome": "measured",
-          "value": 26.36
+          "value": 26.44
         },
         "tax": {
           "outcome": "unavailable"
@@ -839,7 +1007,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 6806,
+      "ms": 6823,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -899,7 +1067,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12565,
+      "ms": 12637,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -959,7 +1127,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 26572,
+      "ms": 12956,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -981,7 +1149,8 @@
           "value": "100/0"
         },
         "dev": {
-          "outcome": "unknown"
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
         },
         "dexPaid": {
           "outcome": "measured",
@@ -1018,7 +1187,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 5282,
+      "ms": 4554,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1078,7 +1247,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12511,
+      "ms": 12477,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1139,7 +1308,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12166,
+      "ms": 11917,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1201,7 +1370,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 4919,
+      "ms": 13118,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1263,7 +1432,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 13567,
+      "ms": 5088,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1271,11 +1440,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 2481
+          "value": 2467
         },
         "top10": {
           "outcome": "measured",
-          "value": 62.04
+          "value": 61.95
         },
         "tax": {
           "outcome": "measured",
@@ -1324,7 +1493,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12451,
+      "ms": 12978,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1384,7 +1553,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12954,
+      "ms": 13323,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1444,7 +1613,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 4862,
+      "ms": 12572,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1504,7 +1673,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12918,
+      "ms": 5090,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1566,7 +1735,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 8205,
+      "ms": 16469,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1628,7 +1797,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 18642,
+      "ms": 10457,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1690,7 +1859,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 8801,
+      "ms": 8844,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1751,7 +1920,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 9528,
+      "ms": 11681,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1760,11 +1929,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 6275
+          "value": 6274
         },
         "top10": {
           "outcome": "measured",
-          "value": 49.34
+          "value": 49.35
         },
         "tax": {
           "outcome": "measured",
@@ -1813,7 +1982,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 11892,
+      "ms": 11932,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1821,7 +1990,7 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 124119
+          "value": 124117
         },
         "top10": {
           "outcome": "measured",
@@ -1873,7 +2042,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 13087,
+      "ms": 5093,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -1935,7 +2104,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 4622,
+      "ms": 12900,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -1996,7 +2165,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 12967,
+      "ms": 12958,
       "fields": {
         "narrative": {
           "outcome": "unavailable",
@@ -2057,7 +2226,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 26641,
+      "ms": 18600,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2113,7 +2282,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 19452,
+      "ms": 27692,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2171,7 +2340,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 18584,
+      "ms": 18119,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2229,7 +2398,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 26680,
+      "ms": 21555,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2238,11 +2407,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 6634
+          "value": 6633
         },
         "top10": {
           "outcome": "measured",
-          "value": 80.54
+          "value": 80.51
         },
         "tax": {
           "outcome": "unavailable"
@@ -2287,7 +2456,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 27176,
+      "ms": 19398,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2296,7 +2465,7 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 3323
+          "value": 3322
         },
         "top10": {
           "outcome": "measured",
@@ -2347,7 +2516,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 15983,
+      "ms": 44008,
       "fields": {
         "narrative": {
           "outcome": "measured",
@@ -2356,11 +2525,11 @@
         },
         "holders": {
           "outcome": "measured",
-          "value": 969
+          "value": 970
         },
         "top10": {
           "outcome": "measured",
-          "value": 63.66
+          "value": 63.65
         },
         "tax": {
           "outcome": "unavailable"
@@ -2407,7 +2576,7 @@
       "role": "extra",
       "scanStatus": "ok",
       "riskStatus": "ok",
-      "ms": 31150,
+      "ms": 16665,
       "fields": {
         "narrative": {
           "outcome": "measured",

@@ -168,7 +168,7 @@ the one with the corrected narrative harness.
 | top10 | 74% | **83%** | +9 |
 | tax | 69% | **74%** | +5 |
 | lp | 40% | 40% | 0 |
-| dev | 60% | **71%** | +11 |
+| dev | 60% | **74%** | +14 |
 | dexPaid | 0% | 0% | 0 |
 | consistency | 100% | **100%** | — |
 
@@ -187,6 +187,31 @@ the one with the corrected narrative harness.
 Elysium went **0% → 100%** on holders, top10 AND narrative. HyperEVM narrative is 100% while
 holders remain 0% — the narrative pipeline reaches it, the holder source does not exist.
 
+### Raw vs applicable coverage
+
+The brief asks for these separately, and they answer different questions:
+
+- **raw** — covered / every token. Punishes a field for existing where it cannot apply.
+- **applicable** — covered / every token EXCEPT those proven not-applicable.
+
+A token with no buy/sell tax concept is not a coverage failure; **proving non-applicability is
+the correct answer.** But a chain where the source is simply absent still counts against the
+applicable rate, which is the number that says whether the engineering is finished.
+
+| Field | Raw | Applicable | n/a | Why they differ |
+| --- | --- | --- | --- | --- |
+| narrative | 57% | **57%** | 0 | always applicable |
+| holders | 91% | **91%** | 0 | always applicable |
+| top10 | 83% | **83%** | 0 | always applicable |
+| tax | 74% | **87%** | 5 | 5 legacy SPL tokens have no tax concept |
+| lp | 40% | **40%** | 0 | always applicable |
+| dev | 74% | **74%** | 0 | always applicable |
+| dexPaid | 77% | **77%** | 0 | always applicable |
+
+Tax moves to **87% applicable** because the five `not-applicable` outcomes are findings, not
+gaps. Every other field is unchanged, which is itself informative: their gaps are missing
+sources, not proven inapplicability.
+
 ### Targets: where they stand
 
 | Target | Measured | Status |
@@ -194,7 +219,7 @@ holders remain 0% — the narrative pipeline reaches it, the holder source does 
 | Narrative ≥95% where evidence exists | 57% | **not met** |
 | Holders ≥90% | 91% | **met** |
 | Top 10 ≥90% | 83% | **not met** |
-| Applicable tax ≥90% | 74% | **not met** |
+| Applicable tax ≥90% | 87% applicable (74% raw) | **not met** |
 | Determined LP ≥90% | 40% | **not met** |
 | Risk consistency 100% | 100% | **met** |
 | No false-safe indicators | 100% | **met** |

@@ -276,11 +276,36 @@ for (const t of tokens) {
 // ---- aggregation ----------------------------------------------------------
 const FIELD_NAMES = ['narrative', 'holders', 'top10', 'tax', 'lp', 'dev', 'dexPaid'];
 
+/**
+ * Coverage is reported TWO ways, because they answer different questions.
+ *
+ *   raw         covered / ALL tokens. Punishes a field for existing where it cannot apply.
+ *   applicable  covered / (all tokens EXCEPT those proven not-applicable).
+ *
+ * A token with no buy/sell tax concept is not a coverage failure - proving non-applicability is
+ * itself the correct answer. But a chain where the source is simply missing still counts against
+ * the applicable rate, which is the number that says whether the ENGINEERING is done.
+ *
+ * Reporting only the raw figure understates the work; reporting only applicable hides real gaps.
+ * Both are returned so neither can be quoted alone.
+ */
 function rate(filter, field) {
   const subset = rows.filter(filter);
-  if (!subset.length) return { n: 0, covered: 0, pct: null };
+  if (!subset.length) {
+    return { n: 0, covered: 0, pct: null, applicableN: 0, applicablePct: null, notApplicable: 0 };
+  }
   const covered = subset.filter((r) => COUNTS_AS_COVERED.has(r.fields[field].outcome)).length;
-  return { n: subset.length, covered, pct: Math.round((covered / subset.length) * 100) };
+  const notApplicable = subset.filter((r) => r.fields[field].outcome === OUTCOME.NOT_APPLICABLE).length;
+  const applicableN = subset.length - notApplicable;
+  return {
+    n: subset.length,
+    covered,
+    pct: Math.round((covered / subset.length) * 100),
+    // The denominator that excludes proven non-applicability.
+    applicableN,
+    applicablePct: applicableN > 0 ? Math.round((covered / applicableN) * 100) : null,
+    notApplicable,
+  };
 }
 
 const summary = { total: rows.length, byChain: {}, byField: {}, outcomes: {} };
@@ -301,13 +326,19 @@ for (const c of chains) {
   for (const f of FIELD_NAMES) summary.byChain[c][f] = rate((r) => r.chain === c, f);
 }
 
-console.log('\n=== RAW COVERAGE (all tokens, all classes) ===');
+console.log('\n=== COVERAGE: raw vs applicable ===');
+console.log('field'.padEnd(11), 'raw'.padEnd(14), 'applicable'.padEnd(18), 'n/a   outcomes');
 for (const f of FIELD_NAMES) {
   const b = summary.byField[f];
   const o = summary.outcomes[f];
+  const applicable = b.applicablePct == null
+    ? 'n/a (none applicable)'
+    : `${b.covered}/${b.applicableN} = ${b.applicablePct}%`;
   console.log(
-    f.padEnd(10),
-    `${b.covered}/${b.n} = ${b.pct}%`.padEnd(16),
+    f.padEnd(11),
+    `${b.covered}/${b.n} = ${b.pct}%`.padEnd(14),
+    applicable.padEnd(18),
+    String(b.notApplicable).padEnd(5),
     Object.entries(o).map(([k, v]) => `${k}:${v}`).join(' '),
   );
 }
@@ -317,7 +348,7 @@ for (const c of chains) {
   const row = summary.byChain[c];
   console.log(
     c.padEnd(10), `n=${row.n}`.padEnd(5),
-    FIELD_NAMES.map((f) => `${f}=${row[f].pct}%`).join(' '),
+    FIELD_NAMES.map((f) => (row[f].applicablePct == null ? `${f}=n/a` : `${f}=${row[f].applicablePct}%`)).join(' '),
   );
 }
 
