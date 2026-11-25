@@ -22,14 +22,18 @@ const BONK = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 
 // ---- chain coverage ------------------------------------------------------
 
-test('the chain map covers every registered chain except Robinhood', () => {
+test('the chain map covers EVERY registered market chain, including Robinhood', () => {
+  // ROUND 3 CORRECTION. This previously asserted Robinhood was absent, and that belief was
+  // the bug: GeckoTerminal does serve /networks/robinhood, so PONS (0x39dbed3a…) reported
+  // 'unsupported-chain' from the whole narrative pipeline. Verified live against
+  // /api/v2/networks/robinhood/tokens/<addr>/info.
   const expected = [
     'solana', 'ethereum', 'bsc', 'base', 'arbitrum', 'optimism', 'polygon',
     'avalanche', 'hyperevm', 'monad', 'unichain', 'berachain', 'abstract',
-    'megaeth', 'story',
+    'megaeth', 'story', 'robinhood',
   ];
   for (const c of expected) assert.equal(gtSupportsChain(c), true, `${c} must map`);
-  assert.equal(gtSupportsChain('robinhood'), false, 'Robinhood is genuinely absent from GeckoTerminal');
+  // An unknown chain still has no mapping - the guard itself must remain.
   assert.equal(gtSupportsChain('nonexistent'), false);
 });
 
@@ -42,10 +46,19 @@ test('network ids are the specific ones, not guesses', () => {
   assert.equal(gtNetwork('unknown-chain'), null);
 });
 
-test('an unsupported chain reports a coverage gap, not an empty token', () => {
-  const c = narrativeCoverageForChain('robinhood');
+test('a chain with no GeckoTerminal mapping reports a coverage gap, not an empty token', () => {
+  // Robinhood is mapped now, so the gap case uses a chain that genuinely is not.
+  const c = narrativeCoverageForChain('nonexistent-chain');
   assert.equal(c.available, false);
   assert.equal(c.reason, 'no-metadata-source');
+});
+
+test('Robinhood IS covered, which is what made PONS report no narrative', () => {
+  // The bug this locks down: the map omitted robinhood, so the pipeline short-circuited
+  // to 'unsupported-chain' before asking any provider.
+  assert.equal(gtSupportsChain('robinhood'), true);
+  assert.equal(gtNetwork('robinhood'), 'robinhood');
+  assert.notEqual(narrativeCoverageForChain('robinhood').reason, 'no-metadata-source');
 });
 
 // ---- payload normalisation ----------------------------------------------
@@ -99,7 +112,7 @@ test('malicious or malformed links are dropped rather than repaired', () => {
 
 test('an unmapped chain is refused without any request', async () => {
   let called = false;
-  const r = await fetchTokenInfo('robinhood', BONK, {
+  const r = await fetchTokenInfo('nonexistent-chain', BONK, {
     fetchImpl: async () => { called = true; return { ok: true, status: 200 }; },
     skipGate: true,
   });

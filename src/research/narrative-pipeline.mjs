@@ -147,13 +147,31 @@ export function htmlToText(html, { maxChars = 6_000 } = {}) {
 }
 
 /** True when the extracted text is a cookie wall or an error page, not content. */
-export function isBoilerplate(text) {
-  if (!text || text.length < 60) return true;
+export function isBoilerplate(text, { minChars = 60, statPanel = true } = {}) {
+  if (!text || text.length < minChars) return true;
   if (BOILERPLATE.some((re) => re.test(text))) return true;
   // A trading-stats panel is not a description, even though it is real text off the
   // real project page. Without this the ANT card showed volume/liquidity as its story.
+  //
+  // `statPanel: false` is for a value read from a DECLARED description field. That is
+  // not scraped page furniture: the project chose to publish those exact words. Judging
+  // it by digit-density rejected PONS's real description ("100% of fees go back to Pons")
+  // purely for containing a percentage.
+  if (!statPanel) return false;
   return isStatPanel(text);
 }
+
+/**
+ * Minimum length for a DESCRIPTION FIELD (as opposed to scraped page text).
+ *
+ * The 60-char floor above exists because a scraped fragment of a page is usually noise.
+ * A value read from a declared `description` field is not scraped: it is the project's
+ * answer to "what is this", and short ones are legitimate. PONS stores
+ * "100% of fees go back to Pons" (29 chars) on its token contract, and the 60-char floor
+ * silently discarded it - the narrative then read "no published description" for a token
+ * that had one.
+ */
+export const MIN_DESCRIPTION_CHARS = 12;
 
 /**
  * Recognise the marketplace a token TRADES ON, from the pair identity the scan
@@ -221,11 +239,26 @@ export function detectLaunchpad(result) {
  * informative, a website is second, and a market-provider blurb is last.
  */
 export function chooseSummary(candidates) {
-  const usable = candidates.filter((c) => c && c.text && !isBoilerplate(c.text));
+  // Curated description fields get the lower floor; anything that came from scraped page
+  // text keeps the 60-char floor. Using one threshold for both is what discarded PONS.
+  const usable = candidates.filter((c) => {
+    if (!c || !c.text) return false;
+    // Scraped page text and market blurbs keep the strict rules. A DECLARED description
+    // field is the project's own answer, so it is not subjected to stat-panel heuristics -
+    // that rejected PONS's "100% of fees go back to Pons" for looking like a statistic.
+    const scraped = c.source === 'website' || c.source === 'market';
+    return !isBoilerplate(c.text, {
+      minChars: scraped ? 60 : MIN_DESCRIPTION_CHARS,
+      statPanel: scraped,
+    });
+  });
   if (!usable.length) return null;
   // GeckoTerminal first: broadest coverage, and the most current for new tokens.
   // CoinGecko is now SUPPLEMENTARY, not the backbone.
-  const rank = { geckoterminal: 0, metaplex: 1, 'onchain-meta': 2, coingecko: 3, website: 4, market: 5 };
+  const rank = {
+    geckoterminal: 0, metaplex: 1, 'onchain-meta': 2, 'launchpad-meta': 3,
+    coingecko: 4, website: 5, market: 6,
+  };
   return usable.sort((a, b) => (rank[a.source] ?? 9) - (rank[b.source] ?? 9))[0];
 }
 
@@ -250,6 +283,8 @@ export function composeNarrative({
   metaplex = null,
   /** EVM on-chain metadata document (`metaURI()`), when the contract declares one. */
   onchainMeta = null,
+  /** Launchpad-declared metadata (`getTokenInfo()` and friends), when implemented. */
+  launchpadMeta = null,
 } = {}) {
   const candidates = [];
 
@@ -283,6 +318,17 @@ export function composeNarrative({
       source: 'onchain-meta',
       evidence: 'project-claim',
       label: 'Token metadata (on-chain)',
+    });
+  }
+
+  // Launchpad metadata. The token contract itself stores this description, so it is the
+  // project describing itself - the same evidence class as a GeckoTerminal description.
+  if (launchpadMeta?.description && !gtToken?.description && !onchainMeta?.description) {
+    candidates.push({
+      text: launchpadMeta.description,
+      source: 'launchpad-meta',
+      evidence: 'project-claim',
+      label: 'Token metadata (launchpad)',
     });
   }
 

@@ -160,9 +160,40 @@ export function renderRisk({ target, risk, chainName }) {
     return `${label}: ${risky ? '🔴' : '🟢'} ${v ? 'Yes' : 'No'}`;
   };
 
-  L.push(`• ${flagLine('Honeypot', sec.honeypot)}`);
+  // HONEYPOT RISK: four states, and UNKNOWN is never green.
+  //
+  // A provider flag is only a yes/no. Presenting "No" as a green tick overstates what was
+  // actually verified - a token can be sellable in a simulation and still trap holders
+  // via a hidden blacklist. So the risk LEVEL is explicit:
+  //   flag true       -> HIGH
+  //   flag false      -> LOW (the provider did simulate and the token passed)
+  //   flag unmeasured -> UNKNOWN, muted, never green
+  // RugCheck's published score is a second, independent signal, shown separately.
+  const honeypotLevel = (() => {
+    if (sec.honeypot === true) return { label: 'HIGH', tone: 'bad' };
+    if (sec.honeypot === false) return { label: 'LOW', tone: 'good' };
+    return { label: 'UNKNOWN', tone: 'muted' };
+  })();
+  const hpIcon = honeypotLevel.tone === 'good' ? '🟢' : honeypotLevel.tone === 'bad' ? '🔴' : '⚪';
+  L.push(`• Honeypot Risk: ${hpIcon} <b>${honeypotLevel.label}</b>`);
+
   L.push(`• ${flagLine('Mintable', sec.mintable)}`);
   L.push(`• ${flagLine('Freezable', sec.freezable)}`);
+
+  // RugCheck's own score, clearly attributed. Shown only when RugCheck published it, and
+  // never substituted with another provider's figure under this name.
+  if (sec.rugcheckScore !== null && sec.rugcheckScore !== undefined) {
+    const n = Number(sec.rugcheckScore);
+    // 0 = clean, 100 = worst.
+    const band = n >= 50 ? 'HIGH' : n >= 20 ? 'MEDIUM' : 'LOW';
+    const icon = band === 'LOW' ? '🟢' : band === 'MEDIUM' ? '🟡' : '🔴';
+    L.push(`• RugCheck Score: ${icon} <b>${n}</b>/100 (${band} risk)`);
+  }
+  if (Array.isArray(sec.rugcheckRisks) && sec.rugcheckRisks.length) {
+    for (const risk of sec.rugcheckRisks.slice(0, 3)) {
+      L.push(`   – ${esc(risk.name)}`);
+    }
+  }
   if (sec.hiddenOwner !== null && sec.hiddenOwner !== undefined) {
     L.push(`• ${flagLine('Hidden owner', sec.hiddenOwner)}`);
   }
@@ -243,7 +274,7 @@ export async function handleRisk(ctx, deps) {
   }
   const resolved = await resolveChainForResearch(target, deps);
   if (!resolved.ok) {
-    await ctx.reply(ambiguityMessage(target.address), { parse_mode: 'HTML' });
+    await ctx.reply(ambiguityMessage(target.address, { candidates: resolved.candidates ?? null }), { parse_mode: 'HTML' });
     return;
   }
   target.chain = resolved.chain;
@@ -321,7 +352,7 @@ export async function handleDev(ctx, deps) {
   }
   const resolved = await resolveChainForResearch(target, deps);
   if (!resolved.ok) {
-    await ctx.reply(ambiguityMessage(target.address), { parse_mode: 'HTML' });
+    await ctx.reply(ambiguityMessage(target.address, { candidates: resolved.candidates ?? null }), { parse_mode: 'HTML' });
     return;
   }
   target.chain = resolved.chain;
@@ -401,7 +432,7 @@ export async function handleBundle(ctx, deps) {
   }
   const resolved = await resolveChainForResearch(target, deps);
   if (!resolved.ok) {
-    await ctx.reply(ambiguityMessage(target.address), { parse_mode: 'HTML' });
+    await ctx.reply(ambiguityMessage(target.address, { candidates: resolved.candidates ?? null }), { parse_mode: 'HTML' });
     return;
   }
   target.chain = resolved.chain;

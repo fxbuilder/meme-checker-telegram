@@ -56,11 +56,31 @@ test('no provider record is stated as unknown, not safe', () => {
 
 // ---- unknown fields ------------------------------------------------------
 
-test('an absent flag renders as a dash, never as a green No', () => {
+test('an absent honeypot flag renders UNKNOWN, never a green pass', () => {
   const t = render({ status: 'ok', data: { holders: {}, tax: null, lpLock: null, dev: null, security: { honeypot: null, mintable: null, freezable: null } } });
-  assert.match(t, /Honeypot: —/);
+  // ROUND 3: the honeypot is now an explicit four-state RISK LEVEL rather than a
+  // yes/no flag, because "No" in green overstated what a provider actually verified.
+  assert.match(t, /Honeypot Risk: ⚪ <b>UNKNOWN<\/b>/);
   assert.match(t, /Mintable: —/);
-  assert.ok(!/Honeypot: 🟢 No/.test(t), 'unknown must not read as a pass');
+  assert.match(t, /Freezable: —/);
+  assert.ok(!/Honeypot Risk: 🟢/.test(t), 'unknown must never read as a pass');
+  assert.ok(!/Honeypot Risk: LOW/.test(t), 'an unmeasured flag is not LOW risk');
+});
+
+test('a measured clean honeypot flag is LOW and a detected one is HIGH', () => {
+  const low = render({ status: 'ok', data: { holders: {}, tax: null, lpLock: null, dev: null, security: { honeypot: false } } });
+  assert.match(low, /Honeypot Risk: 🟢 <b>LOW<\/b>/);
+  const high = render({ status: 'ok', data: { holders: {}, tax: null, lpLock: null, dev: null, security: { honeypot: true } } });
+  assert.match(high, /Honeypot Risk: 🔴 <b>HIGH<\/b>/);
+});
+
+test('a RugCheck score is attributed to RugCheck and never invented', () => {
+  const withScore = render({ status: 'ok', data: { holders: {}, tax: null, lpLock: null, dev: null, security: { rugcheckScore: 42 } } });
+  assert.match(withScore, /RugCheck Score: 🟡 <b>42<\/b>\/100 \(MEDIUM risk\)/);
+  // Absent score: no line at all, rather than a zero that reads as clean.
+  const noScore = render({ status: 'ok', data: { holders: {}, tax: null, lpLock: null, dev: null, security: {} } });
+  assert.ok(!/RugCheck Score/.test(noScore));
+  assert.ok(!/RugCheck Score: .*<b>0<\/b>/.test(noScore), 'a missing score is not 0');
 });
 
 test('missing tax is not zero tax', () => {

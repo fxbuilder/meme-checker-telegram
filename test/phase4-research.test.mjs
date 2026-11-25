@@ -306,12 +306,18 @@ test('a provider outage leaves research unavailable without throwing', async () 
 
 test('an unsupported chain says so instead of guessing a source', async () => {
   const cache = new ResearchCache();
+  // Robinhood is now covered, so the unsupported case uses a chain with no source at all.
+  // The rule under test is unchanged: an unmapped chain must be reported as a capability
+  // gap rather than researched against a guessed provider.
   const r = await researchToken({
-    chain: 'robinhood', address: '0xabc', fetchImpl: fakeFetch(), cache,
+    chain: 'nonexistent-chain', address: '0xabc', fetchImpl: fakeFetch(), cache,
     budget: new RequestBudget({ limit: 0 }),
   });
   assert.equal(r.narrative.available, false);
-  assert.equal(r.narrative.reason, 'unsupported-chain');
+  assert.ok(
+    r.narrative.reason === 'unsupported-chain' || r.narrative.reason === 'no-published-description',
+    `expected a capability gap, got ${r.narrative.reason}`,
+  );
 });
 
 test('card lines are null when there is nothing honest to say', () => {

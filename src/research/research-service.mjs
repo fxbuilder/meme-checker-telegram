@@ -25,6 +25,7 @@ import {
 import { researchCache, cacheKey, TTL_MS, xBudget } from './research-cache.mjs';
 import * as premiumPreview from './premium-preview.mjs';
 import { fetchOnchainMetadata } from './evm-metadata.mjs';
+import { fetchLaunchpadMetadata } from './launchpad-metadata.mjs';
 
 /**
  * First candidate that is a usable non-empty string.
@@ -229,6 +230,34 @@ export async function researchToken({
     }
   }
 
+  // ---- launchpad metadata (EVM) -------------------------------------------
+  // Launchpad tokens often store a description ON THE TOKEN CONTRACT while publishing
+  // nothing to any index. Verified on PONS (Robinhood Chain): GeckoTerminal's
+  // description is empty, and `getTokenInfo()` returns "100% of fees go back to Pons",
+  // a string that appears on no indexer.
+  //
+  // Only documented getters are called (LAUNCHPAD_GETTERS), so this is generic mechanism,
+  // not a per-token special case, and an arbitrary contract is never probed with guessed
+  // selectors.
+  let launchpadMeta = null;
+  const haveProse = (gt?.status === 'ok' && (gt.token?.description ?? '').trim())
+    || (onchainMeta?.status === 'ok');
+  if (isEvm && !haveProse) {
+    const lpKey = cacheKey('launchpad-meta', chain, address);
+    try {
+      const lpRes = await cache.cached(
+        lpKey,
+        TTL_MS.description,
+        () => fetchLaunchpadMetadata(chain, address, { fetchImpl }),
+        { ttlOnFailure: TTL_MS.failure },
+      );
+      if (lpRes?.status === 'ok' || lpRes?.status === 'empty') launchpadMeta = lpRes;
+      if (!out.fromCache) out.requests += 1;
+    } catch {
+      // A failed launchpad read must not lose the rest of the narrative.
+    }
+  }
+
   // ---- compose from every source that actually produced something ----------
   const composed = composeNarrative({
     result: scanResult
@@ -240,6 +269,7 @@ export async function researchToken({
     mint,
     metaplex,
     onchainMeta,
+    launchpadMeta,
   });
 
   out.narrative = {
@@ -258,6 +288,7 @@ export async function researchToken({
       onchain: mint ? 'ok' : (chain === 'solana' ? 'not-read' : 'unsupported-chain'),
       metaplex: metaplex ? 'ok' : (chain === 'solana' ? 'not-found' : 'unsupported-chain'),
       onchainMeta: onchainMeta?.status ?? (isEvm ? 'not-consulted' : 'unsupported-chain'),
+      launchpadMeta: launchpadMeta?.status ?? (isEvm ? 'not-consulted' : 'unsupported-chain'),
     },
   };
 
@@ -273,6 +304,15 @@ export async function researchToken({
       ...(out.narrative.links ?? {}),
       twitter: out.narrative.links?.twitter ?? onchainMeta.twitter ?? null,
       website: out.narrative.links?.website ?? onchainMeta.website ?? null,
+    };
+  }
+  // Launchpad-declared socials fill anything still missing.
+  if (launchpadMeta?.socials) {
+    out.narrative.links = {
+      ...(out.narrative.links ?? {}),
+      twitter: out.narrative.links?.twitter ?? launchpadMeta.socials.twitter ?? null,
+      website: out.narrative.links?.website ?? launchpadMeta.socials.website ?? null,
+      telegram: out.narrative.links?.telegram ?? launchpadMeta.socials.telegram ?? null,
     };
   }
 

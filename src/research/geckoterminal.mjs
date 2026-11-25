@@ -45,7 +45,12 @@ export const GT_NETWORK = {
   abstract: 'abstract',
   megaeth: 'megaeth',
   story: 'story',
-  // robinhood: NOT on GeckoTerminal - covered by DexScreener only.
+  // VERIFIED LIVE: robinhood IS on GeckoTerminal. The comment here previously claimed it
+  // was DexScreener-only, so gtSupportsChain('robinhood') returned false and the whole
+  // narrative pipeline short-circuited to 'unsupported-chain'. That is why PONS
+  // (0x39dbed3a…) reported no narrative despite GeckoTerminal returning name, website
+  // and twitter for it.
+  robinhood: 'robinhood',
 };
 
 /** True when this chain has a GeckoTerminal network mapping. */

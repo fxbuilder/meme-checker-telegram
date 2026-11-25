@@ -12,7 +12,7 @@
 
 import { Telegraf, Markup } from 'telegraf';
 import { detectAll, parseChainHint, DEFAULT_EVM_CHAIN as DETECT_DEFAULT_EVM } from './detect-ca.mjs';
-import { checkCooldown } from './cooldown.mjs';
+import { checkCooldown, coalesceScan, cooldownMessage } from './cooldown.mjs';
 import { scan } from './scanner.mjs';
 import { formatCard } from './format-card.mjs';
 import { esc } from './card-layout.mjs';
@@ -183,16 +183,23 @@ async function runScan(ctx, chain, address, {
   const userId = ctx.from?.id ?? 0;
   const chatId = chatIdOverride ?? ctx.chat?.id ?? 0;
 
-  const gate = checkCooldown({ userId, chatId, address });
+  // PACING, NOT SUPPRESSION.
+  //
+  // The OWNER pasted the same token three times and got nothing: the old 60 s
+  // same-address window returned silently. Silence is indistinguishable from a broken
+  // bot, so a repeat is now ALLOWED and served from cache, and pacing is short and
+  // always explained. OWNER ids bypass pacing for testing.
+  const gate = checkCooldown({
+    userId,
+    chatId,
+    address,
+    isPrivate: !isGroupChat(ctx),
+    // The same owner set the access policy uses, so there is one definition of OWNER.
+    ownerIds: [...(accessPolicy?.ownerIds ?? [])],
+  });
   if (gate.blocked) {
-    if (gate.reason === 'duplicate') {
-      // Same CA already responded in this chat recently — silently skip.
-      return;
-    }
-    if (gate.reason === 'cooldown') {
-      await ctx.reply(`⏳ Please wait ${gate.waitSeconds}s before checking again.`);
-      return;
-    }
+    await ctx.reply(cooldownMessage(gate.waitSeconds ?? 1));
+    return;
   }
 
   let loadingMsg;
@@ -200,7 +207,8 @@ async function runScan(ctx, chain, address, {
     loadingMsg = await ctx.reply(`🔍 Scanning ${chainLabel(chain)} token…`);
   } catch (_) { /* non-fatal */ }
 
-  const result = await scan({ chain, address });
+  // Concurrent identical pastes share one provider round trip instead of racing.
+  const result = await coalesceScan({ chatId, chain, address }, () => scan({ chain, address }));
 
   // ---- First-call attribution inside the card (groups only) --------------
   // Shown whenever a call already exists for this token in this group, in BOTH

@@ -190,6 +190,21 @@ export function normalizeRugCheck(raw) {
       mintable: raw.mintAuthority === null ? false : (raw.mintAuthority ? true : null),
       freezable: raw.freezeAuthority === null ? false : (raw.freezeAuthority ? true : null),
       honeypot: null, // RugCheck does not simulate sells; leave honestly unknown.
+      // RugCheck's OWN score. Kept under a provider-specific key so it can never be
+      // mistaken for, or silently substituted by, another provider's score. The field is
+      // `score_normalised` (0-100, HIGHER = riskier) and is only present when RugCheck
+      // actually published it; the raw `score` is unbounded and is not shown.
+      rugcheckScore: num(raw.score_normalised),
+      rugcheckRisks: Array.isArray(raw.risks)
+        ? raw.risks
+          .filter((r) => r && typeof r.name === 'string')
+          .slice(0, 6)
+          .map((r) => ({
+            name: r.name.slice(0, 60),
+            level: typeof r.level === 'string' ? r.level.slice(0, 12) : null,
+            description: typeof r.description === 'string' ? r.description.slice(0, 160) : null,
+          }))
+        : null,
       rugged: typeof raw.rugged === 'boolean' ? raw.rugged : null,
     },
     tax,

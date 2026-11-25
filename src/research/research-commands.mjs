@@ -21,6 +21,7 @@ import { Markup } from 'telegraf';
 import { getChain } from '../chains.mjs';
 import { parseCallArgs } from '../call-commands.mjs';
 import { detectAll } from '../detect-ca.mjs';
+import { chainResolver } from '../chain-resolver.mjs';
 import { buildPreview, renderPreview, isEntitledToFullResearch } from './premium-preview.mjs';
 import { researchToken } from './research-service.mjs';
 import { fmtUsd } from '../card-layout.mjs';
@@ -42,21 +43,33 @@ function clip(s, n) {
  * calls first and then the group's default chain.
  */
 export function resolveResearchTarget(text, { defaultEvmChain = 'bsc' } = {}) {
+  // `/narrative@MyBot bsc 0x…` is a normal Telegram form and must parse identically.
   const raw = String(text ?? '').replace(/^\/\w+(@\w+)?\s*/i, '').trim();
   if (!raw) return { error: 'missing' };
   const parsed = parseCallArgs(raw, defaultEvmChain);
   if (!parsed.address) return { error: 'not-an-address' };
 
-  // An EVM address is valid on ~14 chains. Silently taking the group default would
-  // research the wrong network — the same class of error as attributing a
-  // same-ticker impostor. Mark it ambiguous and let the caller find evidence.
-  const det = detectAll(raw, { defaultEvmChain });
-  const ambiguous = det.kind === 'evm' && det.ambiguous;
+  // THE EXPLICIT CHAIN MUST REACH THE DETECTOR.
+  //
+  // This used to call detectAll(raw, { defaultEvmChain }) and drop `parsed.chainHint`.
+  // detectAll marks an EVM address ambiguous unless it is told a chain, so
+  // `/narrative bsc 0x…` parsed the chain correctly and then still reported ambiguity —
+  // the bot asked for a chain the user had just supplied. Every address-based command
+  // shares this parser, so the fix belongs here and not in each handler.
+  const det = detectAll(raw, { defaultEvmChain, chainHint: parsed.chainHint });
+
+  // Ambiguity now means: EVM, no chain was stated, and more than one chain is possible.
+  const ambiguous = det.kind === 'evm' && det.ambiguous && !parsed.chainHint;
+
   return {
     chain: parsed.candidates[0].chain,
     address: parsed.address,
     candidates: parsed.candidates,
+    // Kept so callers can distinguish "user told us the chain" from "we worked it out",
+    // which is what decides whether a follow-up prompt is ever appropriate.
+    chainHint: parsed.chainHint ?? null,
     ambiguous,
+    kind: det.kind,
     evmLikely: ambiguous ? ['ethereum', 'bsc', 'base'] : null,
   };
 }
@@ -85,7 +98,30 @@ export async function resolveAmbiguousChain({ address, candidates = ['ethereum',
  * researching a default network.
  */
 export async function resolveChainForResearch(target, deps) {
+  // An explicit chain, or a non-EVM address, needs no resolution at all.
   if (!target.ambiguous) return { ok: true, chain: target.chain };
+
+  // PRIMARY: the shared resolver used by automatic scans and /check. It answers from
+  // two address-scoped indexers and refuses to guess, which is strictly better evidence
+  // than the old CoinGecko-only probe (CoinGecko does not list most launchpad tokens, so
+  // that probe failed exactly when a user most needed an answer).
+  try {
+    const resolver = deps.chainResolver ?? chainResolver;
+    const res = await resolver.resolve(target.address);
+    if (res?.status === 'resolved' && res.chain) {
+      console.log(`[research] resolved ${target.address.slice(0, 10)}… to ${res.chain} (shared resolver)`);
+      return { ok: true, chain: res.chain, evidence: 'shared-resolver' };
+    }
+    if (res?.status === 'ambiguous' && Array.isArray(res.candidates) && res.candidates.length > 1) {
+      // Genuine multi-chain deployment: the user must choose, but only among real ones.
+      return { ok: false, candidates: res.candidates };
+    }
+  } catch (err) {
+    console.warn('[research] shared resolver failed, falling back:', err?.message ?? err);
+  }
+
+  // FALLBACK: the older profile probe. Still useful because it is a different provider,
+  // and a resolver outage must not turn into "cannot answer" for every command.
   const found = await resolveAmbiguousChain({
     address: target.address,
     candidates: target.evmLikely,
@@ -93,23 +129,40 @@ export async function resolveChainForResearch(target, deps) {
   });
   if (found) {
     console.log(`[research] resolved ${target.address.slice(0, 10)}… to ${found.chain} (${found.evidence})`);
-    return { ok: true, chain: found.chain };
+    return { ok: true, chain: found.chain, evidence: 'profile-probe' };
   }
   return { ok: false };
 }
 
-export function ambiguityMessage(address) {
-  return [
-    '🔎 <b>Which chain is this contract on?</b>',
+/**
+ * Prompt shown only when the address is GENUINELY ambiguous.
+ *
+ * `candidates` are the chains the resolver actually evidenced, so the wording never
+ * claims a network that was not observed, and the suggested command names a chain we
+ * know the token is on.
+ */
+export function ambiguityMessage(address, { candidates = null } = {}) {
+  const list = Array.isArray(candidates) && candidates.length ? candidates : null;
+  const names = list ? list.map((c) => getChain(c)?.name ?? c) : null;
+  const example = list ? list[0] : null;
+
+  const L = [
+    '\u{1F50E} <b>Which chain is this contract on?</b>',
     '',
     `<code>${esc(address)}</code>`,
     '',
-    '<i>A 0x address can exist on several networks, and no project profile was found '
-    + 'on Ethereum, BNB Chain or Base. Research will not guess.</i>',
-    '',
-    'Use the chain-prefixed form, for example:',
-    `<code>/narrative bsc ${esc(address)}</code>`,
-  ].join('\n');
+  ];
+  if (names) {
+    L.push(`<i>This contract exists on ${names.length} supported chains, so research will not pick one for you.</i>`);
+    L.push(`<i>${esc(names.join(' \u00B7 '))}</i>`);
+  } else {
+    L.push('<i>No pool was found for this contract yet, which is normal for a brand-new token. '
+      + 'Research will not guess a network.</i>');
+  }
+  L.push('');
+  L.push('Use the chain-prefixed form, for example:');
+  L.push(`<code>/narrative ${esc(example ?? 'bsc')} ${esc(address)}</code>`);
+  return L.join('\n');
 }
 
 // ---- /narrative -----------------------------------------------------------
@@ -261,7 +314,7 @@ export async function handleNarrative(ctx, deps) {
   }
   const resolved = await resolveChainForResearch(target, deps);
   if (!resolved.ok) {
-    await ctx.reply(ambiguityMessage(target.address), { parse_mode: 'HTML' });
+    await ctx.reply(ambiguityMessage(target.address, { candidates: resolved.candidates ?? null }), { parse_mode: 'HTML' });
     return;
   }
   target.chain = resolved.chain;
@@ -354,7 +407,7 @@ export async function handleX(ctx, deps) {
   }
   const resolved = await resolveChainForResearch(target, deps);
   if (!resolved.ok) {
-    await ctx.reply(ambiguityMessage(target.address), { parse_mode: 'HTML' });
+    await ctx.reply(ambiguityMessage(target.address, { candidates: resolved.candidates ?? null }), { parse_mode: 'HTML' });
     return;
   }
   target.chain = resolved.chain;
