@@ -28,6 +28,8 @@
  *     strings that would otherwise be parsed as HTML tags and kill the message
  */
 import { noTheme } from './emoji-theme.mjs';
+import { chainIcon as chainIconMarkup, GLYPHS, GLYPH_TO_NAME } from './icons.mjs';
+import { defaultEmoji } from './emoji-resolve.mjs';
 import {
   esc, fmtUsd, fmtPct, fmtInt, fmtPp, marketLooksImplausible, marketImplausibilities,
   resolveQuickCheck, quickChecks, securityPairs, alignedRows, sectionTitle,
@@ -58,8 +60,17 @@ function chainName(chain) {
   return getChain(chain)?.name ?? (chain ? String(chain) : 'Unknown');
 }
 
-function chainIcon(chain) {
-  return getChain(chain)?.emoji ?? '⛓️';
+/**
+ * The card's chain badge.
+ *
+ * Resolved from the shared registry by chain id, so the token card and /chains cannot disagree.
+ * The previous version read a separate per-chain glyph table, which is exactly how BNB ended up
+ * branded on one screen and a plain yellow circle on the other.
+ */
+function chainIcon(chain, e = null) {
+  const id = String(chain ?? '').toLowerCase();
+  if (e && typeof e.icon === 'function') return e.icon(`chain.${id}`);
+  return chainIconMarkup(id);
 }
 
 /** Holder numbers may come from the risk provider or a flat mock object. */
@@ -120,7 +131,7 @@ function buildHeader(result, e, mockTag) {
   }
 
   lines.push(`${e('🪙')} <b>${esc(name)}</b>  <code>$${esc(symbol)}</code>`);
-  lines.push(`${chainIcon(chain)} ${esc(chainName(chain))}`);
+  lines.push(`${chainIcon(chain, e)} ${esc(chainName(chain))}`);
   lines.push('');
   lines.push(`<code>${esc(address)}</code>`);
   return lines;
@@ -493,7 +504,7 @@ export function formatCard(result, {
   premiumUrl  = '',
   addBotUrl   = '',
   botUsername = '',
-  emojiTheme  = noTheme,
+  emojiTheme  = defaultEmoji,
   firstCall   = null,
   callerToken = null,
   /**
@@ -512,7 +523,10 @@ export function formatCard(result, {
   // user-facing default is the standard card.
   view        = 'detailed',
 } = {}) {
-  const e = typeof emojiTheme === 'function' ? emojiTheme : noTheme;
+  // When no theme is installed the registry resolver is used, NOT a pass-through. The old
+  // default returned the literal unchanged, so every heading stayed plain Unicode emoji unless
+  // an EMOJI_THEME happened to be configured — and it was not.
+  const e = typeof emojiTheme === 'function' ? emojiTheme : defaultEmoji;
   const mode = normalizeView(view);
 
   if (!result || result.status !== 'ok') {
@@ -529,7 +543,7 @@ export function formatCard(result, {
     const { market } = result;
     const h = holderData(result);
     lines.push(`${e('🚀')} <b>${esc(token?.name ?? 'Unknown')}</b> <code>$${esc(token?.symbol ?? '?')}</code>${mockTag}`);
-    lines.push(`${chainIcon(token?.chain)} ${esc(chainName(token?.chain))}`);
+    lines.push(`${chainIcon(token?.chain, e)} ${esc(chainName(token?.chain))}`);
     lines.push(`<code>${esc(token?.address ?? '')}</code>`);
     lines.push('');
     const price = fmtUsd(market?.priceUsd, 8);
@@ -574,11 +588,11 @@ export function formatCard(result, {
 
   if (mode === 'detailed') {
     lines.push(`${e('🪙')} <b>${esc(token?.name ?? 'Unknown')} ($${esc(token?.symbol ?? '?')})</b>`);
-    lines.push(`${e('⛓️')} Chain: ${esc(chainName(token?.chain))} (${e(chainIcon(token?.chain))})`);
+    lines.push(`${e('⛓️')} Chain: ${esc(chainName(token?.chain))}`);
     lines.push(`${e('📌')} CA:`);
   } else {
     lines.push(`${e('🪙')} <b>${esc(token?.name ?? 'Unknown')}</b>  <code>$${esc(token?.symbol ?? '?')}</code>`);
-    lines.push(`${chainIcon(token?.chain)} ${esc(chainName(token?.chain))}`);
+    lines.push(`${chainIcon(token?.chain, e)} ${esc(chainName(token?.chain))}`);
   }
   lines.push(`<code>${esc(token?.address ?? '')}</code>`);
 

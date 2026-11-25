@@ -133,7 +133,10 @@ test('ordinary scans use standard emoji while approval is pending', async () => 
   const out = await dispatch('message', { text: SOL_CA, chatType: 'group', chatId: 300 });
   const card = out.find(m => m.text?.includes('MEME CHECKER'));
   assert.ok(card, 'card not found');
-  assert.ok(!card.text.includes('tg-emoji'), 'pending theme must not leak into scans before approval');
+  // A pending theme is an UNAPPROVED id map; it must not take effect. Registry assets are a
+  // separate, pre-approved mechanism and are expected to appear. What must not appear is the
+  // pending theme's own id (9999999999999999999), which is what this test actually protects.
+  assert.ok(!card.text.includes('9999999999999999999'), 'pending theme must not leak into scans before approval');
 });
 
 test('DM approval ✅ yes applies the theme', async () => {
@@ -156,14 +159,21 @@ test('DM approval ❌ no discards the theme', async () => {
 
 // ---- standard emoji when no theme ------------------------------------------
 
-test('no theme set → card uses standard emoji (no tg-emoji tags)', async () => {
-  // Reset theme to default before this test (prior approval tests may have set one)
+test('with CUSTOM_EMOJI=0 the card uses plain glyphs (no tg-emoji tags)', async () => {
+  // Reset any theme set by earlier approval tests.
   await dispatch('resettheme', { chatType: 'private', chatId: 99 });
-  // Solana CA avoids the EVM chain picker, so this test still exercises a scan.
-  const out = await dispatch('message', { text: SOL_CA, chatType: 'group', chatId: 200 });
-  const card = out.find(m => m.text?.includes('MEME CHECKER'));
-  assert.ok(card, 'card not found');
-  assert.ok(!card.text.includes('tg-emoji'), 'standard mode should not contain tg-emoji');
+  const saved = process.env.CUSTOM_EMOJI;
+  try {
+    process.env.CUSTOM_EMOJI = '0';
+    // Solana CA avoids the EVM chain picker, so this still exercises a real scan.
+    const out = await dispatch('message', { text: SOL_CA, chatType: 'group', chatId: 200 });
+    const card = out.find(m => m.text?.includes('MEME CHECKER'));
+    assert.ok(card, 'card not found');
+    assert.ok(!card.text.includes('tg-emoji'), 'custom emoji disabled must produce plain glyphs');
+    assert.ok(card.text.includes('🚀'), 'and the glyph is still readable');
+  } finally {
+    if (saved === undefined) delete process.env.CUSTOM_EMOJI; else process.env.CUSTOM_EMOJI = saved;
+  }
 });
 
 // ---- chain picker + view callbacks ----------------------------------------

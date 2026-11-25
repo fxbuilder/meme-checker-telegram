@@ -48,6 +48,8 @@ import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } fr
 import { chainResolver } from './chain-resolver.mjs';
 import { renderHelp, documentedCommands } from './help.mjs';
 import { renderStart } from './start-message.mjs';
+import { upgradeOutgoing } from './emoji-resolve.mjs';
+import { renderEmojiPreview } from './emoji-preview.mjs';
 import { RANK_MODES as PROFILE_RANK_MODES, DEFAULT_RANK as PROFILE_DEFAULT_RANK } from './caller-profile.mjs';
 import { icon, chainIcon, PRIORITY_CHAINS, CHAIN_LABELS } from './icons.mjs';
 import {
@@ -155,6 +157,61 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
+
+/**
+ * GLOBAL EMOJI MIGRATION — one interception point for every outgoing message.
+ *
+ * Every renderer in this bot writes icon literals inline. Rewriting ~200 of them by hand would be
+ * a large diff that still misses whatever is added next, so outgoing text is upgraded on its way
+ * out instead. That covers commands, alerts, errors, empty states, confirmations, settings
+ * pages, photo captions and callback edits — including surfaces nobody remembered to migrate.
+ *
+ * The transformation is idempotent (already-resolved markup is left alone) and skips the inside
+ * of <code> and <a>, where an address or a user's own text must not be altered.
+ *
+ * If Telegram rejects a tag because this bot may not send custom emoji, the tag's own glyph is
+ * still inside it; the send fails on the tag rather than on the message content.
+ */
+function installEmojiUpgrade(target) {
+  const patch = (obj, method) => {
+    if (typeof obj?.[method] !== 'function') return;
+    const original = obj[method].bind(obj);
+    obj[method] = (chatId, text, extra, ...rest) => {
+      const upgraded = typeof text === 'string' ? upgradeOutgoing(text) : text;
+      return original(chatId, upgraded, extra, ...rest);
+    };
+  };
+  patch(target, 'sendMessage');
+  patch(target, 'editMessageText');
+  patch(target, 'sendPhoto');   // caption arrives in `extra`
+  patch(target, 'editMessageCaption');
+}
+installEmojiUpgrade(bot.telegram);
+
+/**
+ * The same upgrade for ctx.reply(), which every handler uses.
+ *
+ * Wrapping the telegram API alone missed these because the context helper assembles its own
+ * payload. Doing it in middleware means the upgrade applies to any handler, including ones added
+ * later, so "migrated everywhere" is a property of the bot rather than a list of files somebody
+ * remembered to edit.
+ */
+bot.use(async (ctx, next) => {
+  if (typeof ctx.reply === 'function') {
+    const original = ctx.reply.bind(ctx);
+    ctx.reply = (text, extra, ...rest) =>
+      original(typeof text === 'string' ? upgradeOutgoing(text) : text, extra, ...rest);
+  }
+  for (const method of ['editMessageText', 'editMessageCaption']) {
+    if (typeof ctx[method] === 'function') {
+      const original = ctx[method].bind(ctx);
+      ctx[method] = (text, extra, ...rest) =>
+        original(typeof text === 'string' ? upgradeOutgoing(text) : text, extra, ...rest);
+    }
+  }
+  return next();
+});
+
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -598,11 +655,17 @@ bot.command('chains', async ctx => {
     if (!r || !r.market) continue;
     const bits = [];
     // Only claim a capability the data source actually provides for THIS chain.
-    if (r.holders) bits.push('holders');
+    // A dedicated adapter that covers holders ONLY is labelled as such, rather than implying the
+    // full GoPlus set (tax, LP, dev) which it does not provide.
+    if (r.holders) bits.push(r.partialHoldersOnly ? 'holders' : 'holders');
     if (r.tax) bits.push('tax');
     if (r.lpLock) bits.push('LP');
     if (r.dexPaid) bits.push('dex paid');
-    lines.push(`${chainIcon(id)} <b>${CHAIN_LABELS[id] ?? r.name}</b> — ${bits.length ? bits.join(' · ') : 'market only'}`);
+    const detail = bits.length ? bits.join(' · ') : 'market only';
+    // Elysium has a real holder adapter but no tax/LP/dev feed; saying "market only" understated
+    // verified coverage, and saying nothing at all would have implied parity with BNB.
+    const suffix = r.partialHoldersOnly ? ' <i>(holders via dedicated indexer)</i>' : '';
+    lines.push(`${chainIcon(id)} <b>${CHAIN_LABELS[id] ?? r.name}</b> — ${detail}${suffix}`);
   }
 
   // ---- everything else, explicitly demoted ------------------------------
@@ -1290,6 +1353,42 @@ bot.action(/^al:/, async ctx => {
   } catch (err) {
     console.error('[bot] alerts callback failed:', err?.message ?? err);
     await ctx.answerCbQuery('Something went wrong').catch(() => {});
+  }
+});
+
+/**
+ * /emojipreview — OWNER-ONLY.
+ *
+ * Not in the public command menu and not documented in /help: it exists so the asset mappings
+ * can be LOOKED AT. A resolving ID is not a correct icon, and this project has already shipped
+ * an Ethereum logo that was an envelope because nobody rendered it.
+ */
+bot.command('emojipreview', async ctx => {
+  if (!isOwner(accessPolicy, ctx.from?.id)) return; // silent: no public surface
+  const view = renderEmojiPreview({ theme: activeEmojiTheme, page: 0 });
+  const kb = view.pages > 1
+    ? Markup.inlineKeyboard([[Markup.button.callback('Next ›', `ep:1`)]])
+    : undefined;
+  await ctx.reply(view.text, { parse_mode: 'HTML', disable_web_page_preview: true, ...(kb ? { reply_markup: kb } : {}) });
+});
+
+bot.action(/^ep:(\d+)$/, async ctx => {
+  if (!isOwner(accessPolicy, ctx.from?.id)) return ctx.answerCbQuery();
+  const page = Number(ctx.match[1]) || 0;
+  const view = renderEmojiPreview({ theme: activeEmojiTheme, page });
+  const nav = [];
+  if (view.page > 0) nav.push(Markup.button.callback('‹ Prev', `ep:${view.page - 1}`));
+  if (view.page < (view.pages ?? 1) - 1) nav.push(Markup.button.callback('Next ›', `ep:${view.page + 1}`));
+  const kb = nav.length ? Markup.inlineKeyboard([nav]) : undefined;
+  await ctx.answerCbQuery();
+  try {
+    await ctx.editMessageText(view.text, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...(kb ? { reply_markup: kb } : { reply_markup: { inline_keyboard: [] } }),
+    });
+  } catch (err) {
+    if (!/message is not modified/i.test(String(err?.description ?? ''))) throw err;
   }
 });
 

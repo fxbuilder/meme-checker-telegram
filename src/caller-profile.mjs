@@ -67,11 +67,38 @@ function esc(v) {
   return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** One decimal, matching the requested layout ("1.0x", "11.8x"). */
+/**
+ * Format a multiple without ever hiding a gain or a loss.
+ *
+ * One decimal is the requested layout ("1.0x", "11.8x"), but rounding to one decimal makes
+ * 1.04x and 0.96x BOTH read "1.0x" while their tone differs — producing a green icon next to a
+ * figure that says nothing changed. A displayed 1.0x therefore means EXACTLY 1.0x; anything
+ * else gets as many decimals as it needs (up to 3) and, past that, a signed percentage.
+ */
 export function fmtProfileMultiple(m) {
   if (!Number.isFinite(m)) return '—';
-  const rounded = Math.round(m * 10) / 10;
-  return `${rounded.toFixed(1)}x`;
+  // Exact breakeven is the only case allowed to print 1.0x.
+  if (m === 1) return '1.0x';
+  const oneDp = Math.round(m * 10) / 10;
+  if (oneDp !== 1) return `${oneDp.toFixed(1)}x`;
+
+  // Rounds to 1.0x but is not 1.0x — this is where precision matters.
+  const threeDp = Math.round(m * 1000) / 1000;
+  if (threeDp !== 1) return `${threeDp.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}x`;
+
+  // Vanishingly close to 1x: state the signed percentage so the direction is unmistakable.
+  const pct = (m - 1) * 100;
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+/** Signed percent change implied by a multiple, e.g. 3.8x → "+280%". */
+export function fmtPercentFromMultiple(m) {
+  if (!Number.isFinite(m)) return null;
+  const pct = (m - 1) * 100;
+  const sign = pct > 0 ? '+' : '';
+  const abs = Math.abs(pct);
+  const body = abs >= 1000 ? `${Math.round(abs / 100) / 10}k` : String(Math.round(abs));
+  return `${sign}${pct < 0 ? '-' : ''}${body}%`;
 }
 
 function clip(s, n) {
@@ -258,7 +285,10 @@ export function renderCallerProfile({
   L.push('');
 
   // The two facts are named once, so neither is read as the other.
-  L.push('<i>Peak = highest observed after the call. Now = current vs entry, not realised profit.</i>');
+  // Wording: stating what these are NOT is what keeps a reader from reading mark-to-market as
+  // money banked. Phrased as a plain disclaimer rather than a claim of any kind.
+  L.push('<i>Peak = highest observed after the call · Now = current price vs entry price.</i>');
+  L.push('<i>Both are price observations unless a position was actually closed.</i>');
   L.push('');
 
   // ---- ranked rows ---------------------------------------------------------
@@ -275,7 +305,11 @@ export function renderCallerProfile({
     const pTone = peakTone(m.peakMultiple);
     const peakTxt = m.peakMeasured ? fmtProfileMultiple(m.peakMultiple) : 'no peak';
     const rTone = roiTone(m.currentMultiple);
-    const roiTxt = Number.isFinite(m.currentMultiple) ? fmtProfileMultiple(m.currentMultiple) : '—';
+    // The signed percentage travels with the multiple so direction is readable even when the
+    // multiple itself is close to 1.0x: "1.04x (+4%)" cannot be mistaken for flat.
+    const roiTxt = Number.isFinite(m.currentMultiple)
+      ? `${fmtProfileMultiple(m.currentMultiple)}${m.currentMultiple === 1 ? '' : ` (${fmtPercentFromMultiple(m.currentMultiple)})`}`
+      : '—';
     // Age is kept on the row: the peak figure means something different for a call made an hour
     // ago and one from three weeks ago, and dropping it made two very different rows look alike.
     const age = timeAgo(e.call.calledAt, now);

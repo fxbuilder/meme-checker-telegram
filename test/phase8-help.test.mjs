@@ -103,8 +103,14 @@ test('help is English and carries no raw HTML', () => {
   // the state an ordinary bot runs in, and it is what makes the output safe to send.
   const tags = text.match(/<\/?([a-z-]+)[^>]*>/g) ?? [];
   for (const t of tags) {
+    // tg-emoji is now a first-class tag: the registry emits it. Every other tag must still be
+    // one Telegram accepts, and a tg-emoji must carry a numeric id and a non-empty fallback.
+    // Both the opening tag and its closing form must be accepted; only the opening one
+    // carries an id.
+    if (/^<tg-emoji emoji-id="\d+">$/i.test(t)) continue;
+    if (/^<\/tg-emoji>$/i.test(t)) continue;
+    assert.doesNotMatch(t, /tg-emoji/i, `bad custom emoji tag: ${t}`);
     assert.match(t, /^<\/?(b|i|code|a)(\s[^>]*)?>$/i, `unexpected tag: ${t}`);
-    assert.doesNotMatch(t, /^<tg-emoji/i, 'custom emoji must be opt-in only');
   }
 });
 

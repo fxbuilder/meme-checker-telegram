@@ -231,10 +231,29 @@ test('no button at all when no bot username is known', () => {
   assert.equal(buttons.flat().length, 0);
 });
 
-test('standard emoji used by default (no theme)', () => {
+test('the card uses registry assets by default, each with a real id and glyph fallback', () => {
   const { text } = formatCard(SOL_OK);
-  assert.ok(text.includes('🚀'));
-  assert.ok(!text.includes('tg-emoji'));
+  // The header rocket is a registry role now, so it renders as custom emoji out of the box.
+  assert.ok(text.includes('🚀'), 'the glyph fallback is always present');
+  const tags = text.match(/<tg-emoji emoji-id="(\d+)">([^<]*)<\/tg-emoji>/g) ?? [];
+  assert.ok(tags.length > 0, 'registry assets are applied without an explicit theme');
+  for (const t of tags) {
+    const m = t.match(/emoji-id="(\d+)">([^<]*)</);
+    assert.ok(/^\d{10,}$/.test(m[1]), `id must be a numeric string: ${t}`);
+    assert.ok(m[2].length > 0, `every custom emoji needs a fallback glyph: ${t}`);
+  }
+});
+
+test('CUSTOM_EMOJI=0 restores plain glyphs everywhere', () => {
+  const saved = process.env.CUSTOM_EMOJI;
+  try {
+    process.env.CUSTOM_EMOJI = '0';
+    const { text } = formatCard(SOL_OK);
+    assert.ok(!text.includes('tg-emoji'), 'no custom emoji when disabled');
+    assert.ok(text.includes('🚀'), 'the glyph still renders');
+  } finally {
+    if (saved === undefined) delete process.env.CUSTOM_EMOJI; else process.env.CUSTOM_EMOJI = saved;
+  }
 });
 
 test('custom emoji theme wraps standard emoji in tg-emoji tags', async () => {

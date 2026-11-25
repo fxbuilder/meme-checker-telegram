@@ -157,14 +157,18 @@ test('a missing icon key degrades to a glyph, never to empty text', () => {
   assert.ok(icon('does.not.exist').length > 0, 'never renders nothing');
 });
 
-test('custom emoji is OPT-IN, because a bot without a Fragment username cannot send it', () => {
-  // Default: plain glyphs only. Emitting <tg-emoji> unconditionally would break every message.
+test('custom emoji is ON by default and can be switched off', () => {
+  // The owner asked for animated emoji across the bot, so the registry default is now ON.
+  // What must still hold is that disabling it yields plain glyphs — a bot that may not send
+  // <tg-emoji> must have a working fallback rather than broken markup.
   const saved = process.env.CUSTOM_EMOJI;
   try {
     delete process.env.CUSTOM_EMOJI;
-    assert.doesNotMatch(icon('section.market'), /<tg-emoji/, 'off by default');
-    process.env.CUSTOM_EMOJI = '1';
-    assert.match(icon('section.market'), /<tg-emoji emoji-id="\d+">/);
+    assert.match(icon('section.market'), /<tg-emoji emoji-id="\d+">/, 'on by default');
+    process.env.CUSTOM_EMOJI = '0';
+    const off = icon('section.market');
+    assert.doesNotMatch(off, /<tg-emoji/, 'CUSTOM_EMOJI=0 disables it');
+    assert.ok(off.length > 0, 'the glyph fallback is always renderable');
   } finally {
     if (saved === undefined) delete process.env.CUSTOM_EMOJI; else process.env.CUSTOM_EMOJI = saved;
   }
