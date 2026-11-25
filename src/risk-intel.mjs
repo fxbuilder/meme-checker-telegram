@@ -21,6 +21,7 @@
 import { getChain } from './chains.mjs';
 import { fetchRugCheck } from './security/rugcheck.mjs';
 import { securityFromTokenInfo, hasUsableSecurity } from './security/geckoterminal-security.mjs';
+import { readV2Liquidity, mergeLpIntel } from './security/lp-intel.mjs';
 import { fetchTokenInfo, gtSupportsChain } from './research/geckoterminal.mjs';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
@@ -391,7 +392,17 @@ export function mergeRisk(primary, fallback) {
  *   'no-data'     — chain is covered but this token has no record
  *   'error'       — provider/transport failure. NOT evidence about the token.
  */
-export async function fetchRisk(chainId, address, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
+export async function fetchRisk(chainId, address, {
+  fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS,
+  /**
+   * The pair the market scan already identified, when the caller has one.
+   *
+   * LP lock state is not reported by any keyless aggregator for most EVM chains, so it is
+   * read from the pair contract itself. Passing the pair here is what makes that possible
+   * without a second market lookup.
+   */
+  pair = null,
+} = {}) {
   const chain = getChain(chainId);
   if (!chain) {
     return { status: 'unsupported', data: null, detail: `unknown chain ${chainId}` };
@@ -477,6 +488,66 @@ export async function fetchRisk(chainId, address, { fetchImpl = globalThis.fetch
       }
     } catch {
       // A fallback that throws is not a reason to fail the whole check.
+    }
+  }
+
+  // ---- On-chain LP intelligence (EVM) ------------------------------------
+  // Only attempted when the provider gave nothing conclusive about LP state, and only
+  // for a V2-style pair, because V2 lp-supply maths does not apply to V3/V4 positions.
+  if (chain.kind === 'evm' && chain.rpc && pair?.pairAddress) {
+    const alreadyKnown = result.status === 'ok' && result.data?.lpLock
+      && (result.data.lpLock.burnedPercentage != null || result.data.lpLock.lockedPercentage != null);
+    if (!alreadyKnown) {
+      try {
+        const reading = await readV2Liquidity({
+          chain: chainId,
+          pairAddress: pair.pairAddress,
+          rpc: chain.rpc,
+          labels: pair.labels ?? null,
+          fetchImpl,
+          timeoutMs,
+        });
+
+        // A V3/V4 position is a KNOWN-UNSUPPORTED type, not an unknown value. Recorded so
+        // the card can say why rather than showing an unexplained dash.
+        if (reading.state === 'unsupported-position-type') {
+          const baseData = result.status === 'ok' ? result.data : (result.data ?? {});
+          result = {
+            status: result.status === 'ok' ? 'ok' : result.status,
+            data: {
+              ...baseData,
+              lpLock: { ...(baseData?.lpLock ?? {}), positionType: 'v3-v4', positionTypeDetail: reading.detail },
+            },
+            detail: result.detail ?? null,
+          };
+        } else if (reading.state !== 'unknown') {
+          const merged = mergeLpIntel(result.status === 'ok' ? result.data?.lpLock : null, reading);
+          if (result.status === 'ok') {
+            result = {
+              status: 'ok',
+              data: { ...result.data, lpLock: merged },
+              detail: result.detail ?? null,
+            };
+          } else {
+            // No provider block at all: an on-chain burn is still real evidence and is
+            // enough to populate the field honestly.
+            result = {
+              status: 'ok',
+              data: {
+                holders: { total: null, top10Percentage: null, largestHolderPercentage: null },
+                security: {},
+                tax: null,
+                lpLock: merged,
+                dev: null,
+                sources: { lpLock: 'onchain-v2' },
+              },
+              detail: result.detail ?? null,
+            };
+          }
+        }
+      } catch {
+        // An LP read that throws is not a reason to lose the rest of the risk report.
+      }
     }
   }
 

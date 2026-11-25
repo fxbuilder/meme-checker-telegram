@@ -341,7 +341,15 @@ export function normalizePairs(request, pairs, { nowMs = Date.now() } = {}) {
     riskStatus: 'pending',
     dexPaid: { status: 'unknown', detail: 'not checked' },
     // Provenance for operators; the renderer ignores unknown keys.
-    source: { provider: 'dexscreener', pairs: matched.length, pairAddress: primary?.pairAddress ?? null },
+    // `labels` carries the pool generation (v2/v3/v4) as DexScreener reports it. It is
+    // needed downstream because V2 lp-supply maths is invalid for a v3/v4 position.
+    source: {
+      provider: 'dexscreener',
+      pairs: matched.length,
+      pairAddress: primary?.pairAddress ?? null,
+      labels: Array.isArray(primary?.labels) ? primary.labels : null,
+      dexId: primary?.dexId ?? null,
+    },
   };
 }
 
@@ -353,8 +361,15 @@ export async function enrichResult(result, { fetchImpl, riskFetch, paidFetch } =
   if (!result || result.status !== 'ok') return result;
   const { chain, address } = result.token;
 
+  // The scan already knows which pair won, so LP intelligence can be read from that exact
+  // pool contract instead of repeating the market lookup. `labels` carries v2/v3, which
+  // decides whether V2 lp-supply maths is even valid for this pool.
+  const pair = result.source?.pairAddress
+    ? { pairAddress: result.source.pairAddress, labels: result.source.labels ?? null }
+    : null;
+
   const [risk, paid] = await Promise.all([
-    fetchRisk(chain, address, { fetchImpl: riskFetch ?? fetchImpl }),
+    fetchRisk(chain, address, { fetchImpl: riskFetch ?? fetchImpl, pair }),
     fetchDexPaid(chain, address, { fetchImpl: paidFetch ?? fetchImpl }),
   ]);
 

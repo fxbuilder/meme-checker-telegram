@@ -36,14 +36,20 @@ export const CHAINS = {
   ethereum: {
     id: 'ethereum', name: 'Ethereum', short: 'ETH', kind: 'evm', ds: 'ethereum',
     market: true, goplus: 'evm', goplusId: '1', dexPaid: true, emoji: '🔷',
+    // Verified live: eth_chainId answered on this endpoint.
+    rpc: 'https://ethereum-rpc.publicnode.com', chainId: 1,
   },
   bsc: {
     id: 'bsc', name: 'BNB Chain', short: 'BSC', kind: 'evm', ds: 'bsc',
     market: true, goplus: 'evm', goplusId: '56', dexPaid: true, emoji: '🟡',
+    // Verified live: eth_chainId answered on this endpoint.
+    rpc: 'https://bsc-dataseed.binance.org', chainId: 56,
   },
   base: {
     id: 'base', name: 'Base', short: 'BASE', kind: 'evm', ds: 'base',
     market: true, goplus: 'evm', goplusId: '8453', dexPaid: true, emoji: '🔵',
+    // Verified live: eth_chainId answered on this endpoint.
+    rpc: 'https://mainnet.base.org', chainId: 8453,
   },
   arbitrum: {
     id: 'arbitrum', name: 'Arbitrum', short: 'ARB', kind: 'evm', ds: 'arbitrum',
@@ -75,6 +81,8 @@ export const CHAINS = {
   robinhood: {
     id: 'robinhood', name: 'Robinhood Chain', short: 'RH', kind: 'evm', ds: 'robinhood',
     market: true, goplus: 'evm', goplusId: '4663', dexPaid: true, emoji: '🟩',
+    // Verified live: eth_chainId answered on this endpoint.
+    rpc: 'https://rpc.mainnet.chain.robinhood.com', chainId: 4663,
   },
   unichain: {
     id: 'unichain', name: 'Unichain', short: 'UNI', kind: 'evm', ds: 'unichain',
