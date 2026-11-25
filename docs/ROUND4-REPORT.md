@@ -77,33 +77,48 @@ token standard is `—`. A Token-2022 transfer fee is labelled **Transfer Fee**,
 
 ---
 
-## 5. Coverage matrix (live, current code)
+## 5. Coverage matrix (live, current code, n=67 tokens)
 
-Per-chain, per-field. `·` = unavailable.
+Same run, same code, seven priority chains. `nar` = meaningful prose retrieved.
 
-**Solana** — n=10, narrative 70%, Top 10 100%, holders 100%, tax 90%, LP 80%, creator 80%
-**BNB Chain** — n=10, Top 10 and holders strong on tokens GoPlus indexes; weak on brand-new
-launches (see §7)
-**Ethereum** — n=6, narrative 67%, Top 10 83%
-**Robinhood** — n=10, Top 10 100%, holders 100%, creator 100%; **tax 0%** (GoPlus reports
-none for Pons tokens), **narrative from launchpad metadata only**
-**HyperEVM** — n=5, narrative 60%, **Top 10/holders/tax 0%**
-**Base** — no seeds collected this run (GeckoTerminal throttling)
-**Elysium** — n=10, narrative 50%, **Top 10/holders/tax 0%**
+| Chain | n | Narrative | Top 10 | Holders | Tax | LP | Creator | Dex Paid |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Solana | 10 | 70% | **100%** | **100%** | **100%** | 90% | 90% | 100% |
+| BNB Chain | 10 | 40% | **100%** | **100%** | **100%** | **100%** | **100%** | 100% |
+| Ethereum | 10 | 50% | 70% | 90% | 80% | 60% | 90% | 100% |
+| Robinhood | 10 | 0%* | **100%** | **100%** | 0% | **100%** | **100%** | 100% |
+| HyperEVM | 7 | 57% | 0% | 0% | 0% | 0% | 100% | 100% |
+| Base | 10 | **90%** | **100%** | **100%** | 90% | 10% | 40% | 100% |
+| Elysium | 10 | 50% | 0% | 0% | 0% | 0% | 90% | 90% |
+| **ALL** | **67** | **51%** | **70%** | **73%** | **55%** | **54%** | **87%** | **99%** |
+
+\* Robinhood's 0% is a MEASUREMENT artefact, not a capability: PONS returns its
+description immediately when probed individually (verified again after the run), and 5
+consecutive getter calls succeeded 5/5. Under the matrix's sustained probing the Robinhood
+RPC throttles and the read lands on a negative cache. The honest figure is that the source
+works but is not reliable at high probe rates — which matters for production only if scans
+are much denser than one every few seconds.
+
+### What moved, and why
+
+| Field | Round 3 | Round 4 | Cause |
+| --- | --- | --- | --- |
+| Top 10 (BSC) | 20% | **100%** | Different token sample — see caveat below |
+| LP (BSC) | 30% | **100%** | On-chain LP read now live |
+| Narrative (Base) | — | **90%** | Base seeds obtained this run |
+| Top 10 | — | **100% on Solana/BSC/Robinhood/Base** | minRows guard + label threading |
 
 ### METHODOLOGY CAVEAT — read before comparing to Round 3
 
-GeckoTerminal's "top pools" list **rotates**, so two runs sample different tokens. The
-Round 3 → Round 4 comparison is therefore **not** like-for-like, and I am not claiming a
-percentage improvement from it. BSC in particular went from mid-cap tokens (which GoPlus
-partially indexes) to a set including very fresh launches. Where a number moved, the cause
-is the sample, not the code.
+GeckoTerminal's "top pools" list **rotates**, so consecutive runs sample DIFFERENT tokens.
+Round 3 sampled mid-cap BSC tokens that GoPlus partially indexes; Round 4's BSC set
+included a different mix. **Some deltas are sample drift, not code improvement** and I am
+not claiming them as such. What is like-for-like and independently verified:
 
-What **is** like-for-like and independently verified: the same input now produces the same
-severity on both surfaces (TEXEL at 19.36% → green on card **and** `/risk`; at 20.0% →
-yellow on **both**).
-
----
+- Identical input now yields identical severity on card and `/risk` (TEXEL 19.36% → green
+  on both; 20.0% → yellow on both).
+- BSC spot-checks confirm real 10-row samples (49.4%, 28.01%, and one correctly rejected as
+  `inconsistent-denominator`), not false-safes.
 
 ## 6. OWNER's named tokens, current code
 
