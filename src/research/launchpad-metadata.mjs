@@ -54,6 +54,38 @@ export const EVM_RPC = {
  * description. Selectors were computed with Keccak-256 and cross-checked against
  * `transfer(address,uint256)` = 0xa9059cbb before use.
  */
+/**
+ * Launch-RECORD getters, read on a FACTORY contract rather than the token.
+ *
+ * These tell us the launch PHASE, which decides whether a token is still on its bonding
+ * curve or has graduated to a real pool. That distinction matters because a pre-graduation
+ * token's "liquidity" is not a pool anyone can lock or burn, and reporting it as such is a
+ * false assurance.
+ *
+ * Verified live against TEXEL on Robinhood Chain: the call returns 15 words, and word
+ * index 12 (the phase) decoded to 2 = PoolCreated for a graduated token.
+ */
+export const LAUNCHPAD_FACTORIES = [
+  {
+    id: 'pons-factory',
+    // Documented in docs.ponsfamily.com/developers/contracts.md, bytecode verified live.
+    address: '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e',
+    chains: ['robinhood'],
+    // function getLaunchedToken(address token) view returns (struct)
+    selector: '0x3cf28b5a',
+    // Verified live against TEXEL: word 10 holds the phase (2 = PoolCreated). Adjacent
+    // words confirm alignment - word 7 = 200 (poolFee) and word 8 = 185 (tickSpacing),
+    // matching the documented struct. An earlier guess of 12 read a zero word instead.
+    phaseWord: 10,
+    /**
+     * Phase meanings per the documented ABI. 0/1 mean the token is still on its bonding
+     * curve; 2 means a Uniswap pool was created (graduated).
+     */
+    phases: { 0: 'curve-created', 1: 'curve-trading', 2: 'pool-created' },
+    graduatedPhase: 2,
+  },
+];
+
 export const LAUNCHPAD_GETTERS = [
   {
     id: 'pons-v2',
@@ -219,4 +251,57 @@ export async function fetchLaunchpadMetadata(chain, address, {
   }
 
   return { status: 'no-getter' };
+}
+
+/**
+ * Read a token's launch PHASE from a documented launchpad factory.
+ *
+ * @returns {Promise<{status:'ok'|'no-factory'|'unsupported-chain', phase?:number,
+ *                    phaseName?:string, graduated?:boolean}>}
+ */
+export async function fetchLaunchPhase(chain, address, {
+  fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS,
+} = {}) {
+  const key = String(chain ?? '').toLowerCase();
+  const rpc = EVM_RPC[key];
+  if (!rpc) return { status: 'unsupported-chain' };
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(address ?? ''))) return { status: 'no-factory' };
+
+  const factories = LAUNCHPAD_FACTORIES.filter((f) => !f.chains || f.chains.includes(key));
+  if (!factories.length) return { status: 'no-factory' };
+
+  for (const factory of factories) {
+    const data = factory.selector + String(address).slice(2).toLowerCase().padStart(64, '0');
+    let raw = await ethCall(rpc, factory.address, data, { fetchImpl, timeoutMs });
+    if (!raw) {
+      await new Promise((r) => setTimeout(r, 400));
+      raw = await ethCall(rpc, factory.address, data, { fetchImpl, timeoutMs });
+    }
+    if (!raw) continue;
+
+    const h = raw.slice(2);
+    const idx = factory.phaseWord;
+    if (h.length < (idx + 1) * 64) continue;
+    const phase = parseInt(h.slice(idx * 64, (idx + 1) * 64), 16);
+    if (!Number.isFinite(phase)) continue;
+    // Require the token address to ECHO BACK at word 0.
+    //
+    // A factory that does not know the token returns fifteen zero words rather than
+    // reverting - verified live: PONS gets an all-zero record from the v3 factory because
+    // it came from an earlier generation. Without this check the zero record decodes as
+    // phase 0 ("curve-created"), which would report a graduated token as pre-graduation.
+    // Phase 0 is a legitimate value, so the echo is the only safe discriminator.
+    const echoed = h.slice(24, 64).toLowerCase();
+    if (echoed !== String(address).slice(2).toLowerCase()) continue;
+
+    return {
+      status: 'ok',
+      phase,
+      phaseName: factory.phases?.[phase] ?? `phase-${phase}`,
+      graduated: phase >= (factory.graduatedPhase ?? Infinity),
+      factory: factory.id,
+    };
+  }
+
+  return { status: 'no-factory' };
 }

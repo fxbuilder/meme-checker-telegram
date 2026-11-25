@@ -63,15 +63,41 @@ export function lpFromMarkets(markets) {
   let totalSupply = 0;
   let sawAny = false;
   let maxLockedPct = 0;
+  // A pre-graduation launchpad curve is NOT a pool with locked liquidity, and it must not
+  // be reported as one.
+  let sawBondingCurve = false;
+
+  /**
+   * Market types where the "LP" is a bonding curve rather than a DEX liquidity position.
+   *
+   * THIS IS THE BUG THIS BLOCK EXISTS TO PREVENT. `lpMint === 1111…1111` was read as
+   * "the LP mint was destroyed, so liquidity is burned". Verified live against a
+   * pre-graduation pump.fun token (BoSrCHeCk…pump, `launchpad.platform === 'pump_fun'`,
+   * `marketType === 'pump_fun'`): it carries the SAME sentinel, with
+   * `lpLockedPct: 100, lpLocked: 8570797, lpUnlocked: 0`. So the old code reported a token
+   * still on its curve as "LP burned 100%" — a confident, wrong all-clear about liquidity
+   * that does not exist as a pool at all.
+   */
+  const BONDING_CURVE_TYPES = new Set([
+    'pump_fun', 'pumpfun', 'pump', 'fourmeme', 'four_meme', 'flap',
+    'believe', 'moonshot', 'bonk_fun', 'boop', 'launchlab', 'nadfun',
+  ]);
 
   for (const m of markets) {
     const lp = m?.lp;
     if (!lp) continue;
     sawAny = true;
 
+    const marketType = String(m?.marketType ?? '').toLowerCase();
+    if (BONDING_CURVE_TYPES.has(marketType)) {
+      sawBondingCurve = true;
+      continue; // never counted as burned or locked pool liquidity
+    }
+
     const supply = num(lp.lpTotalSupply) ?? 0;
     // A destroyed LP mint cannot be unlocked by anyone: treat its supply as burned.
-    if (lp.lpMint === SYSTEM_PROGRAM) {
+    const mintLP = m?.mintLP ?? lp?.lpMint;
+    if (mintLP === SYSTEM_PROGRAM) {
       burnedSupply += supply;
       continue;
     }
@@ -81,6 +107,19 @@ export function lpFromMarkets(markets) {
   }
 
   if (!sawAny) return null;
+
+  // Only bonding-curve markets and no real pool: this token has not graduated, so there
+  // is no DEX liquidity to lock, burn or assess. Reported as its own state.
+  if (sawBondingCurve && burnedSupply === 0 && totalSupply === 0) {
+    return {
+      burnedPct: null,
+      lockedPct: null,
+      securedPct: null,
+      kind: 'bonding-curve',
+      state: 'bonding-curve',
+      poolsScanned: markets.filter((m) => m?.lp).length,
+    };
+  }
 
   const grand = burnedSupply + totalSupply;
   const burnedPct = grand > 0 ? (burnedSupply / grand) * 100 : null;

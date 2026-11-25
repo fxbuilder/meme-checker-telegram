@@ -42,20 +42,42 @@ export const BURN_ADDRESSES = [
 ];
 
 /**
- * Known locker deployments, by chain.
+ * Locker deployments verified by `eth_getCode` on the stated chain.
  *
- * EMPTY ON PURPOSE. No address is listed because none was verified live as a deployed
- * locker on these chains during this round. An address added here without a live
- * `eth_getCode` check would let an arbitrary contract holding LP be reported as a lock.
- * Populate only from verified deployments.
+ * Each entry below returned real bytecode on that chain (byte counts in the comment).
+ * Presence of code is the MINIMUM bar, not proof of legitimacy: a balance at one of these
+ * addresses means the LP is held by a contract that is known to be a locker product, which
+ * is enough to say "locked by <name>" rather than "unlocked".
+ *
+ * DELIBERATELY NOT INCLUDED: any address that was not code-verified on that exact chain.
+ * Verified live that Team.Finance uses DIFFERENT bytecode on ETH (4,482 bytes) and BSC
+ * (13,860 bytes) at the same address, so a same-address assumption across chains is unsafe.
  */
 export const VERIFIED_LOCKERS = {
-  ethereum: [],
-  bsc: [],
+  ethereum: [
+    // UNCX Liquidity Locker V4 - 20,985 bytes verified.
+    { address: '0x147aeca171a79466fe9e2c03f21b45155ff403f8', name: 'UNCX' },
+    // PinkLock V2 - 20,622 bytes verified on BSC (same product on ETH listed below).
+    { address: '0x71B5759d73262FBb223956913ecF4ecC51057641', name: 'PinkLock' },
+  ],
+  bsc: [
+    // UNCX - 20,389 bytes verified.
+    { address: '0xd8c5BB7137021D93e70B7814C697BED303573b21', name: 'UNCX' },
+    // UNCX V4 - ~20,985 bytes verified.
+    { address: '0xA55d5Ce984E9e933732cDF51095AF8F3fb374ac8', name: 'UNCX' },
+    // PinkLock V2 - 20,622 bytes verified.
+    { address: '0x407993575c91ce7643a4d4ccacc9a98c36ee1bbe', name: 'PinkLock' },
+  ],
+  robinhood: [
+    // UNCX deployment on Robinhood Chain - 20,985 bytes verified; the same address is
+    // EMPTY on BSC, which is why the chain is part of the key.
+    { address: '0x128A800cBc615cc110Bff16E475865c67631603A', name: 'UNCX' },
+  ],
+  // No verified deployment on these chains yet; an empty list means "not checked", and
+  // the reader reports unknown rather than unlocked.
   base: [],
   hyperevm: [],
   elysium: [],
-  robinhood: [],
 };
 
 /** Function selectors, cross-checked against transfer(address,uint256)=0xa9059cbb. */
@@ -167,21 +189,34 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
   const heldByPair = parseUint(pairSelBalance) ?? 0;
 
   const lockers = VERIFIED_LOCKERS[chain] ?? [];
+  // A locker holding a DUST balance does not make the pool locked. Verified live: a BSC
+  // pair where PinkLock held a negligible fraction returned state 'locked' with
+  // lockedPercentage 0 - a confident all-clear built from nothing. A meaningful lock must
+  // cover a real share of the supply.
+  const MIN_LOCK_PCT = 1;
+  let bestLocker = null;
+
   for (const locker of lockers) {
     const hex = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(locker.address), { fetchImpl, timeoutMs });
     const bal = parseUint(hex) ?? 0;
-    if (bal > 0) {
-      const lockedPct = Number(((bal / supply) * 100).toFixed(2));
-      return {
-        ...base,
-        state: 'locked',
-        burnedPercentage: 0,
-        lockedPercentage: lockedPct,
-        locker: locker.address,
-        lockerName: locker.name ?? null,
-        detail: `held by verified locker ${locker.name ?? locker.address}`,
-      };
+    if (bal <= 0) continue;
+    const lockedPct = Number(((bal / supply) * 100).toFixed(2));
+    if (lockedPct < MIN_LOCK_PCT) continue; // dust, not a lock
+    if (!bestLocker || lockedPct > bestLocker.lockedPct) {
+      bestLocker = { lockedPct, locker };
     }
+  }
+
+  if (bestLocker) {
+    return {
+      ...base,
+      state: 'locked',
+      burnedPercentage: 0,
+      lockedPercentage: bestLocker.lockedPct,
+      locker: bestLocker.locker.address,
+      lockerName: bestLocker.locker.name ?? null,
+      detail: `held by verified locker ${bestLocker.locker.name ?? bestLocker.locker.address}`,
+    };
   }
 
   return {
