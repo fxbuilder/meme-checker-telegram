@@ -1,0 +1,2010 @@
+{
+  "summary": {
+    "total": 35,
+    "byChain": {
+      "solana": {
+        "n": 5,
+        "narrative": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "top10": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "tax": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "lp": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "dev": {
+          "n": 5,
+          "covered": 2,
+          "pct": 40
+        },
+        "dexPaid": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "bsc": {
+        "n": 6,
+        "narrative": {
+          "n": 6,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "top10": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "tax": {
+          "n": 6,
+          "covered": 5,
+          "pct": 83
+        },
+        "lp": {
+          "n": 6,
+          "covered": 5,
+          "pct": 83
+        },
+        "dev": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "dexPaid": {
+          "n": 6,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "robinhood": {
+        "n": 6,
+        "narrative": {
+          "n": 6,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "top10": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "tax": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "lp": {
+          "n": 6,
+          "covered": 1,
+          "pct": 17
+        },
+        "dev": {
+          "n": 6,
+          "covered": 6,
+          "pct": 100
+        },
+        "dexPaid": {
+          "n": 6,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "base": {
+        "n": 5,
+        "narrative": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "top10": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "tax": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "lp": {
+          "n": 5,
+          "covered": 1,
+          "pct": 20
+        },
+        "dev": {
+          "n": 5,
+          "covered": 4,
+          "pct": 80
+        },
+        "dexPaid": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "ethereum": {
+        "n": 5,
+        "narrative": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 5,
+          "covered": 5,
+          "pct": 100
+        },
+        "top10": {
+          "n": 5,
+          "covered": 4,
+          "pct": 80
+        },
+        "tax": {
+          "n": 5,
+          "covered": 3,
+          "pct": 60
+        },
+        "lp": {
+          "n": 5,
+          "covered": 1,
+          "pct": 20
+        },
+        "dev": {
+          "n": 5,
+          "covered": 3,
+          "pct": 60
+        },
+        "dexPaid": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "elysium": {
+        "n": 5,
+        "narrative": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "top10": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "tax": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "lp": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "dev": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        },
+        "dexPaid": {
+          "n": 5,
+          "covered": 0,
+          "pct": 0
+        }
+      },
+      "hyperevm": {
+        "n": 3,
+        "narrative": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        },
+        "holders": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        },
+        "top10": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        },
+        "tax": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        },
+        "lp": {
+          "n": 3,
+          "covered": 1,
+          "pct": 33
+        },
+        "dev": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        },
+        "dexPaid": {
+          "n": 3,
+          "covered": 0,
+          "pct": 0
+        }
+      }
+    },
+    "byField": {
+      "narrative": {
+        "n": 35,
+        "covered": 0,
+        "pct": 0
+      },
+      "holders": {
+        "n": 35,
+        "covered": 27,
+        "pct": 77
+      },
+      "top10": {
+        "n": 35,
+        "covered": 26,
+        "pct": 74
+      },
+      "tax": {
+        "n": 35,
+        "covered": 24,
+        "pct": 69
+      },
+      "lp": {
+        "n": 35,
+        "covered": 14,
+        "pct": 40
+      },
+      "dev": {
+        "n": 35,
+        "covered": 21,
+        "pct": 60
+      },
+      "dexPaid": {
+        "n": 35,
+        "covered": 0,
+        "pct": 0
+      }
+    },
+    "outcomes": {
+      "narrative": {
+        "unknown": 35
+      },
+      "holders": {
+        "measured": 27,
+        "unknown": 8
+      },
+      "top10": {
+        "measured": 23,
+        "unknown": 9,
+        "partial": 3
+      },
+      "tax": {
+        "na": 5,
+        "unavailable": 11,
+        "measured": 19
+      },
+      "lp": {
+        "measured": 14,
+        "unknown": 21
+      },
+      "dev": {
+        "partial": 21,
+        "unknown": 13,
+        "unavailable": 1
+      },
+      "dexPaid": {
+        "unknown": 35
+      }
+    }
+  },
+  "rows": [
+    {
+      "symbol": "BONK",
+      "chain": "solana",
+      "address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 2169,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 1019921
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 40.55
+        },
+        "tax": {
+          "outcome": "na"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "99.99/100"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "5zpyutJu9ee6jFymDGoK7F6S5Kczqtc9FomP3ueKuyA9",
+        "labels": [
+          "wp"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "CAKE",
+      "chain": "bsc",
+      "address": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 1341,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 1906033
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 2.87
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "not burned, no locker"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x7f51c8AaA6B0599aBd16674e2b17FEc7a9f674A1",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "lp not burned; no verified locker holds it"
+      }
+    },
+    {
+      "symbol": "TEXEL",
+      "chain": "robinhood",
+      "address": "0x0ddcab9ae04bda0c87ecc1640636fa11e8e613e8",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 889,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 865
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 19.36
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x5e73f5892ef5cf4d553fe0cc9b109e884c3c2a52635bf6c4f1dceff9637fe932",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "PONS",
+      "chain": "robinhood",
+      "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 1380,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 106169
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 21.55
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "not burned, no locker"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x10CC6BD38112cAc182db90B6a71d8Bb5939526bA",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "lp not burned; no verified locker holds it"
+      }
+    },
+    {
+      "symbol": "BRETT",
+      "chain": "base",
+      "address": "0x532f27101965dd16442E59d40670FaF5eBB142E4",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 161,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 909995
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 33.27
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xBA3F945812a83471d709BCe9C3CA699A19FB46f7",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "ANT",
+      "chain": "bsc",
+      "address": "0xb4f9d1b2cad3646d15797de462e5d773194d7777",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 903,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 5901
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 22.72
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "burned 100%"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x8d6aA5Eb54e6fD52B7cBf1CEaffbCAa636D0cfc6",
+        "labels": [
+          "v2"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "ethereum",
+      "address": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 338,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 580311
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 38.63
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "0/0.009091135894822"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+        "labels": [
+          "v2"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "AGI",
+      "chain": "elysium",
+      "address": "0x74f811f35134d73221e5491135e4c8f963316953",
+      "role": "named",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 791,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x4226074a01c6b6259bebd14bc84beb40a9ebeeee44ab8997dc893e51ac98fc3d",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "DOG",
+      "chain": "solana",
+      "address": "EXkaLWE88Z651qBjmVY4uaCDMgv13xYSmgCDkqSwAXH2",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 3781,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 32
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 100
+        },
+        "tax": {
+          "outcome": "na"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "100/0"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "C8iiLLCrn8vKPHn7AADKHtgSQxPDEdEckwUN8hSp8Ktt",
+        "labels": [
+          "CLMM"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "AI",
+      "chain": "solana",
+      "address": "47fwKU1UvbtatYoFYp7ThLkYjqBudAv8UbuhBLf2CK4G",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 1147,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 29
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 100
+        },
+        "tax": {
+          "outcome": "na"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "100/0"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "57rXsAM2DAoyzbbcwHqGMxsjxC2X4EjBEhJ6oWJ4yL1P",
+        "labels": [
+          "CLMM"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "solana",
+      "address": "A1DBHWmtuYZMpLNXE9xr4B7crD8FAxwHSDnqnk8NwAKS",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 6001,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 10
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 100
+        },
+        "tax": {
+          "outcome": "na"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "100/0"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "BHaUhGhMnjnZXMx1DFfsq82hf1CqvywFJkFxj2doTuNf",
+        "labels": [
+          "CLMM"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "solana",
+      "address": "FapHHLT2Log3nX1RQynuYbTWPx5kwxswaJuYLxiwy8ir",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 4093,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 47
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 100
+        },
+        "tax": {
+          "outcome": "na"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "100/0"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "ntms39AuHVwy4NkY4f73uQ7qMFeSiMVTaZbNR7qL4vp",
+        "labels": [
+          "CLMM"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "TRUMP",
+      "chain": "bsc",
+      "address": "0x172eb459C85f82Cb2a2E007a8DbA26402ed75BF4",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 629,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 7182
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 100
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "0/1.7099999999999998e-14"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x7E0dCfc5BE9575f4d2f0A29b00BF249f922808D5",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "CAT",
+      "chain": "bsc",
+      "address": "0x6894CDe390a3f51155ea41Ed24a33A4827d3063D",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 619,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 286687
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 57.99
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "0/99.99989220326866"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x6DF9aDc1837Bf37E0B1b943d59A7E50D9678c81B",
+        "labels": [
+          "v2"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "bsc",
+      "address": "0x25d887Ce7a35172C62FeBFD67a1856F20FaEbB00",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 548,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 102592
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 19.71
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xdD82975ab85E745c84e497FD75ba409Ec02d4739",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "Moon",
+      "chain": "bsc",
+      "address": "0x0Cf1bC9797BE940DC2B3d5616937ED6aAd3C2f57",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 1019,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 2481
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 62.04
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "locked null%"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x60E049CbA0D074F71aC127007D60D7FcF473DCe9",
+        "labels": [
+          "v2"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "TRUMP",
+      "chain": "ethereum",
+      "address": "0x793fb34404E82715ad854F7Be2E29f4d1f6a2fbA",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 958,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 2
+        },
+        "top10": {
+          "outcome": "partial",
+          "value": 100,
+          "evidence": "only 2 holders exist"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x25Aae8089738E85854005F70B5C972d9E0b7C94D",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "MEME",
+      "chain": "ethereum",
+      "address": "0x14F85D8B3baB0A81309706231228C645A10A9718",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 5093,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 2
+        },
+        "top10": {
+          "outcome": "partial",
+          "value": 100,
+          "evidence": "only 2 holders exist"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x5f8CE85974a6A1547aFf47D43E9B53f42172D2dD",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "DOG",
+      "chain": "ethereum",
+      "address": "0x54423d6e7c7c8521C8b3c7AB832C06d3BBF3eD8A",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 824,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 2
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xed43c0B08D5A068e3498550F046757B6D78eE192",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "MEME",
+      "chain": "ethereum",
+      "address": "0x8e1C8F473aB3E97748BcE0ecDa036E110fd0ff14",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 530,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 6
+        },
+        "top10": {
+          "outcome": "partial",
+          "value": 60,
+          "evidence": "only 6 holders exist"
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x164e5c7AD1Da30647219b39Cb2dd24404E1495bf",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "AI",
+      "chain": "robinhood",
+      "address": "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 361,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 60127
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 21.1
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xcbdfea90430a30ee4469c9902e120a77e7c7e4711d5643671c1d1957f2f1ce27",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "COIN",
+      "chain": "robinhood",
+      "address": "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 357,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 31402
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 84.21
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x6707aeAc7D0e519B083219d27BB427364363183A",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "MEME",
+      "chain": "robinhood",
+      "address": "0x385F4f8ae47651ce5F58F5265395a669f8281e18",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 435,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 28675
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 35.79
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x27ccf0a6d1ee74840220715bcca7d3b01e0d33aa30d0259b47ae1585b3f4c071",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "INU",
+      "chain": "robinhood",
+      "address": "0x63Ee32Ac3077d1fbd8a77eBBA2a6ed4b8e9c1e18",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 598,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 6275
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 49.34
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x7e271c400427ecb727f5fbb27dec69254bce7c4219e95e3535d0ed128f79648a",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "AI",
+      "chain": "base",
+      "address": "0xb20000000000000000000000581E045b7C9B4000",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 562,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 124119
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 80.01
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unavailable"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xc5b54462de1ff5f4a0f3c0d4b840cb834eecc62b2662a533af0cc69361561bec",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "base",
+      "address": "0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 654,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 5080564
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 25.29
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "0/99.08107562275622"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x0FB597D6cFE5bE0d5258A7f017599C2A4Ece34c7",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "PEPE",
+      "chain": "base",
+      "address": "0x4a5d095b3DDbf2776E9Bb42c90E51ed96005EF9f",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 704,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 1032566
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 80.18
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xc09a110121daa93bc386559b618c1f4f71eb76fed30c5ddc138d4c7fc34d939e",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "TRUMP",
+      "chain": "base",
+      "address": "0x1062f5Cb624427Fc843E385Cb8744Fc8201838F0",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 675,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "measured",
+          "value": 511574
+        },
+        "top10": {
+          "outcome": "measured",
+          "value": 80.11
+        },
+        "tax": {
+          "outcome": "measured",
+          "value": "0/0"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "partial",
+          "evidence": "address known, holding unmeasured"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "not-paid"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xb0aef136b2906bd42542f4276206eb79bac2545deec0c22ec735b05e0626407b",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "PURR",
+      "chain": "hyperevm",
+      "address": "0x9b498C3c8A0b8CD8BA1D9851d40D186F1872b44E",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 867,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x466F0cD324dCC4ad31053a0bc2013EaE7e474420",
+        "labels": null,
+        "riskDetail": null,
+        "lpDetail": "v3/v4 or curve pool — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "BUDDY",
+      "chain": "hyperevm",
+      "address": "0x47bb061C0204Af921F43DC73C7D7768d2672DdEE",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 5319,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "measured",
+          "value": "locked null%"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x056f0975F104Cb5318ECc55F0C82b33A756d29C6",
+        "labels": [
+          "v2"
+        ],
+        "riskDetail": null,
+        "lpDetail": null
+      }
+    },
+    {
+      "symbol": "CATBAL",
+      "chain": "hyperevm",
+      "address": "0x11735dBd0B97CfA7Accf47d005673BA185f7fd49",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 12485,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0xB7345f5d33F1041872D92534F67596E3d00910E4",
+        "labels": [
+          "v3"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v3 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "KNTQ",
+      "chain": "elysium",
+      "address": "0xe45a355d9e9cAd2aD85F2d03E3eE3102A036acF0",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 5243,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x5ecB73050f35D8bD67231512C3bef91ad0b3dcc7",
+        "labels": null,
+        "riskDetail": null,
+        "lpDetail": "v3/v4 or curve pool — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "MONTRA",
+      "chain": "elysium",
+      "address": "0x063F7Cc5339f92a5FD7BaF3D22233044FdA1F327",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 13100,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x3e373dfe40db272433dca58527abac38dbd7acb0b6c92090c202a1eac7272a1d",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "POCKET",
+      "chain": "elysium",
+      "address": "0xF0394d1E25BE152C9746791f5DA3B287743f0E52",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 12721,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x37a99c5c3fb3f8431e718494fed8746c856de1c6a61f8cd96aa145cf3f1bc9a5",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    },
+    {
+      "symbol": "PERP",
+      "chain": "elysium",
+      "address": "0x231e303Fc99f8Ff35fb089c707981e3767d4E6B7",
+      "role": "extra",
+      "scanStatus": "ok",
+      "riskStatus": "ok",
+      "ms": 13068,
+      "fields": {
+        "narrative": {
+          "outcome": "unknown",
+          "evidence": "collected separately"
+        },
+        "holders": {
+          "outcome": "unknown"
+        },
+        "top10": {
+          "outcome": "unknown"
+        },
+        "tax": {
+          "outcome": "unavailable"
+        },
+        "lp": {
+          "outcome": "unknown",
+          "evidence": "pool type known, lock state not measurable"
+        },
+        "dev": {
+          "outcome": "unknown"
+        },
+        "dexPaid": {
+          "outcome": "unknown",
+          "evidence": "unknown"
+        }
+      },
+      "consistent": true,
+      "inconsistency": null,
+      "evidence": {
+        "pairAddress": "0x90d5ca6077cc9651f02859f2aef47e8b7eeab03dd490e21f42540552574e3234",
+        "labels": [
+          "v4"
+        ],
+        "riskDetail": null,
+        "lpDetail": "v4 position — no fungible LP token, so V2 lp-supply maths does not apply"
+      }
+    }
+  ]
+}

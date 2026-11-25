@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "createdFor": "Round 5 fixed-sample acceptance",
+  "note": "Addresses are pinned and must NOT rotate between before/after runs. Every entry was confirmed to resolve to a real token whose baseToken.address matches exactly.",
+  "chains": [
+    "solana",
+    "bsc",
+    "ethereum",
+    "robinhood",
+    "hyperevm",
+    "base",
+    "elysium"
+  ],
+  "tokens": [
+    {
+      "symbol": "BONK",
+      "address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "role": "named",
+      "name": "Bonk",
+      "liquidityUsd": 207345
+    },
+    {
+      "symbol": "CAKE",
+      "address": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+      "chain": "bsc",
+      "role": "named",
+      "name": "PancakeSwap Token",
+      "liquidityUsd": 4572146
+    },
+    {
+      "symbol": "TEXEL",
+      "address": "0x0ddcab9ae04bda0c87ecc1640636fa11e8e613e8",
+      "chain": "robinhood",
+      "role": "named",
+      "name": "Texel",
+      "liquidityUsd": 73262
+    },
+    {
+      "symbol": "PONS",
+      "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "chain": "robinhood",
+      "role": "named",
+      "name": "Pons",
+      "liquidityUsd": 1096390
+    },
+    {
+      "symbol": "BRETT",
+      "address": "0x532f27101965dd16442E59d40670FaF5eBB142E4",
+      "chain": "base",
+      "role": "named",
+      "name": "Brett",
+      "liquidityUsd": 764913
+    },
+    {
+      "symbol": "ANT",
+      "address": "0xb4f9d1b2cad3646d15797de462e5d773194d7777",
+      "chain": "bsc",
+      "role": "named",
+      "name": "Anthropic",
+      "liquidityUsd": 84229
+    },
+    {
+      "symbol": "PEPE",
+      "address": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+      "chain": "ethereum",
+      "role": "named",
+      "name": "Pepe",
+      "liquidityUsd": 22975818
+    },
+    {
+      "symbol": "AGI",
+      "address": "0x74f811f35134d73221e5491135e4c8f963316953",
+      "chain": "elysium",
+      "role": "named",
+      "name": "Agorian",
+      "liquidityUsd": 32384
+    },
+    {
+      "chain": "solana",
+      "address": "EXkaLWE88Z651qBjmVY4uaCDMgv13xYSmgCDkqSwAXH2",
+      "symbol": "DOG",
+      "name": "Dog (Bitcoin)",
+      "liquidityUsd": 126403291,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "solana",
+      "address": "47fwKU1UvbtatYoFYp7ThLkYjqBudAv8UbuhBLf2CK4G",
+      "symbol": "AI",
+      "name": "Gensyn",
+      "liquidityUsd": 33901064,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "solana",
+      "address": "A1DBHWmtuYZMpLNXE9xr4B7crD8FAxwHSDnqnk8NwAKS",
+      "symbol": "PEPE",
+      "name": "PEPE",
+      "liquidityUsd": 3900572,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "solana",
+      "address": "FapHHLT2Log3nX1RQynuYbTWPx5kwxswaJuYLxiwy8ir",
+      "symbol": "PEPE",
+      "name": "Pepe",
+      "liquidityUsd": 3891582,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "bsc",
+      "address": "0x172eb459C85f82Cb2a2E007a8DbA26402ed75BF4",
+      "symbol": "TRUMP",
+      "name": "OFFICIAL TRUMP",
+      "liquidityUsd": 846355165,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "bsc",
+      "address": "0x6894CDe390a3f51155ea41Ed24a33A4827d3063D",
+      "symbol": "CAT",
+      "name": "Simons Cat",
+      "liquidityUsd": 3794018,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "chain": "bsc",
+      "address": "0x25d887Ce7a35172C62FeBFD67a1856F20FaEbB00",
+      "symbol": "PEPE",
+      "name": "Pepe",
+      "liquidityUsd": 249481,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "bsc",
+      "address": "0x0Cf1bC9797BE940DC2B3d5616937ED6aAd3C2f57",
+      "symbol": "Moon",
+      "name": "Moon",
+      "liquidityUsd": 243158,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "ethereum",
+      "address": "0x793fb34404E82715ad854F7Be2E29f4d1f6a2fbA",
+      "symbol": "TRUMP",
+      "name": "OFFICIAL TRUMP",
+      "liquidityUsd": 1578095518,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "ethereum",
+      "address": "0x14F85D8B3baB0A81309706231228C645A10A9718",
+      "symbol": "MEME",
+      "name": "Memecoin",
+      "liquidityUsd": 35747548,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "ethereum",
+      "address": "0x54423d6e7c7c8521C8b3c7AB832C06d3BBF3eD8A",
+      "symbol": "DOG",
+      "name": "DogOfBitcoin",
+      "liquidityUsd": 32922872,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "ethereum",
+      "address": "0x8e1C8F473aB3E97748BcE0ecDa036E110fd0ff14",
+      "symbol": "MEME",
+      "name": "Memecoin",
+      "liquidityUsd": 20263897,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18",
+      "symbol": "AI",
+      "name": "Artificial Inu",
+      "liquidityUsd": 1031242,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+      "symbol": "COIN",
+      "name": "Coinbase • Robinhood Token",
+      "liquidityUsd": 693450,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x385F4f8ae47651ce5F58F5265395a669f8281e18",
+      "symbol": "MEME",
+      "name": "A Meme Coin",
+      "liquidityUsd": 661825,
+      "hasSocials": true,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "robinhood",
+      "address": "0x63Ee32Ac3077d1fbd8a77eBBA2a6ed4b8e9c1e18",
+      "symbol": "INU",
+      "name": "iNu",
+      "liquidityUsd": 167319,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "chain": "base",
+      "address": "0xb20000000000000000000000581E045b7C9B4000",
+      "symbol": "AI",
+      "name": "Meta AI",
+      "liquidityUsd": 346507,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "base",
+      "address": "0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D",
+      "symbol": "PEPE",
+      "name": "BasedPepe",
+      "liquidityUsd": 227229,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "chain": "base",
+      "address": "0x4a5d095b3DDbf2776E9Bb42c90E51ed96005EF9f",
+      "symbol": "PEPE",
+      "name": "Pepe Army",
+      "liquidityUsd": 198646,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "chain": "base",
+      "address": "0x1062f5Cb624427Fc843E385Cb8744Fc8201838F0",
+      "symbol": "TRUMP",
+      "name": "Captain America",
+      "liquidityUsd": 177247,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "address": "0x9b498C3c8A0b8CD8BA1D9851d40D186F1872b44E",
+      "chain": "hyperevm",
+      "symbol": "PURR",
+      "name": "Purr",
+      "liquidityUsd": 87503,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "address": "0x47bb061C0204Af921F43DC73C7D7768d2672DdEE",
+      "chain": "hyperevm",
+      "symbol": "BUDDY",
+      "name": "alright buddy",
+      "liquidityUsd": 157093,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "address": "0x11735dBd0B97CfA7Accf47d005673BA185f7fd49",
+      "chain": "hyperevm",
+      "symbol": "CATBAL",
+      "name": "CATBAL",
+      "liquidityUsd": 38731,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "address": "0xe45a355d9e9cAd2aD85F2d03E3eE3102A036acF0",
+      "chain": "elysium",
+      "symbol": "KNTQ",
+      "name": "Kinetiq Governance Token",
+      "liquidityUsd": 808594,
+      "hasSocials": false,
+      "hasWebsite": false,
+      "role": "extra"
+    },
+    {
+      "address": "0x063F7Cc5339f92a5FD7BaF3D22233044FdA1F327",
+      "chain": "elysium",
+      "symbol": "MONTRA",
+      "name": "Montra",
+      "liquidityUsd": 366215,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "address": "0xF0394d1E25BE152C9746791f5DA3B287743f0E52",
+      "chain": "elysium",
+      "symbol": "POCKET",
+      "name": "Pocket Perps",
+      "liquidityUsd": 128546,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    },
+    {
+      "address": "0x231e303Fc99f8Ff35fb089c707981e3767d4E6B7",
+      "chain": "elysium",
+      "symbol": "PERP",
+      "name": "Perpium",
+      "liquidityUsd": 33924,
+      "hasSocials": true,
+      "hasWebsite": true,
+      "role": "extra"
+    }
+  ]
+}
