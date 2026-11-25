@@ -24,6 +24,7 @@ import { securityFromTokenInfo, hasUsableSecurity } from './security/geckotermin
 import { readV2Liquidity, mergeLpIntel } from './security/lp-intel.mjs';
 import { fetchTokenInfo, gtSupportsChain } from './research/geckoterminal.mjs';
 import { readElysiumHolders, mergeElysiumHolders } from './security/elysium.mjs';
+import { readHyperEvmExplorer, mergeHyperEvmHolders } from './security/hyperevm.mjs';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
 const TIMEOUT_MS = 8_000;
@@ -756,6 +757,29 @@ async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs, pair 
   // every chain with no GoPlus coverage, so a block placed below that return never runs for
   // Elysium at all - which is the same early-return trap that previously disabled LP intel
   // on exactly these chains.
+  // ---- HyperEVM holder fallback -----------------------------------------------
+  // HyperEVM has NO keyless holder source: GoPlus does not cover it, GeckoTerminal carries
+  // no holder fields, purrscan is a JS shell, routescan does not support 999, and the public
+  // RPC refuses log spans over 1,000 blocks. An optional free Etherscan-V2 key unlocks the
+  // explorer index; without it this returns `not-configured`, which is a CAPABILITY GAP and
+  // never a statement that the token has no holders.
+  if (chainId === 'hyperevm') {
+    try {
+      const ex = await readHyperEvmExplorer(address, { fetchImpl });
+      if (ex.status === 'ok') {
+        const primary = result.status === 'ok' ? result.data : null;
+        const merged = mergeHyperEvmHolders(primary, ex);
+        if (merged) result = { status: 'ok', data: merged, detail: result.detail ?? 'etherscan-v2 holders' };
+      } else if (result.status !== 'ok') {
+        // Keep the capability gap visible on the result instead of collapsing it into
+        // "no data", so the renderer can say why rather than showing a silent dash.
+        result = { ...result, detail: result.detail ?? `hyperevm holders: ${ex.status}` };
+      }
+    } catch {
+      // Holder fields are lost only.
+    }
+  }
+
   if (chainId === 'elysium') {
     try {
       const el = await readElysiumHolders(address, { fetchImpl });
