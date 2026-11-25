@@ -101,7 +101,18 @@ function isBurnAddress(addr) {
  *
  * @returns {{percentage:number|null, counted:number, excluded:number, reason?:string}}
  */
-export function holderConcentration(rows, { top = 10, exclude = [], excludeBurn = true } = {}) {
+export function holderConcentration(rows, {
+  top = 10, exclude = [], excludeBurn = true,
+  /**
+   * Minimum non-excluded rows before a concentration figure is published.
+   *
+   * Defaults to 3 because "Top 10 concentration" from one or two rows is not that
+   * statistic — measured live, a BSC token with a single 0% holder row rendered as a
+   * confident green "Top 10: 0%". Tests that exercise dedup/exclusion logic with tiny
+   * fixtures pass 1 explicitly; production never does.
+   */
+  minRows = 3,
+} = {}) {
   if (!Array.isArray(rows) || !rows.length) {
     return { percentage: null, counted: 0, excluded: 0, reason: 'no-holder-rows' };
   }
@@ -143,10 +154,18 @@ export function holderConcentration(rows, { top = 10, exclude = [], excludeBurn 
     return { percentage: null, counted: 0, excluded: excludedCount, reason: 'all-rows-excluded' };
   }
 
+  // MINIMUM SAMPLE. "Top 10 concentration" is a statement about ten wallets. When the
+  // provider returns one or two rows, summing them produces a confident, tiny percentage
+  // that renders GREEN - a fabricated all-clear built from almost no evidence. Measured
+  // live on BSC: some fresh tokens came back with a single holder row at 0.000000%, which
+  // became "Top 10: 0%". Fewer than three rows is reported as unknown with the reason,
+  // never as a low concentration.
   const total = topRows.reduce((acc, r) => acc + r.percent, 0) * 100;
 
   // Cause 3: even after cleaning, an impossible total means the rows are mutually
   // inconsistent. Report unknown and keep the diagnostic rather than inventing a value.
+  // Checked BEFORE the sample-size guard: "the provider's own rows contradict each
+  // other" is a stronger and more actionable finding than "there are few of them".
   if (!Number.isFinite(total) || total > 100.5) {
     return {
       percentage: null,
@@ -154,6 +173,15 @@ export function holderConcentration(rows, { top = 10, exclude = [], excludeBurn 
       excluded: excludedCount,
       reason: 'inconsistent-denominator',
       rawTotal: Number.isFinite(total) ? Number(total.toFixed(2)) : null,
+    };
+  }
+
+  if (topRows.length < minRows) {
+    return {
+      percentage: null,
+      counted: topRows.length,
+      excluded: excludedCount,
+      reason: 'too-few-holder-rows',
     };
   }
 

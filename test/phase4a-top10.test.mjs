@@ -25,10 +25,11 @@ test('the exact OWNER case (111.1%) is reproduced by a naive sum', () => {
 });
 
 test('duplicate addresses are counted once', () => {
+  // minRows:1 - this fixture tests DEDUP, deliberately using one unique wallet.
   const r = holderConcentration([
     { address: '0xAAA', percent: '0.30' },
     { address: '0xAAA', percent: '0.30' },
-  ]);
+  ], { minRows: 1 });
   assert.equal(r.percentage, 30, 'the same wallet listed twice is one wallet');
   assert.equal(r.counted, 1);
 });
@@ -38,7 +39,7 @@ test('the LP pool and burn addresses are excluded from concentration', () => {
     { address: '0xLP', percent: '0.5' },
     { address: DEAD, percent: '0.2' },
     { address: '0xAAA', percent: '0.1' },
-  ], { exclude: ['0xLP'] });
+  ], { exclude: ['0xLP'], minRows: 1 });
   assert.equal(r.percentage, 10, 'only the real holder counts');
   assert.equal(r.excluded, 2);
 });
@@ -47,7 +48,7 @@ test('address exclusion is case-insensitive for EVM', () => {
   const r = holderConcentration([
     { address: '0xABCDEF', percent: '0.9' },
     { address: '0xabc', percent: '0.1' },
-  ], { exclude: ['0xabcdef'] });
+  ], { exclude: ['0xabcdef'], minRows: 1 });
   assert.equal(r.percentage, 10);
 });
 
@@ -96,13 +97,17 @@ test('normalizeRisk withholds an invalid figure end to end', () => {
 });
 
 test('normalizeRisk excludes the provider-reported LP holders', () => {
+  // A realistic row count: production requires at least three non-excluded holders
+  // before publishing a concentration figure, so the fixture supplies three.
   const out = normalizeRisk('bsc', {
     holder_count: '500',
     holders: [
       { address: '0xLP', percent: '0.40' },
       { address: '0xA', percent: '0.10' },
+      { address: '0xB', percent: '0.05' },
+      { address: '0xC', percent: '0.02' },
     ],
     lp_holders: [{ address: '0xLP' }],
   });
-  assert.equal(out.holders.top10Percentage, 10);
+  assert.equal(out.holders.top10Percentage, 17, 'the LP holder is excluded, the rest summed');
 });
