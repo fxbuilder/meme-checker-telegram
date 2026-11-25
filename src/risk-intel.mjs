@@ -23,6 +23,7 @@ import { fetchRugCheck } from './security/rugcheck.mjs';
 import { securityFromTokenInfo, hasUsableSecurity } from './security/geckoterminal-security.mjs';
 import { readV2Liquidity, mergeLpIntel } from './security/lp-intel.mjs';
 import { fetchTokenInfo, gtSupportsChain } from './research/geckoterminal.mjs';
+import { readElysiumHolders, mergeElysiumHolders } from './security/elysium.mjs';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
 const TIMEOUT_MS = 8_000;
@@ -542,6 +543,7 @@ export async function fetchRisk(chainId, address, {
     }
   }
 
+
   if (result.status !== 'no-data') {
     cache.set(ck, {
       result,
@@ -741,6 +743,29 @@ async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs, pair 
       }
     } catch (err) {
       result = { status: 'error', data: null, detail: String(err?.message ?? err) };
+    }
+  }
+
+  // ---- Elysium holder fallback ------------------------------------------------
+  // GoPlus has no Elysium entry and GeckoTerminal publishes no holder data for it, so every
+  // Elysium token rendered 0% on holder and Top-10. Two providers having nothing does not
+  // establish that no holder source exists - Elyscan's token page publishes both, and it is
+  // the chain's own explorer rather than a third-party substitute.
+  //
+  // NOTE: this belongs HERE, not in fetchRisk. fetchRisk returns into this function for
+  // every chain with no GoPlus coverage, so a block placed below that return never runs for
+  // Elysium at all - which is the same early-return trap that previously disabled LP intel
+  // on exactly these chains.
+  if (chainId === 'elysium') {
+    try {
+      const el = await readElysiumHolders(address, { fetchImpl });
+      if (el.status === 'ok') {
+        const primary = result.status === 'ok' ? result.data : null;
+        const merged = mergeElysiumHolders(primary, el);
+        if (merged) result = { status: 'ok', data: merged, detail: result.detail ?? 'elyscan holders' };
+      }
+    } catch {
+      // A page that fails to load costs the holder fields only.
     }
   }
 
