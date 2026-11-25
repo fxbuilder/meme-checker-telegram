@@ -16,6 +16,7 @@ const ROOT = path.resolve(HERE, '..');
 
 const { liveScan } = await import(`file://${ROOT.replace(/\\/g, '/')}/src/live-scan.mjs`);
 const { resolveQuickCheck } = await import(`file://${ROOT.replace(/\\/g, '/')}/src/card-layout.mjs`);
+const { researchToken } = await import(`file://${ROOT.replace(/\\/g, '/')}/src/research/research-service.mjs`);
 
 /**
  * The eight outcome classes. DETERMINED and CLASSIFIED are deliberately separate: knowing a
@@ -41,6 +42,7 @@ const arg = (name, dflt = null) => {
   return i >= 0 ? args[i + 1] : dflt;
 };
 const LIMIT = arg('limit') ? Number(arg('limit')) : null;
+const SKIP_NARRATIVE = args.includes('--skip-narrative');
 const OUT = arg('json', path.join(HERE, 'results.json'));
 
 const manifest = JSON.parse(fs.readFileSync(path.join(HERE, 'manifest.json'), 'utf8'));
@@ -126,10 +128,35 @@ function classifyDev(r) {
   return { outcome: OUTCOME.UNKNOWN };
 }
 
-function classifyNarrative(r) {
-  // Narrative is gathered by a separate research pass, not by liveScan, so it is recorded as
-  // not-collected here rather than as a failure. The narrative harness fills it in.
-  return { outcome: OUTCOME.UNKNOWN, evidence: 'collected separately' };
+/**
+ * Narrative is produced by researchToken(), NOT by liveScan - they are two different
+ * pipelines. The first version of this harness measured only liveScan and reported narrative
+ * 0%, which described the HARNESS rather than the product. That is the same error as reading a
+ * provider's silence as a fact about the token, so it is measured properly here.
+ */
+function classifyNarrative(research) {
+  if (!research) return { outcome: OUTCOME.UNKNOWN, evidence: 'research not run' };
+  const n = research.narrative;
+  if (!n) return { outcome: OUTCOME.UNKNOWN, evidence: 'no narrative block' };
+  if (n.available && n.summary) {
+    const len = String(n.summary).trim().length;
+    if (!len) return { outcome: OUTCOME.UNKNOWN, evidence: 'empty summary' };
+    // A summary that is merely the token's own name/symbol is not a description of it.
+    const sym = String(research.symbol ?? '').toLowerCase();
+    const txt = String(n.summary).trim().toLowerCase();
+    if (sym && (txt === sym || txt === `${sym} token`)) {
+      return { outcome: OUTCOME.PARTIAL, evidence: 'summary restates the ticker' };
+    }
+    return {
+      outcome: OUTCOME.MEASURED,
+      value: len,
+      evidence: n.summarySource ?? null,
+    };
+  }
+  // A provider outage is not "no description published".
+  if (n.reason === 'provider-error') return { outcome: OUTCOME.UNAVAILABLE, evidence: n.reason };
+  if (n.reason === 'unsupported-chain') return { outcome: OUTCOME.UNSUPPORTED };
+  return { outcome: OUTCOME.UNAVAILABLE, evidence: n.reason ?? 'no published description' };
 }
 
 function classifyDexPaid(r) {
@@ -152,8 +179,27 @@ for (const t of tokens) {
     r = { status: 'error', detail: String(err?.message ?? err) };
   }
 
+  // Narrative comes from its own pipeline, so it gets its own call.
+  let research = null;
+  if (!SKIP_NARRATIVE) {
+    try {
+      research = await researchToken({
+        chain: t.chain,
+        address: t.address,
+        symbol: t.symbol,
+        name: t.name ?? null,
+        scanResult: r.status === 'ok' ? r : null,
+        // No paid X requests: the benchmark must not spend money.
+        includePosts: false,
+        xCacheOnly: true,
+      });
+    } catch (err) {
+      research = { narrative: { available: false, reason: 'provider-error', detail: String(err?.message ?? err) } };
+    }
+  }
+
   const fields = {
-    narrative: classifyNarrative(r),
+    narrative: classifyNarrative(research),
     holders: classifyHolders(r),
     top10: classifyTop10(r),
     tax: classifyTax(r),
@@ -192,6 +238,14 @@ for (const t of tokens) {
       labels: r.source?.labels ?? null,
       riskDetail: r.riskDetail ?? null,
       lpDetail: r.risk?.lpLock?.positionTypeDetail ?? r.risk?.lpLock?.detail ?? null,
+      narrativeSource: research?.narrative?.summarySource ?? null,
+      narrativeReason: research?.narrative?.reason ?? null,
+      narrativeCoverage: research?.narrative?.coverage ?? null,
+      // Whether the SCAN itself answered. Provider throttling varies run to run, and a field
+      // that flips between runs is a throttle, not a regression - recording the scan status
+      // lets that distinction be made from stored data instead of by re-running.
+      scanStatus: r.status,
+      riskStatus: r.riskStatus ?? null,
     },
   });
 
