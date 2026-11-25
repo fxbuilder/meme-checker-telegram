@@ -100,6 +100,15 @@ export const GLYPHS = {
   'metric.avg': '📐',
   'metric.median': '📏',
 
+  // ---- verdict tones (severity dots) ------------------------------------
+  // Separate from state.* so a severity dot can never inherit an exclamation-mark asset.
+  // A dot is a measurement of severity; an exclamation is a demand for attention.
+  'tone.good': '🟢',
+  'tone.warn': '🟡',
+  'tone.bad': '🔴',
+  'tone.unknown': '⚪',
+  'tone.na': '➖',
+
   // ---- states -----------------------------------------------------------
   'state.good': '🟢',
   'state.warn': '🟡',
@@ -240,7 +249,12 @@ export const CUSTOM_IDS = {
   'brand.rocket': { id: '5292284235711784694', pack: 'CryptoIcons', media: 'video', depicts: 'Rocket', source: 'verified' },
   // ---- verified utility assets ------------------------------------------
   'misc.fire': { id: '5440848567524677660', pack: 'Icon_TGS', idx: 57, media: 'animated', depicts: 'Flame', source: 'verified' },
-  'misc.down': { id: '5442873520050686734', pack: 'Icon_TGS', idx: 59, media: 'animated', depicts: 'Red downward line chart', source: 'verified' },
+  // CryptachEmoji4 #002/#003: green and red candlestick charts. Verified on a contact sheet —
+  // these packs mix generic UI symbols with branded coin logos, so the artwork was checked
+  // rather than the emoji hint.
+  'misc.down': { id: '5271811599785534382', pack: 'CryptachEmoji4', idx: 3, media: 'video', depicts: 'Red descending candlestick chart', source: 'verified' },
+  'metric.roi': { id: '5269460053651366623', pack: 'CryptachEmoji4', idx: 2, media: 'video', depicts: 'Green ascending candlestick chart', source: 'verified' },
+  'section.pnl': { id: '5269460053651366623', pack: 'CryptachEmoji4', idx: 2, media: 'video', depicts: 'Green ascending candlestick chart', source: 'verified' },
   'metric.lp': { id: '5292043245096806578', pack: 'CryptoIcons', idx: 109, media: 'video', depicts: 'Droplet', source: 'verified' },
   'metric.liquidity': { id: '5292043245096806578', pack: 'CryptoIcons', idx: 109, media: 'video', depicts: 'Droplet', source: 'verified' },
   'section.settings': { id: '5300999682133089708', pack: 'FinanceAnimations', idx: 39, media: 'animated', depicts: 'Gear', source: 'verified' },

@@ -161,31 +161,53 @@ const bot = new Telegraf(BOT_TOKEN);
 /**
  * GLOBAL EMOJI MIGRATION — one interception point for every outgoing message.
  *
- * Every renderer in this bot writes icon literals inline. Rewriting ~200 of them by hand would be
- * a large diff that still misses whatever is added next, so outgoing text is upgraded on its way
- * out instead. That covers commands, alerts, errors, empty states, confirmations, settings
- * pages, photo captions and callback edits — including surfaces nobody remembered to migrate.
+ * Every renderer writes icon literals inline, so outgoing text is upgraded on its way out
+ * instead of rewriting ~200 call sites. That covers commands, alerts, errors, empty states,
+ * confirmations, settings pages, photo CAPTIONS and callback edits.
  *
- * The transformation is idempotent (already-resolved markup is left alone) and skips the inside
- * of <code> and <a>, where an address or a user's own text must not be altered.
+ * THE BUG THIS REPLACES
+ * The first version wrapped every method as `(chatId, text, extra)` and upgraded argument 2.
+ * That is only correct for sendMessage. The real Telegraf signatures are:
  *
- * If Telegram rejects a tag because this bot may not send custom emoji, the tag's own glyph is
- * still inside it; the send fails on the tag rather than on the message content.
+ *   sendMessage(chatId, text, extra)
+ *   sendPhoto(chatId, PHOTO, extra)                       caption lives in extra.caption
+ *   editMessageText(chatId, messageId, inlineMessageId, TEXT, extra)
+ *   editMessageCaption(chatId, messageId, inlineMessageId, CAPTION, extra)
+ *
+ * So sendPhoto was passed a MediaSource where text was expected (returned untouched) and
+ * editMessageText was handed a messageId (also untouched, and it would have overwritten the
+ * id if it HAD matched). Only sendMessage worked — which is exactly the observed symptom: the
+ * Standard card, which ships as a photo caption, stayed entirely Unicode while /chains, which
+ * replies with text, showed the new icons.
+ *
+ * Each method is now patched with its own correct positions. A caption that arrives nested in
+ * `extra` is upgraded there, which also keeps `caption_entities` aligned with the caption text.
  */
 function installEmojiUpgrade(target) {
-  const patch = (obj, method) => {
+  const up = (v) => (typeof v === 'string' ? upgradeOutgoing(v) : v);
+
+  const wrap = (obj, method, apply) => {
     if (typeof obj?.[method] !== 'function') return;
     const original = obj[method].bind(obj);
-    obj[method] = (chatId, text, extra, ...rest) => {
-      const upgraded = typeof text === 'string' ? upgradeOutgoing(text) : text;
-      return original(chatId, upgraded, extra, ...rest);
-    };
+    obj[method] = (...args) => original(...apply(args));
   };
-  patch(target, 'sendMessage');
-  patch(target, 'editMessageText');
-  patch(target, 'sendPhoto');   // caption arrives in `extra`
-  patch(target, 'editMessageCaption');
+
+  // (chatId, text, extra)
+  wrap(target, 'sendMessage', ([chatId, text, extra, ...r]) => [chatId, up(text), extra, ...r]);
+
+  // (chatId, photo, extra) — upgrade extra.caption, never the photo.
+  wrap(target, 'sendPhoto', ([chatId, photo, extra, ...r]) =>
+    [chatId, photo, extra?.caption ? { ...extra, caption: up(extra.caption) } : extra, ...r]);
+
+  // (chatId, messageId, inlineMessageId, text, extra)
+  wrap(target, 'editMessageText', ([chatId, msgId, inlineId, text, extra, ...r]) =>
+    [chatId, msgId, inlineId, up(text), extra, ...r]);
+
+  // (chatId, messageId, inlineMessageId, caption, extra)
+  wrap(target, 'editMessageCaption', ([chatId, msgId, inlineId, caption, extra, ...r]) =>
+    [chatId, msgId, inlineId, up(caption), extra, ...r]);
 }
+
 installEmojiUpgrade(bot.telegram);
 
 /**

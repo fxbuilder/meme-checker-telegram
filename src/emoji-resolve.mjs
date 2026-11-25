@@ -55,6 +55,21 @@ export const GLYPH_VARIANTS = (() => {
   return out;
 })();
 
+/**
+ * Normalise whatever a caller supplied as `emojiTheme` into a full resolver.
+ *
+ * `buildEmojiTheme()` from emoji-theme.mjs returns a BARE function with no `.icon` method, and
+ * several call sites pass that straight through as `e`. Renderers that now call `e.icon(...)`
+ * would throw "e.icon is not a function" — a real regression this caught. Rather than require
+ * every caller to upgrade, a bare function is wrapped so it keeps its own mappings and gains the
+ * role-based API on top.
+ */
+export function asEmojiResolver(input, opts = {}) {
+  if (typeof input?.icon === 'function') return input;          // already a resolver
+  if (typeof input === 'function') return makeEmojiResolver({ ...opts, theme: input });
+  return makeEmojiResolver(opts);
+}
+
 export function makeEmojiResolver({ theme = null, custom = undefined } = {}) {
   // Evaluated per render, not captured at construction. Caching it meant a test (or an operator
   // setting the variable mid-process) saw stale behaviour, and `CUSTOM_EMOJI=0` silently did

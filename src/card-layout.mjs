@@ -331,10 +331,35 @@ export function allQuickChecksEmpty(result) {
  * good/warn/bad aliases are kept so older call sites keep working, and they map to the
  * same glyphs so the two can never disagree.
  */
+/**
+ * Severity tone → registry ROLE.
+ *
+ * These used to be raw glyph literals, so every risk row on the Security Overview was a plain
+ * Unicode circle regardless of what the registry contained. Mapping to `state.*` roles means the
+ * card resolves them through the shared resolver like every other icon.
+ *
+ * 'not-applicable' deliberately has no role: a dash is not a verdict, and dressing it as a
+ * coloured dot would imply one.
+ */
+const TONE_ROLE = {
+  // Verdict tones use DEDICATED dot roles, not state.good/warn/bad.
+  //
+  // state.warn carries an EXCLAMATION MARK asset. Reusing it here turned a yellow severity dot
+  // into a warning symbol while the green and grey rows stayed dots — three verdicts rendered in
+  // two different visual languages on adjacent lines, and the symbol said "warning" where the
+  // data said "elevated". Dots stay dots; the exclamation is reserved for actual warnings.
+  none: 'tone.good', low: 'tone.good',
+  medium: 'tone.warn',
+  high: 'tone.bad', critical: 'tone.bad',
+  unknown: 'tone.unknown',
+  // legacy aliases
+  good: 'tone.good', warn: 'tone.warn', bad: 'tone.bad', plain: 'tone.unknown', muted: 'tone.unknown',
+};
+
+/** Legacy glyph per tone, kept for callers that need a plain character. */
 const TONE_DOT = {
   none: '🟢', low: '🟢', medium: '🟡', high: '🔴', critical: '🔴',
   unknown: '⚪', 'not-applicable': '➖',
-  // legacy aliases, same glyphs
   good: '🟢', warn: '🟡', bad: '🔴', plain: '⚪', muted: '⚪',
 };
 
@@ -361,9 +386,12 @@ export function sectionTitle(emoji, title) {
  * Aligned rows from {label,value} pairs. Labels padded to the longest label in
  * the group so every value starts at the same column.
  */
-export function alignedRows(pairs) {
+export function alignedRows(pairs, e = null) {
   return pairs.map((p) => {
-    const prefix = p.icon ? `${p.icon} ` : '';
+    // Prefer the semantic role when a resolver is supplied, so a risk indicator gets the same
+    // treatment as every other card icon. Fall back to the glyph otherwise.
+    const drawn = (e && p.role) ? e.icon(p.role) : p.icon;
+    const prefix = drawn ? `${drawn} ` : '';
     return prefix + metricRow(p.label, p.value);
   });
 }
@@ -374,6 +402,8 @@ export function securityPairs(result) {
     label: it.label,
     value: it.value,
     icon: TONE_DOT[it.tone] ?? '•',
+    // The ROLE is what a renderer should draw; the glyph above stays as the fallback.
+    role: TONE_ROLE[it.tone] ?? null,
     tone: it.tone,
   }));
 }

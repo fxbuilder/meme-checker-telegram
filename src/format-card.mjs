@@ -29,7 +29,7 @@
  */
 import { noTheme } from './emoji-theme.mjs';
 import { chainIcon as chainIconMarkup, GLYPHS, GLYPH_TO_NAME } from './icons.mjs';
-import { defaultEmoji } from './emoji-resolve.mjs';
+import { defaultEmoji, asEmojiResolver } from './emoji-resolve.mjs';
 import {
   esc, fmtUsd, fmtPct, fmtInt, fmtPp, marketLooksImplausible, marketImplausibilities,
   resolveQuickCheck, quickChecks, securityPairs, alignedRows, sectionTitle,
@@ -83,9 +83,9 @@ function holderData(result) {
 /** The three-link block, used by standard and detailed. */
 function projectLinkLines(project, e) {
   const rows = [];
-  if (project?.website) rows.push(`<a href="${esc(project.website)}">${e('🌍')} Website</a>`);
-  if (project?.x) rows.push(`<a href="${esc(project.x)}">${e('✖️')} X</a>`);
-  if (project?.telegram) rows.push(`<a href="${esc(project.telegram)}">${e('✈️')} Telegram</a>`);
+  if (project?.website) rows.push(`<a href="${esc(project.website)}">${e.icon('cta.website')} Website</a>`);
+  if (project?.x) rows.push(`<a href="${esc(project.x)}">${e.icon('metric.x')} X</a>`);
+  if (project?.telegram) rows.push(`<a href="${esc(project.telegram)}">${e.icon('metric.social')} Telegram</a>`);
   return rows;
 }
 
@@ -97,13 +97,13 @@ function renderStatusCard(result, e, mockLabel) {
   const { status = 'api-error', mode } = result;
   const mockSuffix = (mockLabel || mode === 'mock') ? ' <i>[mock]</i>' : '';
   const msgs = {
-    'not-found': `${e('❗️')} <b>Token Not Found</b>${mockSuffix}\n\nNo trading pair exists for this contract yet.`,
-    'invalid-response': `${e('❗️')} <b>Scan Error</b>${mockSuffix}\n\nThe data provider returned an unexpected response. Please try again.`,
-    'api-error': `${e('❗️')} <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. This says nothing about the token itself. Please try again shortly.`,
-    'rate-limited': `${e('⏳')} <b>Rate Limited</b>${mockSuffix}\n\nToo many requests right now. Please wait a moment.`,
-    'chain-unsupported': `${e('❗️')} <b>Chain Not Supported Yet</b>\n\n${esc(chainName(result.chain ?? ''))} is recognised, but no market data source covers it yet. This is not a statement about the token.`,
+    'not-found': `${e.icon('misc.warning')} <b>Token Not Found</b>${mockSuffix}\n\nNo trading pair exists for this contract yet.`,
+    'invalid-response': `${e.icon('misc.warning')} <b>Scan Error</b>${mockSuffix}\n\nThe data provider returned an unexpected response. Please try again.`,
+    'api-error': `${e.icon('misc.warning')} <b>Unable to fetch data</b>${mockSuffix}\n\nThe data provider returned an error. This says nothing about the token itself. Please try again shortly.`,
+    'rate-limited': `${e.icon('state.pending')} <b>Rate Limited</b>${mockSuffix}\n\nToo many requests right now. Please wait a moment.`,
+    'chain-unsupported': `${e.icon('misc.warning')} <b>Chain Not Supported Yet</b>\n\n${esc(chainName(result.chain ?? ''))} is recognised, but no market data source covers it yet. This is not a statement about the token.`,
   };
-  return msgs[status] ?? `${e('❗️')} <b>Scan Failed</b>${mockSuffix} Please try again.`;
+  return msgs[status] ?? `${e.icon('misc.warning')} <b>Scan Failed</b>${mockSuffix} Please try again.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ function buildHeader(result, e, mockTag) {
   const logo = isAcceptableUrl(token?.logo) ? token.logo : null;
 
   const lines = [];
-  lines.push(`${e('🚀')} <b>MEME CHECKER</b>${mockTag}`);
+  lines.push(`${e.icon('brand.rocket')} <b>MEME CHECKER</b>${mockTag}`);
 
   // Logo as a one-line HTML image preview above the name block. Telegram renders
   // this as a web preview; if the URL is absent we simply omit it. It is never
@@ -130,7 +130,7 @@ function buildHeader(result, e, mockTag) {
     lines[lines.length - 1] = '';
   }
 
-  lines.push(`${e('🪙')} <b>${esc(name)}</b>  <code>$${esc(symbol)}</code>`);
+  lines.push(`${e.icon('brand.token')} <b>${esc(name)}</b>  <code>$${esc(symbol)}</code>`);
   lines.push(`${chainIcon(chain, e)} ${esc(chainName(chain))}`);
   lines.push('');
   lines.push(`<code>${esc(address)}</code>`);
@@ -200,14 +200,14 @@ function buildSecurity(result, e) {
     },
   };
   const pairs = securityPairs(merged);
-  const rows = alignedRows(pairs);
+  const rows = alignedRows(pairs, e);
 
   // A provider FAILURE is not the same claim as "the provider reported nothing".
   // Say so explicitly rather than showing five identical dashes that read as a
   // clean-ish card.
   if (result?.riskStatus === 'error') {
     rows.push('');
-    rows.push('<i>⚠️ Risk data could not be fetched right now — signals above are incomplete, not clear.</i>');
+    rows.push(`<i>${e.icon('state.warn')} Risk data could not be fetched right now — signals above are incomplete, not clear.</i>`);
     return rows;
   }
 
@@ -403,7 +403,8 @@ export function normalizeView(view) {
  * signed token is available the name renders as plain bold text — an
  * unclickable name is better than a link that goes somewhere wrong.
  */
-export function renderFirstCallLine(firstCall, e = (x) => x, { botUsername = '', callerToken = null } = {}) {
+export function renderFirstCallLine(firstCall, emojiTheme = null, { botUsername = '', callerToken = null } = {}) {
+  const e = asEmojiResolver(emojiTheme ?? defaultEmoji);
   const name = callerLabel(firstCall);
   const mcap = fmtUsd(firstCall?.entryMarketCapUsd);
   const label = clipText(name, 24);
@@ -411,7 +412,7 @@ export function renderFirstCallLine(firstCall, e = (x) => x, { botUsername = '',
     ? `<a href="https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(callerToken)}">${esc(label)}</a>`
     : `<b>${esc(label)}</b>`;
   const at = mcap ? ` @ <b>${esc(mcap)}</b>` : '';
-  return `${e('🔥')} First Call ${nameHtml}${at}`;
+  return `${e.icon('misc.fire')} First Call ${nameHtml}${at}`;
 }
 
 /**
@@ -454,9 +455,10 @@ export function elapsedLabel(calledAt, now = Date.now()) {
  * The return is OMITTED rather than shown as 0% when the current market cap is
  * unverified — a fabricated 0% reads as "flat" when the truth is "unknown".
  */
-export function renderCallPerformanceLine(call, e = (x) => x, {
+export function renderCallPerformanceLine(call, emojiTheme = null, {
   botUsername = '', callerToken = null, currentMarketCapUsd = null, now = Date.now(),
 } = {}) {
+  const e = asEmojiResolver(emojiTheme ?? defaultEmoji);
   const name = clipText(callerLabel(call), 24);
   const nameHtml = (callerToken && botUsername)
     ? `<a href="https://t.me/${encodeURIComponent(botUsername)}?start=${encodeURIComponent(callerToken)}">${esc(name)}</a>`
@@ -472,11 +474,11 @@ export function renderCallPerformanceLine(call, e = (x) => x, {
 
   // Entry unverified → we cannot make a return claim at all.
   if (!Number.isFinite(entry) || entry <= 0) {
-    return `${e('🔥')} ${nameHtml}${entryHtml}${ageHtml}`;
+    return `${e.icon('misc.fire')} ${nameHtml}${entryHtml}${ageHtml}`;
   }
   // Current unverified → state that, never invent 0%.
   if (!Number.isFinite(current) || current <= 0) {
-    return `${e('🔥')} ${nameHtml}${entryHtml} [<i>return unavailable</i>]${ageHtml}`;
+    return `${e.icon('misc.fire')} ${nameHtml}${entryHtml} [<i>return unavailable</i>]${ageHtml}`;
   }
 
   const pct = (current / entry - 1) * 100;
@@ -488,7 +490,7 @@ export function renderCallPerformanceLine(call, e = (x) => x, {
     ? '0%'
     : `${pct > 0 ? '+' : '-'}${abs >= 1000 ? abs.toFixed(0) : abs.toFixed(1)}%`;
 
-  const icon = pct > 0.05 ? e('🔥') : pct < -0.05 ? e('📉') : '';
+  const icon = pct > 0.05 ? e.icon('misc.fire') : pct < -0.05 ? e.icon('misc.down') : '';
   const prefix = icon ? `${icon} ` : '';
   return `${prefix}${nameHtml}${entryHtml} [<b>${esc(shown)}</b>]${ageHtml}`;
 }
@@ -526,7 +528,9 @@ export function formatCard(result, {
   // When no theme is installed the registry resolver is used, NOT a pass-through. The old
   // default returned the literal unchanged, so every heading stayed plain Unicode emoji unless
   // an EMOJI_THEME happened to be configured — and it was not.
-  const e = typeof emojiTheme === 'function' ? emojiTheme : defaultEmoji;
+  // A bare emojiTheme function (from buildEmojiTheme) has no .icon method, so it is wrapped
+  // into a full resolver rather than used directly.
+  const e = asEmojiResolver(emojiTheme ?? defaultEmoji);
   const mode = normalizeView(view);
 
   if (!result || result.status !== 'ok') {
@@ -542,7 +546,7 @@ export function formatCard(result, {
   if (mode === 'short') {
     const { market } = result;
     const h = holderData(result);
-    lines.push(`${e('🚀')} <b>${esc(token?.name ?? 'Unknown')}</b> <code>$${esc(token?.symbol ?? '?')}</code>${mockTag}`);
+    lines.push(`${e.icon('brand.rocket')} <b>${esc(token?.name ?? 'Unknown')}</b> <code>$${esc(token?.symbol ?? '?')}</code>${mockTag}`);
     lines.push(`${chainIcon(token?.chain, e)} ${esc(chainName(token?.chain))}`);
     lines.push(`<code>${esc(token?.address ?? '')}</code>`);
     lines.push('');
@@ -564,7 +568,7 @@ export function formatCard(result, {
       lines.push(...alignedRows(sec));
     }
     lines.push('');
-    lines.push(`${e('⚡')} <i>Meme Checker</i>`);
+    lines.push(`${e.icon('misc.bolt')} <i>Meme Checker</i>`);
 
     return {
       text: lines.join('\n'),
@@ -575,10 +579,10 @@ export function formatCard(result, {
   // ===== HEADER (standard + detailed) ======================================
   const logo = isAcceptableUrl(token?.logo) ? token.logo : null;
   if (mode === 'detailed') {
-    lines.push(`${e('🚀')} <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockTag}`);
+    lines.push(`${e.icon('brand.rocket')} <b>MEME CHECKER | TOKEN ANALYSIS</b>${mockTag}`);
     lines.push('');
   } else {
-    lines.push(`${e('🚀')} <b>MEME CHECKER</b>${mockTag}`);
+    lines.push(`${e.icon('brand.rocket')} <b>MEME CHECKER</b>${mockTag}`);
     // NOTE: a logo URL does not render as a token thumbnail in a plain text
     // message, and a bare image glyph read as a rendering bug. The logo is kept
     // in the scan payload for the website/detailed surfaces but is not printed
@@ -587,11 +591,11 @@ export function formatCard(result, {
   }
 
   if (mode === 'detailed') {
-    lines.push(`${e('🪙')} <b>${esc(token?.name ?? 'Unknown')} ($${esc(token?.symbol ?? '?')})</b>`);
-    lines.push(`${e('⛓️')} Chain: ${esc(chainName(token?.chain))}`);
-    lines.push(`${e('📌')} CA:`);
+    lines.push(`${e.icon('brand.token')} <b>${esc(token?.name ?? 'Unknown')} ($${esc(token?.symbol ?? '?')})</b>`);
+    lines.push(`${chainIcon(token?.chain, e)} Chain: ${esc(chainName(token?.chain))}`);
+    lines.push(`${e.icon('metric.ca')} CA:`);
   } else {
-    lines.push(`${e('🪙')} <b>${esc(token?.name ?? 'Unknown')}</b>  <code>$${esc(token?.symbol ?? '?')}</code>`);
+    lines.push(`${e.icon('brand.token')} <b>${esc(token?.name ?? 'Unknown')}</b>  <code>$${esc(token?.symbol ?? '?')}</code>`);
     lines.push(`${chainIcon(token?.chain, e)} ${esc(chainName(token?.chain))}`);
   }
   lines.push(`<code>${esc(token?.address ?? '')}</code>`);
@@ -600,12 +604,12 @@ export function formatCard(result, {
   // Detailed keeps the documented §4.1 headings so the earlier contract and its
   // regression tests still hold; standard uses the shorter section names.
   lines.push('');
-  lines.push(sectionTitle(e('📊'), mode === 'detailed' ? 'MARKET DATA' : 'MARKET OVERVIEW'));
+  lines.push(sectionTitle(e.icon('section.market'), mode === 'detailed' ? 'MARKET DATA' : 'MARKET OVERVIEW'));
   lines.push('');
   lines.push(...buildMarket(result, e));
 
   lines.push('');
-  lines.push(sectionTitle(e('🛡️'), mode === 'detailed' ? 'HOLDER OVERVIEW' : 'SECURITY OVERVIEW'));
+  lines.push(sectionTitle(e.icon('section.security'), mode === 'detailed' ? 'HOLDER OVERVIEW' : 'SECURITY OVERVIEW'));
   lines.push('');
   lines.push(...buildSecurity(result, e));
 
@@ -613,24 +617,24 @@ export function formatCard(result, {
   if (mode === 'detailed') {
     const s = result?.risk?.security ?? {};
     const flags = [];
-    if (s.honeypot === true) flags.push('⛔ Honeypot');
-    else if (s.honeypot === false) flags.push('✅ Not honeypot');
-    if (s.mintable === true) flags.push('⚠️ Mintable');
-    else if (s.mintable === false) flags.push('✅ Fixed supply');
-    if (s.freezable === true) flags.push('⚠️ Freezable');
-    if (s.canTakeBackOwnership === true) flags.push('⚠️ Ownership retake');
-    if (s.hiddenOwner === true) flags.push('⚠️ Hidden owner');
-    if (s.cannotSellAll === true) flags.push('⚠️ Cannot sell all');
-    if (s.openSource === false) flags.push('⚠️ Closed source');
+    if (s.honeypot === true) flags.push(`${e.icon('state.bad')} Honeypot`);
+    else if (s.honeypot === false) flags.push(`${e.icon('state.good')} Not honeypot`);
+    if (s.mintable === true) flags.push(`${e.icon('state.warn')} Mintable`);
+    else if (s.mintable === false) flags.push(`${e.icon('state.good')} Fixed supply`);
+    if (s.freezable === true) flags.push(`${e.icon('state.warn')} Freezable`);
+    if (s.canTakeBackOwnership === true) flags.push(`${e.icon('state.warn')} Ownership retake`);
+    if (s.hiddenOwner === true) flags.push(`${e.icon('state.warn')} Hidden owner`);
+    if (s.cannotSellAll === true) flags.push(`${e.icon('state.warn')} Cannot sell all`);
+    if (s.openSource === false) flags.push(`${e.icon('state.warn')} Closed source`);
     if (flags.length) {
       lines.push('');
-      lines.push(sectionTitle(e('🔐'), 'RISK FLAGS'));
+      lines.push(sectionTitle(e.icon('section.premium'), 'RISK FLAGS'));
       lines.push(flags.join('  ·  '));
     }
 
     const h = holderData(result);
     lines.push('');
-    lines.push(sectionTitle(e('👥'), 'HOLDER DETAIL'));
+    lines.push(sectionTitle(e.icon('section.holders'), 'HOLDER DETAIL'));
     lines.push('');
     const detailRows = [];
     const total = fmtInt(h?.total);
@@ -639,7 +643,7 @@ export function formatCard(result, {
     if (total) detailRows.push({ label: 'Total Holders', value: total });
     if (top10) detailRows.push({ label: 'Top 10 Holders', value: top10 });
     if (largest) detailRows.push({ label: 'Largest Holder', value: largest });
-    lines.push(...(detailRows.length ? alignedRows(detailRows) : ['<i>Holder data unavailable</i>']));
+    lines.push(...(detailRows.length ? alignedRows(detailRows, e) : ['<i>Holder data unavailable</i>']));
 
     // Provenance: why a value is unknown, so it is explainable.
     const notes = [];
@@ -654,7 +658,7 @@ export function formatCard(result, {
     }
     if (notes.length) {
       lines.push('');
-      lines.push(sectionTitle(e('🔎'), 'SOURCES'));
+      lines.push(sectionTitle(e.icon('section.research'), 'SOURCES'));
       for (const n of notes) lines.push(`<i>${n}</i>`);
     }
   }
@@ -665,7 +669,7 @@ export function formatCard(result, {
   // does not reserve excessive space — and the section's presence is part of the
   // approved structure, so it is not conditionally dropped.
   lines.push('');
-  lines.push(sectionTitle(e('🧠'), 'NARRATIVE'));
+  lines.push(sectionTitle(e.icon('section.narrative'), 'NARRATIVE'));
   lines.push('');
   lines.push(...buildNarrative(result, e, mode));
 
@@ -687,7 +691,7 @@ export function formatCard(result, {
   // OWNER staging keeps the detailed lines so research can be verified while testing.
   if (research?.premiumTeaser) {
     lines.push('');
-    lines.push(sectionTitle(e('🔒'), 'X & KOL INTELLIGENCE'));
+    lines.push(sectionTitle(e.icon('misc.lock'), 'X & KOL INTELLIGENCE'));
     lines.push('');
     lines.push('KOL Activity: •••••• (Locked)');
     lines.push('');
@@ -701,7 +705,7 @@ export function formatCard(result, {
     const detailLines = [research?.xLine, research?.kolLine].filter(Boolean);
     if (previewLines?.length || detailLines.length) {
       lines.push('');
-      lines.push(sectionTitle(e('𝕏'), 'X INTELLIGENCE'));
+      lines.push(sectionTitle(e.icon('metric.x'), 'X INTELLIGENCE'));
       lines.push('');
       if (previewLines?.length) lines.push(...previewLines);
       else lines.push(...detailLines.map(esc));
@@ -710,13 +714,13 @@ export function formatCard(result, {
 
   // ===== PROJECT LINKS ====================================================
   lines.push('');
-  lines.push(sectionTitle(e('🌐'), mode === 'detailed' ? 'PROJECT INFO' : 'PROJECT LINKS'));
+  lines.push(sectionTitle(e.icon('metric.website'), mode === 'detailed' ? 'PROJECT INFO' : 'PROJECT LINKS'));
   lines.push('');
   if (mode === 'detailed') {
     // §4.1 keeps an explicit cell per destination so absence is unambiguous.
-    lines.push(`${e('🌍')} Website: ${project?.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
-    lines.push(`${e('✖️')} X: ${project?.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
-    lines.push(`${e('✈️')} Telegram: ${project?.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
+    lines.push(`${e.icon('cta.website')} Website: ${project?.website ? `<a href="${esc(project.website)}">Open Website</a>` : 'Not Available'}`);
+    lines.push(`${e.icon('metric.x')} X: ${project?.x ? `<a href="${esc(project.x)}">Open X</a>` : 'Not Available'}`);
+    lines.push(`${e.icon('metric.social')} Telegram: ${project?.telegram ? `<a href="${esc(project.telegram)}">Open Telegram</a>` : 'Not Available'}`);
   } else {
     const linkLines = projectLinkLines(project, e);
     lines.push(...(linkLines.length ? [linkLines.join('\n')] : ['<i>No verified project links available.</i>']));
@@ -726,7 +730,7 @@ export function formatCard(result, {
   if (mode === 'detailed') {
     lines.push('');
     lines.push(DIV);
-    lines.push(`${e('🔎')} <b>WANT TO DYOR DEEPER?</b>`);
+    lines.push(`${e.icon('section.research')} <b>WANT TO DYOR DEEPER?</b>`);
     lines.push('');
     lines.push('Discover more about this token:');
     lines.push('');
@@ -737,7 +741,7 @@ export function formatCard(result, {
     lines.push('• KOL Call History');
     lines.push('• Smart Money Insights');
     lines.push('');
-    lines.push(`${e('➡️')} <b>FULL TOKEN ANALYSIS:</b>`);
+    lines.push(`${e.icon('cta.open')} <b>FULL TOKEN ANALYSIS:</b>`);
     if (!isAcceptableUrl(fullAnalysisUrl)) {
       lines.push('<i>Full analysis page coming soon.</i>');
     }
@@ -766,7 +770,7 @@ export function formatCard(result, {
     lines.push(`<i>Updated: ${esc(updatedAt)}</i>`);
   }
   lines.push('');
-  lines.push(`${e('⚡')} <i>Powered by MEME CHECKER</i>`);
+  lines.push(`${e.icon('misc.bolt')} <i>Powered by MEME CHECKER</i>`);
 
   return {
     text: lines.join('\n'),
