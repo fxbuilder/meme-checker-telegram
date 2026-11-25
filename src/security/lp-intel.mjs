@@ -103,6 +103,35 @@ function parseUint(hex) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * The one sentence used whenever a pool is proven not to be V2-style.
+ *
+ * A V3/V4 position (or a launchpad curve) has no fungible LP token, so balanceOf/totalSupply
+ * maths cannot describe its lock state. Whether that was learned from a DexScreener label or
+ * from a factory revert, the reader must see the same explanation - previously the labelled
+ * path said "v3 position - V2 lp-supply maths does not apply" while the unlabelled path said
+ * nothing at all.
+ */
+export function UNSUPPORTED_DETAIL(tag) {
+  const which = Array.isArray(tag) && tag.length ? `${tag.join('/')} position` : 'v3/v4 or curve pool';
+  return `${which} — no fungible LP token, so V2 lp-supply maths does not apply`;
+}
+
+/**
+ * Low-level eth_call.
+ *
+ * Returns `{ value }` on success, or `{ why }` on failure, because the REASON matters and
+ * collapsing every failure to null loses it:
+ *
+ *   'revert'    the call reached the contract and it refused. On totalSupply() this proves
+ *               the pool is not a V2 pair - a V2 pair always implements it because the LP
+ *               token IS the pair. Safe to classify as a position-based pool.
+ *   'no-code'   the address has no contract. Also knowledge about the address.
+ *   'transport' the call never got an answer (timeout, 5xx, DNS). Nothing is known.
+ *
+ * Treating 'transport' like 'revert' would report a position-based pool whenever the RPC
+ * hiccuped - a fresh false assurance in place of the old silent dash.
+ */
 async function rpcCall(rpc, to, data, { fetchImpl = globalThis.fetch, timeoutMs = TIMEOUT_MS } = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -113,14 +142,17 @@ async function rpcCall(rpc, to, data, { fetchImpl = globalThis.fetch, timeoutMs 
       signal: ac.signal,
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }),
     }).finally(() => clearTimeout(timer));
-    if (!res.ok) return null;
+    if (!res.ok) return { why: 'transport', detail: `http ${res.status}` };
+
     const body = await res.json();
-    if (body?.error || typeof body?.result !== 'string') return null;
-    // A call to an address with no code returns "0x" — not a zero balance.
-    if (body.result === '0x') return null;
-    return body.result;
-  } catch {
-    return null;
+    // A JSON-RPC error object means the node executed the call and it reverted.
+    if (body?.error) return { why: 'revert', detail: body.error?.message ?? 'reverted' };
+    if (typeof body?.result !== 'string') return { why: 'transport', detail: 'malformed response' };
+    // "0x" means no code at the address - a different fact from a revert.
+    if (body.result === '0x') return { why: 'no-code' };
+    return { value: body.result };
+  } catch (err) {
+    return { why: 'transport', detail: String(err?.message ?? err) };
   }
 }
 
@@ -149,7 +181,9 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
       state: 'unsupported-position-type',
       burnedPercentage: null,
       lockedPercentage: null,
-      detail: `${tag.join('/')} position — V2 lp-supply maths does not apply`,
+      // Deliberately the SAME sentence the revert path produces: one physical situation
+      // must not be described two ways depending on how it was discovered.
+      detail: UNSUPPORTED_DETAIL(tag),
     };
   }
 
@@ -159,17 +193,46 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
   }
 
   // totalSupply of the LP token is the denominator. Without it nothing else is meaningful.
-  const supplyHex = await rpcCall(rpc, pairAddress, SEL.totalSupply, { fetchImpl, timeoutMs });
-  const supply = parseUint(supplyHex);
+  const supplyRes = await rpcCall(rpc, pairAddress, SEL.totalSupply, { fetchImpl, timeoutMs });
+  const supply = supplyRes.value != null ? parseUint(supplyRes.value) : null;
+
   if (supply === null || supply <= 0) {
-    return { ...base, state: 'unknown', burnedPercentage: null, lockedPercentage: null, detail: 'no lp totalSupply' };
+    // A FACTORY-REVERT PROVES THE POOL TYPE; A TRANSPORT FAILURE PROVES NOTHING.
+    //
+    // A V2 pair always implements totalSupply() because the LP token IS the pair. So a
+    // REVERT is positive evidence that this is a position-based pool (V3/V4 or a launchpad
+    // curve) where V2 maths cannot apply. A timeout or 5xx is not evidence of anything.
+    //
+    // Measured: Elysium pairs carry NO `labels` from DexScreener, so the old code had no
+    // way to classify them and returned a bare 'unknown' - while Base's 'v4'-labelled
+    // tokens said "V2 maths does not apply". Same physical situation, two different
+    // answers, decided by whether a label happened to be present.
+    const proven = supplyRes.why === 'revert' || supplyRes.why === 'no-code';
+    if (proven) {
+      return {
+        ...base,
+        state: 'unsupported-position-type',
+        burnedPercentage: null,
+        lockedPercentage: null,
+        detail: supplyRes.why === 'no-code'
+          ? 'no contract at the pool address — no V2 LP token'
+          : UNSUPPORTED_DETAIL([]),
+      };
+    }
+    return {
+      ...base,
+      state: 'unknown',
+      burnedPercentage: null,
+      lockedPercentage: null,
+      detail: `could not read LP supply (${supplyRes.why ?? 'no answer'}) — not a finding about the pool`,
+    };
   }
 
   // The pair address itself often holds the LP (mint to self) in some forks; the burn
   // addresses are the ones that prove destruction.
   const burned = await Promise.all(BURN_ADDRESSES.map(async (addr) => {
-    const hex = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(addr), { fetchImpl, timeoutMs });
-    return parseUint(hex) ?? 0;
+    const res = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(addr), { fetchImpl, timeoutMs });
+    return parseUint(res.value) ?? 0;
   }));
   const burnedTotal = burned.reduce((a, b) => a + b, 0);
 
@@ -186,7 +249,7 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
   // Not burned. Whoever holds the LP decides: a VERIFIED locker means locked, anything
   // else means we do not know — and "do not know" is not "unlocked".
   const pairSelBalance = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(pairAddress), { fetchImpl, timeoutMs });
-  const heldByPair = parseUint(pairSelBalance) ?? 0;
+  const heldByPair = parseUint(pairSelBalance.value) ?? 0;
 
   const lockers = VERIFIED_LOCKERS[chain] ?? [];
   // A locker holding a DUST balance does not make the pool locked. Verified live: a BSC
@@ -197,8 +260,8 @@ export async function readV2Liquidity({ chain, pairAddress, rpc, labels = null, 
   let bestLocker = null;
 
   for (const locker of lockers) {
-    const hex = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(locker.address), { fetchImpl, timeoutMs });
-    const bal = parseUint(hex) ?? 0;
+    const res = await rpcCall(rpc, pairAddress, SEL.balanceOf + encAddress(locker.address), { fetchImpl, timeoutMs });
+    const bal = parseUint(res.value) ?? 0;
     if (bal <= 0) continue;
     const lockedPct = Number(((bal / supply) * 100).toFixed(2));
     if (lockedPct < MIN_LOCK_PCT) continue; // dust, not a lock

@@ -246,6 +246,11 @@ export function resolveQuickCheck(key, result) {
       if (cls.kind === 'bonding-curve') {
         return { label: 'LP', value: 'Bonding curve', tone: 'medium', cls };
       }
+      // A V3/V4 pool: the type is known, the lock state is not measurable with LP-supply
+      // maths. Saying so beats a bare dash that implies the field was never checked.
+      if (cls.kind === 'position-pool') {
+        return { label: 'LP', value: 'V3/V4', tone: 'muted', cls };
+      }
       if (cls.kind === 'locked') {
         return { label: 'LP Locked', value: `${cls.value.toFixed(0)}%`, tone: cls.severity, cls };
       }

@@ -178,6 +178,19 @@ export function classifyLiquidity(lp) {
     return { state: FIELD_STATE.VERIFIED, severity: 'medium', kind: 'bonding-curve', value: null };
   }
 
+  // A V3/V4 pool is a DETERMINED POOL TYPE, not an unknown value.
+  //
+  // We know exactly why the lock state is unavailable: liquidity sits in position NFTs that
+  // have no fungible LP supply to measure, so balanceOf/totalSupply maths cannot apply. The
+  // OWNER flagged ambiguous dashes, and this is precisely one - the field looked unchecked
+  // when in fact the pool had been identified and could not be checked by design.
+  //
+  // Severity is deliberately 'unknown' rather than green: a pool we cannot assess is not a
+  // safe pool, so it must not display a reassurance.
+  if (lp.positionType === 'v3-v4') {
+    return { state: FIELD_STATE.VERIFIED, severity: 'unknown', kind: 'position-pool', value: null };
+  }
+
   if (burned !== null && burned >= 50) {
     return {
       state: FIELD_STATE.VERIFIED,

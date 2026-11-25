@@ -445,7 +445,7 @@ export async function fetchRisk(chainId, address, {
   // this function used to - skipped every fallback, which is why HyperEVM and MegaETH
   // always reported nothing even though GeckoTerminal covers them.
   if (!chain.goplus) {
-    return fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs });
+    return fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs, pair, chain });
   }
 
   const ck = `risk:${chainId}:${address}`;
@@ -520,126 +520,9 @@ export async function fetchRisk(chainId, address, {
   }
 
   // ---- On-chain LP intelligence (EVM) ------------------------------------
-  // Only attempted when the provider gave nothing conclusive about LP state, and only
-  // for a V2-style pair, because V2 lp-supply maths does not apply to V3/V4 positions.
-  if (chain.kind === 'evm' && chain.rpc && pair?.pairAddress) {
-    const alreadyKnown = result.status === 'ok' && result.data?.lpLock
-      && (result.data.lpLock.burnedPercentage != null || result.data.lpLock.lockedPercentage != null);
-    if (!alreadyKnown) {
-      try {
-        // THE PRIMARY PAIR IS OFTEN V3, BUT THE TOKEN USUALLY ALSO HAS A V2 PAIR.
-        //
-        // Measured: CAKE's deepest pool is a V3 pair while it has four V2 pairs, the
-        // largest holding $755k. Reading only the primary meant the lock state of a
-        // perfectly readable V2 pool was skipped, and the token fell through to
-        // "v3-v4 - V2 maths does not apply". When the primary is not V2, the deepest V2
-        // pair is used instead, so the verdict reflects the liquidity people actually
-        // trade against.
-        let target = pair;
-        const primaryLabels = Array.isArray(pair.labels) ? pair.labels.map((l) => String(l).toLowerCase()) : [];
-        if (primaryLabels.length && !primaryLabels.includes('v2')) {
-          try {
-            const pairsRes = await fetchImpl(
-              `https://api.dexscreener.com/token-pairs/v1/${chainId}/${address}`,
-              { headers: { accept: 'application/json' } },
-            );
-            if (pairsRes?.ok) {
-              const list = await pairsRes.json();
-              const v2 = (Array.isArray(list) ? list : [])
-                .filter((x) => Array.isArray(x?.labels) && x.labels.some((l) => String(l).toLowerCase() === 'v2'))
-                .sort((a, b) => (b?.liquidity?.usd ?? 0) - (a?.liquidity?.usd ?? 0))[0];
-              // Require real depth: a $462 V2 pair beside a $5M V3 pool is not the
-              // liquidity a holder cares about, and reading it would describe the wrong pool.
-              if (v2?.pairAddress && (v2?.liquidity?.usd ?? 0) >= 10_000) {
-                target = { pairAddress: v2.pairAddress, labels: ['v2'] };
-              }
-            }
-          } catch {
-            // Fall back to the primary pair; a failed lookup must not lose the field.
-          }
-        }
-
-        const reading = await readV2Liquidity({
-          chain: chainId,
-          pairAddress: target.pairAddress,
-          rpc: chain.rpc,
-          labels: target.labels ?? null,
-          fetchImpl,
-          timeoutMs,
-        });
-
-        // A V3/V4 position is a KNOWN-UNSUPPORTED type, not an unknown value. Recorded so
-        // the card can say why rather than showing an unexplained dash.
-        if (reading.state === 'unsupported-position-type') {
-          const baseData = result.status === 'ok' ? result.data : (result.data ?? {});
-          result = {
-            status: result.status === 'ok' ? 'ok' : result.status,
-            data: {
-              ...baseData,
-              lpLock: { ...(baseData?.lpLock ?? {}), positionType: 'v3-v4', positionTypeDetail: reading.detail },
-            },
-            detail: result.detail ?? null,
-          };
-        } else if (reading.state === 'unknown') {
-          // A V2 pool WAS read and the answer is "not burned, no verified locker". That is
-          // still an on-chain finding, not silence: record it so the card can say the pool
-          // is not burned rather than showing an impassable dash. Only recorded when a
-          // provider did not already supply a better value.
-          const existing = result.status === 'ok' ? result.data?.lpLock : null;
-          if (!existing || (existing.burnedPercentage == null && existing.lockedPercentage == null)) {
-            const baseData = result.data ?? {};
-            result = {
-              status: result.status === 'ok' ? 'ok' : result.status,
-              data: {
-                holders: baseData.holders ?? { total: null, top10Percentage: null, largestHolderPercentage: null },
-                security: baseData.security ?? {},
-                tax: baseData.tax ?? null,
-                dev: baseData.dev ?? null,
-                ...baseData,
-                lpLock: {
-                  burnedPercentage: 0,
-                  lockedPercentage: null,
-                  kind: 'not-burned',
-                  scope: reading.scope,
-                  poolAddress: reading.poolAddress,
-                  detail: reading.detail,
-                  source: 'onchain-v2',
-                },
-                sources: { ...(baseData.sources ?? {}), lpLock: 'onchain-v2' },
-              },
-              detail: result.detail ?? null,
-            };
-          }
-        } else if (reading.state !== 'unknown') {
-          const merged = mergeLpIntel(result.status === 'ok' ? result.data?.lpLock : null, reading);
-          if (result.status === 'ok') {
-            result = {
-              status: 'ok',
-              data: { ...result.data, lpLock: merged },
-              detail: result.detail ?? null,
-            };
-          } else {
-            // No provider block at all: an on-chain burn is still real evidence and is
-            // enough to populate the field honestly.
-            result = {
-              status: 'ok',
-              data: {
-                holders: { total: null, top10Percentage: null, largestHolderPercentage: null },
-                security: {},
-                tax: null,
-                lpLock: merged,
-                dev: null,
-                sources: { lpLock: 'onchain-v2' },
-              },
-              detail: result.detail ?? null,
-            };
-          }
-        }
-      } catch {
-        // An LP read that throws is not a reason to lose the rest of the risk report.
-      }
-    }
-  }
+  // Extracted into a helper because the no-GoPlus path returns early, which meant
+  // Elysium, HyperEVM and MegaETH never ran an LP read at all.
+  result = await withLpIntel(result, { chain, chainId, address, pair, fetchImpl, timeoutMs });
 
   // ---- Field-level fallback for Solana -----------------------------------
   // GoPlus's Solana payload has no transfer fee, no LP-lock figure and no creator
@@ -694,7 +577,140 @@ export function clearRiskCache() {
  * frequently not "no data". If it yields nothing usable the chain genuinely has no
  * source and the caller gets an honest 'unsupported'.
  */
-async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs }) {
+/**
+ * Attach on-chain LP lock intelligence to a risk result.
+ *
+ * Shared by BOTH risk paths. It used to live inline in `fetchRisk` only, below the
+ * `if (!chain.goplus) return fetchFallbackRisk(...)` early exit - so every chain WITHOUT
+ * GoPlus coverage (Elysium, HyperEVM, MegaETH) returned before reaching it and never
+ * produced an LP reading at all. Measured: Elysium's v4 pools showed a bare dash while
+ * Base's v4 pools correctly said "V2 maths does not apply", the same situation described
+ * two different ways.
+ *
+ * LP lock state is not reported by any keyless aggregator for most EVM chains, so it is
+ * read from the pool contract. V2 pairs expose a fungible LP token, which makes
+ * balanceOf(burn/locker) against totalSupply() conclusive. V3/V4 pools do not, and are
+ * recorded as a known-unsupported type rather than an unknown value.
+ */
+async function withLpIntel(result, { chain, chainId, address, pair, fetchImpl, timeoutMs }) {
+  if (chain?.kind !== 'evm' || !chain.rpc || !pair?.pairAddress) return result;
+
+  const alreadyKnown = result.status === 'ok' && result.data?.lpLock
+    && (result.data.lpLock.burnedPercentage != null || result.data.lpLock.lockedPercentage != null);
+  if (alreadyKnown) return result;
+
+  try {
+    // THE PRIMARY PAIR IS OFTEN V3, BUT THE TOKEN USUALLY ALSO HAS A V2 PAIR.
+    //
+    // Measured: CAKE's deepest pool is a V3 pair while it has four V2 pairs, the largest
+    // holding $755k. Reading only the primary meant the lock state of a perfectly readable
+    // V2 pool was skipped, and the token fell through to "v3-v4 - V2 maths does not apply".
+    let target = pair;
+    const primaryLabels = Array.isArray(pair.labels)
+      ? pair.labels.map((l) => String(l).toLowerCase())
+      : [];
+    if (primaryLabels.length && !primaryLabels.includes('v2')) {
+      try {
+        const pairsRes = await fetchImpl(
+          `https://api.dexscreener.com/token-pairs/v1/${chainId}/${address}`,
+          { headers: { accept: 'application/json' } },
+        );
+        if (pairsRes?.ok) {
+          const list = await pairsRes.json();
+          const v2 = (Array.isArray(list) ? list : [])
+            .filter((x) => Array.isArray(x?.labels) && x.labels.some((l) => String(l).toLowerCase() === 'v2'))
+            .sort((a, b) => (b?.liquidity?.usd ?? 0) - (a?.liquidity?.usd ?? 0))[0];
+          // Require real depth: a $462 V2 pair beside a $5M V3 pool is not the liquidity a
+          // holder cares about, and reading it would describe the wrong pool.
+          if (v2?.pairAddress && (v2?.liquidity?.usd ?? 0) >= 10_000) {
+            target = { pairAddress: v2.pairAddress, labels: ['v2'] };
+          }
+        }
+      } catch {
+        // Fall back to the primary pair; a failed lookup must not lose the field.
+      }
+    }
+
+    const reading = await readV2Liquidity({
+      chain: chainId,
+      pairAddress: target.pairAddress,
+      rpc: chain.rpc,
+      labels: target.labels ?? null,
+      fetchImpl,
+      timeoutMs,
+    });
+
+    // A V3/V4 position is a KNOWN-UNSUPPORTED type, not an unknown value. Recorded so the
+    // card can say why rather than showing an unexplained dash.
+    //
+    // The detail is passed through UNCHANGED so a pool type reached via a DexScreener label
+    // and one proved by a factory revert produce the same sentence. Two code paths
+    // describing one physical situation with different words is how Base ended up saying
+    // "v4 position - V2 lp-supply maths does not apply" while Elysium said nothing at all.
+    if (reading.state === 'unsupported-position-type') {
+      const baseData = result.data ?? {};
+      return {
+        status: result.status === 'ok' ? 'ok' : result.status,
+        data: {
+          ...baseData,
+          lpLock: { ...(baseData?.lpLock ?? {}), positionType: 'v3-v4', positionTypeDetail: reading.detail },
+        },
+        detail: result.detail ?? null,
+      };
+    }
+
+    if (reading.state === 'unknown') {
+      // A V2 pool WAS read and the answer is "not burned, no verified locker". That is
+      // still an on-chain finding, not silence.
+      const existing = result.status === 'ok' ? result.data?.lpLock : null;
+      if (existing && (existing.burnedPercentage != null || existing.lockedPercentage != null)) {
+        return result;
+      }
+      const baseData = result.data ?? {};
+      return {
+        status: result.status === 'ok' ? 'ok' : result.status,
+        data: {
+          ...baseData,
+          lpLock: {
+            burnedPercentage: 0,
+            lockedPercentage: null,
+            kind: 'not-burned',
+            scope: reading.scope,
+            poolAddress: reading.poolAddress,
+            detail: reading.detail,
+            source: 'onchain-v2',
+          },
+          sources: { ...(baseData.sources ?? {}), lpLock: 'onchain-v2' },
+        },
+        detail: result.detail ?? null,
+      };
+    }
+
+    const merged = mergeLpIntel(result.status === 'ok' ? result.data?.lpLock : null, reading);
+    if (result.status === 'ok') {
+      return { status: 'ok', data: { ...result.data, lpLock: merged }, detail: result.detail ?? null };
+    }
+    // No provider block at all: an on-chain burn is still real evidence and is enough to
+    // populate the field honestly.
+    return {
+      status: 'ok',
+      data: {
+        holders: { total: null, top10Percentage: null, largestHolderPercentage: null },
+        security: {},
+        tax: null,
+        lpLock: merged,
+        dev: null,
+        sources: { lpLock: 'onchain-v2' },
+      },
+      detail: result.detail ?? null,
+    };
+  } catch {
+    // An LP read that throws is not a reason to lose the rest of the risk report.
+    return result;
+  }
+}
+
+async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs, pair = null, chain = null } = {}) {
   const ck = `risk:${chainId}:${address}`;
   const hit = cache.get(ck);
   if (hit && hit.expiresAt > Date.now()) return hit.result;
@@ -727,6 +743,13 @@ async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs }) {
       result = { status: 'error', data: null, detail: String(err?.message ?? err) };
     }
   }
+
+  // LP lock state is read from the POOL CONTRACT, so it does not depend on any security
+  // provider being available. This runs on every outcome - including a provider error -
+  // because "the security provider is down" says nothing about whether liquidity can be
+  // pulled. This is the path Elysium, HyperEVM and MegaETH take, and it previously
+  // returned before ever attempting an LP read.
+  result = await withLpIntel(result, { chain, chainId, address, pair, fetchImpl, timeoutMs });
 
   cache.set(ck, {
     result,
