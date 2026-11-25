@@ -160,11 +160,18 @@ function classifyNarrative(research) {
 }
 
 function classifyDexPaid(r) {
+  // The adapter reports `status` ('paid' | 'not-paid' | 'unknown' | 'error'), not a boolean
+  // `paid`. Reading a field the adapter never sets made this report 0% across every run - and
+  // the stability tool then classified it as a CAPABILITY LIMIT, which was wrong twice over:
+  // the feature works, and the harness was blind to it. Verified live: PEPE -> paid,
+  // CAKE -> not-paid, BONK -> not-paid.
   const p = r.dexPaid;
   if (!p) return { outcome: OUTCOME.UNAVAILABLE };
-  if (p.paid === true) return { outcome: OUTCOME.MEASURED, value: 'paid' };
-  if (p.paid === false) return { outcome: OUTCOME.CONFIRMED_ZERO, value: 'not paid' };
-  return { outcome: OUTCOME.UNKNOWN, evidence: p.status ?? null };
+  if (p.status === 'paid') return { outcome: OUTCOME.MEASURED, value: 'paid' };
+  // A "not paid" on a chain the provider demonstrably indexes is a real negative, not a zero.
+  if (p.status === 'not-paid') return { outcome: OUTCOME.MEASURED, value: 'not paid' };
+  if (p.status === 'error') return { outcome: OUTCOME.UNAVAILABLE, evidence: p.detail ?? null };
+  return { outcome: OUTCOME.UNKNOWN, evidence: p.detail ?? p.status ?? null };
 }
 
 // ---------------------------------------------------------------------------

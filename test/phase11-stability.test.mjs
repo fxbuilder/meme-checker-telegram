@@ -48,7 +48,7 @@ function runTool(files) {
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'stability-'));
 
-test('a field always covered is "working"; one never covered is a capability limit', () => {
+test('a field never covered is flagged as a limit OR an instrument fault, not asserted as one', () => {
   const tokens = [
     ['bsc', '0xaaa', 'AAA', { holders: 'measured', lp: 'unknown' }],
     ['bsc', '0xbbb', 'BBB', { holders: 'measured', lp: 'unknown' }],
@@ -57,9 +57,14 @@ test('a field always covered is "working"; one never covered is a capability lim
   const r2 = makeRun(TMP, 'r2.json', tokens);
   const { all: out } = runTool([r1, r2]);
 
-  // holders never varies -> working. lp never varies -> capability limit, NOT a throttle.
+  // holders never varies -> working. lp never varies -> flagged as never-covered, which keeps
+  // BOTH possibilities open: a missing source, or an extractor reading the wrong field (which
+  // is what dexPaid actually was). Asserting "capability limit" outright would have endorsed
+  // the wrong conclusion.
   const lpLine = out.split('\n').find((l) => l.startsWith('lp '));
-  assert.match(lpLine, /capability-limit/, 'a field that is never covered is a limit, not a throttle');
+  assert.match(lpLine, /never-covered/);
+  assert.match(lpLine, /instrument fault/, 'the instrument itself must be suspect too');
+  assert.doesNotMatch(lpLine, /throttle/, 'a steady absence is not a throttle');
   const holdLine = out.split('\n').find((l) => l.startsWith('holders'));
   assert.match(holdLine, /working/);
 });

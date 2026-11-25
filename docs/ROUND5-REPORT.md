@@ -168,7 +168,7 @@ the one with the corrected narrative harness.
 | top10 | 74% | **83%** | +9 |
 | tax | 69% | **74%** | +5 |
 | lp | 40% | 40% | 0 |
-| dev | 60% | **74%** | +14 |
+| dev | 60% | **71%** | +11 |
 | dexPaid | 0% | 0% | 0 |
 | consistency | 100% | **100%** | — |
 
@@ -218,6 +218,22 @@ simulation needs a verified holder (which Elysium's RPC cannot enumerate).
 pool with no discoverable position: V4's PositionManager is not enumerable by owner, and a pool
 does not list its positions, so discovery needs a graduation/mint/locker event. This is the
 honest ceiling without a paid position indexer.
+
+### `dexPaid` was never 0% — the harness was blind to it
+
+Reported as **0% in every run**, and the stability tool duly classified it
+`capability-limit (never covered in any run)`. That conclusion was **wrong, twice over**:
+
+- the adapter `fetchDexPaid` reports `status` (`'paid' | 'not-paid' | 'unknown'`), not a boolean
+  `paid` — the harness read a field that is never set, so every token classified `unknown`
+- the feature works. Verified live: **PEPE → `paid`** (`active tokenProfile`), **CAKE →
+  `not-paid`**, **BONK → `not-paid`**
+
+Corrected, it measures **77%** (27 measured, 8 unknown on chains the provider does not index).
+This is the second time in this round that a 0% described my measurement rather than the
+product — the same error as reading a provider's silence as a fact about the token. A field that
+never varies across runs is *usually* a capability limit and *occasionally* an instrument fault;
+the `never-covered` verdict now carries that caveat.
 
 ### Two apparent regressions investigated, neither a regression
 

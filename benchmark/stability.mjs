@@ -115,7 +115,7 @@ for (const f of FIELDS) {
   // A field that is NEVER covered is a capability limit. One that FLAPS is a throttle.
   // One that is always covered is working. Anything else is partly both.
   let verdict = 'working';
-  if (neverCovered === commonKeys.length) verdict = 'capability-limit (never covered in any run)';
+  if (neverCovered === commonKeys.length) verdict = 'never-covered: capability limit OR instrument fault - verify the extractor reads the field the adapter actually sets';
   else if (flapping > 0 && alwaysCovered === 0) verdict = 'throttle (only ever intermittent)';
   else if (flapping > 0) verdict = 'mixed: stable core plus intermittent edges';
   verdicts[f] = { stable, flapping, alwaysCovered, neverCovered, verdict };
