@@ -206,6 +206,12 @@ export function classifyLiquidity(lp) {
   // A MEASURED zero on either axis is "unlocked", not unknown. `{lockedPercentage: 0}`
   // with no burn field means the provider reported a real zero lock: the liquidity can be
   // pulled. Treating that as unknown would hide a genuine risk behind a dash.
+  // An on-chain read that found NO burn and NO verified locker is a real finding: the
+  // liquidity is withdrawable by whoever holds the LP. Reported as 'unlocked' rather than
+  // hidden, because "we checked the pool and it is not secured" is a genuine risk signal.
+  if (lp.kind === 'not-burned') {
+    return { state: FIELD_STATE.VERIFIED, severity: 'high', kind: 'unlocked', value: 0 };
+  }
   if (burned === 0 || locked === 0) {
     return { state: FIELD_STATE.VERIFIED, severity: 'high', kind: 'unlocked', value: 0 };
   }

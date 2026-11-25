@@ -527,11 +527,43 @@ export async function fetchRisk(chainId, address, {
       && (result.data.lpLock.burnedPercentage != null || result.data.lpLock.lockedPercentage != null);
     if (!alreadyKnown) {
       try {
+        // THE PRIMARY PAIR IS OFTEN V3, BUT THE TOKEN USUALLY ALSO HAS A V2 PAIR.
+        //
+        // Measured: CAKE's deepest pool is a V3 pair while it has four V2 pairs, the
+        // largest holding $755k. Reading only the primary meant the lock state of a
+        // perfectly readable V2 pool was skipped, and the token fell through to
+        // "v3-v4 - V2 maths does not apply". When the primary is not V2, the deepest V2
+        // pair is used instead, so the verdict reflects the liquidity people actually
+        // trade against.
+        let target = pair;
+        const primaryLabels = Array.isArray(pair.labels) ? pair.labels.map((l) => String(l).toLowerCase()) : [];
+        if (primaryLabels.length && !primaryLabels.includes('v2')) {
+          try {
+            const pairsRes = await fetchImpl(
+              `https://api.dexscreener.com/token-pairs/v1/${chainId}/${address}`,
+              { headers: { accept: 'application/json' } },
+            );
+            if (pairsRes?.ok) {
+              const list = await pairsRes.json();
+              const v2 = (Array.isArray(list) ? list : [])
+                .filter((x) => Array.isArray(x?.labels) && x.labels.some((l) => String(l).toLowerCase() === 'v2'))
+                .sort((a, b) => (b?.liquidity?.usd ?? 0) - (a?.liquidity?.usd ?? 0))[0];
+              // Require real depth: a $462 V2 pair beside a $5M V3 pool is not the
+              // liquidity a holder cares about, and reading it would describe the wrong pool.
+              if (v2?.pairAddress && (v2?.liquidity?.usd ?? 0) >= 10_000) {
+                target = { pairAddress: v2.pairAddress, labels: ['v2'] };
+              }
+            }
+          } catch {
+            // Fall back to the primary pair; a failed lookup must not lose the field.
+          }
+        }
+
         const reading = await readV2Liquidity({
           chain: chainId,
-          pairAddress: pair.pairAddress,
+          pairAddress: target.pairAddress,
           rpc: chain.rpc,
-          labels: pair.labels ?? null,
+          labels: target.labels ?? null,
           fetchImpl,
           timeoutMs,
         });
@@ -548,6 +580,36 @@ export async function fetchRisk(chainId, address, {
             },
             detail: result.detail ?? null,
           };
+        } else if (reading.state === 'unknown') {
+          // A V2 pool WAS read and the answer is "not burned, no verified locker". That is
+          // still an on-chain finding, not silence: record it so the card can say the pool
+          // is not burned rather than showing an impassable dash. Only recorded when a
+          // provider did not already supply a better value.
+          const existing = result.status === 'ok' ? result.data?.lpLock : null;
+          if (!existing || (existing.burnedPercentage == null && existing.lockedPercentage == null)) {
+            const baseData = result.data ?? {};
+            result = {
+              status: result.status === 'ok' ? 'ok' : result.status,
+              data: {
+                holders: baseData.holders ?? { total: null, top10Percentage: null, largestHolderPercentage: null },
+                security: baseData.security ?? {},
+                tax: baseData.tax ?? null,
+                dev: baseData.dev ?? null,
+                ...baseData,
+                lpLock: {
+                  burnedPercentage: 0,
+                  lockedPercentage: null,
+                  kind: 'not-burned',
+                  scope: reading.scope,
+                  poolAddress: reading.poolAddress,
+                  detail: reading.detail,
+                  source: 'onchain-v2',
+                },
+                sources: { ...(baseData.sources ?? {}), lpLock: 'onchain-v2' },
+              },
+              detail: result.detail ?? null,
+            };
+          }
         } else if (reading.state !== 'unknown') {
           const merged = mergeLpIntel(result.status === 'ok' ? result.data?.lpLock : null, reading);
           if (result.status === 'ok') {

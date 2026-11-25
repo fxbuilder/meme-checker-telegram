@@ -213,6 +213,68 @@ locker, which has no way to release it". The phase is confirmed live, but **the 
 address and position tokenId were not located on-chain**. That claim therefore remains
 documented-only, and the scanner does not assert it.
 
+## 7c. LP coverage CORRECTION — the earlier figure overstated it
+
+The n=67 matrix reported `lp=54%`. That number was **wrong**, and I am correcting it
+rather than leaving it in the report.
+
+The matrix counted `lp` as "a value was produced", which lumped two very different
+outcomes together:
+
+| Outcome | What it actually means |
+| --- | --- |
+| **determined** | burned / locked / partially-locked / unlocked — a real verdict about whether liquidity can be pulled |
+| **classified** | `v3-v4` or `bonding-curve` — we identified the POOL TYPE but do NOT know the lock state |
+
+Counting `v3-v4` as LP coverage inflated the number. Re-measured against final code, with
+the two outcomes separated (n=34, five tokens per chain):
+
+| Chain | n | determined | classified | unknown | determined-rate |
+| --- | --- | --- | --- | --- | --- |
+| Solana | 5 | 3 | 0 | 2 | **60%** |
+| BNB Chain | 5 | 0 | 1 | 4 | 0% |
+| Ethereum | 5 | 0 | 3 | 2 | 0% |
+| Robinhood | 5 | 0 | 4 | 1 | 0% |
+| HyperEVM | 4 | 0 | 0 | 4 | 0% |
+| Base | 5 | 0 | 5 | 0 | 0% |
+| Elysium | 5 | 0 | 0 | 5 | 0% |
+| **ALL** | **34** | **3** | **13** | **18** | **9%** |
+
+**LP lock determination is 9%, not 54%. Solana is 60%; every EVM chain is 0%.**
+
+### Why EVM is 0%, mechanically
+
+Lock state on EVM needs one of:
+
+1. **A V2 pair.** V2 has a fungible LP token, so `balanceOf(burn)` / `balanceOf(locker)`
+   against `totalSupply()` is conclusive. This works — verified on CAKE, which resolves to
+   `Unlocked` via its $755k V2 pair.
+2. **A V3/V4 position.** Liquidity is an NFT (V3) or position id in a `PositionManager`
+   (V4). There is no fungible LP supply to compare. Determining lock state needs the
+   position `tokenId` and its owner — and **tokenId discovery is not implemented**.
+
+Most high-volume pools on Base, Robinhood and Elysium are V3/V4, and the sampled tokens
+simply do not have a V2 pair above the $10k depth floor. So the answer is honestly
+"pool type known, lock state unknown".
+
+### What was added to improve this
+
+- **V2 fallback**: when the primary pair is not V2, the deepest V2 pair is used instead,
+  with a **$10k depth floor** so a $462 V2 pair beside a $5M V3 pool cannot describe the
+  wrong liquidity. This is what makes CAKE resolve.
+- **`not-burned` is now reported, not hidden.** A V2 pool that was read and found
+  un-burned with no verified locker renders `LP: Unlocked` (high risk) instead of an
+  impassable dash. "We checked and it is withdrawable" is a real finding.
+
+### To actually reach 90% on EVM
+
+| Route | Work | Cost |
+| --- | --- | --- |
+| V3/V4 position manager reads | `positions(tokenId)` + `ownerOf`; needs tokenId discovery from mint/burn transfer logs per pool | Free, but substantial — log scanning per pool on public RPCs is slow and rate-limited |
+| A paid provider that already indexes positions | e.g. Birdeye | ~$39/mo |
+
+Neither is done, and I am not claiming the target is met.
+
 ## 8. Latency and cost
 
 - **No paid API was added.** Everything above is free and keyless.
@@ -269,7 +331,7 @@ Commits: `f4d3ab8`, `7edfcad`, `2aee60d`, `f7a0f1a`.
 | Identity and market ≥95% | **met** on Solana/BSC/Robinhood; Base seeds failed |
 | Narrative ≥95% where evidence exists | **not met** — 50–70% by chain |
 | Tax ≥90% applicable | **not met** — Robinhood 0% |
-| LP ≥90% applicable | **not met** — most deep pools are V3/V4 |
+| LP ≥90% applicable | **not met** — measured **9%** (Solana 60%, EVM 0%); see §7c |
 | Holder + concentration ≥90% | **met on 3 of 7 chains**, 0% on HyperEVM/Elysium |
 | **Risk severity consistency 100%** | **met**, by construction |
 | No silent responses / no false-safe / no fabrication | **met** — three false-safe paths found and closed |
