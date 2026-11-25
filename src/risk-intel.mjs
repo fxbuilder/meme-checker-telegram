@@ -25,6 +25,10 @@ import { readV2Liquidity, mergeLpIntel } from './security/lp-intel.mjs';
 import { fetchTokenInfo, gtSupportsChain } from './research/geckoterminal.mjs';
 import { readElysiumHolders, mergeElysiumHolders } from './security/elysium.mjs';
 import { readHyperEvmExplorer, mergeHyperEvmHolders } from './security/hyperevm.mjs';
+import { simulateTransferTax, TAX_STATUS as SIM_TAX } from './security/simulation-tax.mjs';
+
+/** Pons launch locker on Robinhood: a verified large holder, used as the simulation sender. */
+const PONS_LOCKER_FOR_SIM = '0x267444D099b10fB5Ed7c3Cc7B7c767AdcA574952';
 
 const GOPLUS_BASE = 'https://api.gopluslabs.io/api/v1';
 const TIMEOUT_MS = 8_000;
@@ -757,6 +761,58 @@ async function fetchFallbackRisk(chainId, address, { fetchImpl, timeoutMs, pair 
       }
     } catch (err) {
       result = { status: 'error', data: null, detail: String(err?.message ?? err) };
+    }
+  }
+
+  // ---- Simulated transfer-fee measurement --------------------------------------
+  // GoPlus does not cover HyperEVM and has no Robinhood entry for tax, so these chains showed
+  // a dash. A read-only eth_simulateV1 transfer FROM A REAL HOLDER measures the fee by
+  // observation: the sender genuinely holds the tokens, so the transfer passes its own balance
+  // check and the recipient's post-state balance reveals the fee.
+  //
+  // Only chains where simulation was VERIFIED to work are attempted. A chain with no
+  // post-state method returns `unmeasurable` with the reason, never 0%.
+  if (chain.chainId === 4663 || chainId === 'elysium' || chainId === 'hyperevm') {
+    const simChain = chain.chainId === 4663 ? 'robinhood' : chainId;
+    const needsTax = !(result.status === 'ok' && result.data?.tax);
+    if (needsTax) {
+      try {
+        // The holder has to come from somewhere verifiable. The pool's largest known holder is
+        // the launch locker on Robinhood; elsewhere there is no keyless holder list, so the
+        // measurement is reported as unavailable rather than attempted with a synthetic sender
+        // (which reverts and would yield a fabricated 100%).
+        const holder = chainId === 'robinhood' ? PONS_LOCKER_FOR_SIM : null;
+        const sim = await simulateTransferTax({
+          chainId: simChain,
+          rpc: chain.rpc,
+          token: address,
+          sender: holder,
+          amount: 10n ** 17n,
+          fetchImpl,
+        });
+        if (sim.status === SIM_TAX.MEASURED) {
+          const base = result.status === 'ok' ? result.data : {
+            holders: { total: null, top10Percentage: null, largestHolderPercentage: null },
+            security: {}, lpLock: null, dev: null,
+          };
+          const had = base.tax ?? null;
+          result = {
+            status: 'ok',
+            data: {
+              ...base,
+              // A MEASURED TRANSFER FEE, explicitly not a buy/sell tax: a swap also crosses a
+              // pool, so price impact and DEX fees would be attributed to the token.
+              tax: had ?? { kind: 'transfer-fee', pct: sim.taxBps / 100, source: 'simulation' },
+              sources: { ...(base.sources ?? {}), tax: 'simulation' },
+            },
+            detail: result.detail ?? 'simulated transfer fee',
+          };
+        } else if (result.status !== 'ok') {
+          result = { ...result, detail: result.detail ?? `tax simulation: ${sim.status}` };
+        }
+      } catch {
+        // A simulation that fails costs the tax field only.
+      }
     }
   }
 
