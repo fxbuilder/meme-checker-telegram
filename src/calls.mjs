@@ -330,7 +330,15 @@ export function buildCallRecord({
  */
 export function callMetrics(call, now = Date.now()) {
   const entry = call?.entryMarketCapUsd;
-  const current = Number.isFinite(call?.lastMarketCapUsd) ? call.lastMarketCapUsd : null;
+  // The STORED field is `lastMarketCapUsd`; `currentMarketCapUsd` is the name the observer and
+  // alert layers use when PASSING a value around. Both are accepted here because reading only
+  // one silently yields "no price" for a caller that used the other name — a missing
+  // measurement and a naming mismatch are indistinguishable downstream, and the mismatch would
+  // make a token that is down 50% render as "unknown" rather than as a loss.
+  const currentRaw = Number.isFinite(call?.lastMarketCapUsd)
+    ? call.lastMarketCapUsd
+    : (Number.isFinite(call?.currentMarketCapUsd) ? call.currentMarketCapUsd : null);
+  const current = currentRaw;
   const peak = Number.isFinite(call?.peakMarketCapUsd) ? call.peakMarketCapUsd : null;
 
   const currentMult = roiMultiple(entry, current);

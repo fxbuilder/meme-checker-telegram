@@ -115,18 +115,22 @@ paid plan. See `docs/KNOWN-GAPS.md` before creating a key.
 
 ## Commands
 
-32 registered commands (31 `bot.command()` handlers plus `/start`). `/help` is generated from the
-live registry, so it cannot drift from what is actually registered.
+30 `bot.command()` handlers plus `/start`. `/help` is generated from the live registry, so it
+cannot drift from what is actually registered.
+
+**Pasting a contract address is the primary flow.** `/ca` is the explicit form of the same
+command; `/check` is kept only so links posted before Round 6 still work, and is not a
+documented entry point.
 
 ### Token scanner
 | Command | What it does |
 | --- | --- |
-| *(paste a CA)* | Auto-detects the chain for a bare address |
-| `/check` | Scan a contract: `/check bsc 0x…` or `/check 0x…` |
+| *(paste a CA)* | **Primary flow.** Auto-detects the chain for a bare address |
+| `/ca <address>` | Scan a token explicitly |
+| `/ca <chain> <address>` | Scan and force a chain |
 | `/start` | Welcome; also resolves caller-profile deep links |
 | `/justscan` | Card without the narrative research pass |
-| `/standard` `/short` `/detail` `/compact` | Card density |
-| `/chains` | Supported chains and per-chain capability |
+| `/chains` | Priority networks and per-chain capability |
 | `/bundle` | Bundle / sniper-wallet grouping |
 | `/dev` | Developer/creator holdings |
 
@@ -137,6 +141,8 @@ live registry, so it cannot drift from what is actually registered.
 | `/calls` | List tracked calls for this group |
 | `/callsettings` | Per-group call configuration |
 | `/pnl` `/gpnl` | PnL summary and group detail |
+| `/pnlbg` | Set a personal PnL background image (DM only) |
+| `/pnlreset` | Reset the PnL background to the default |
 | `/fc` | Followed callers |
 | `/profile` | Caller profile (group-scoped, opens in private) |
 
@@ -156,9 +162,16 @@ live registry, so it cannot drift from what is actually registered.
 ### Community & leaderboard
 | Command | What it does |
 | --- | --- |
-| `/lb` `/leaderboard` | Top callers, group stats, top 10 calls |
+| `/lb` `/leaderboard` | Caller board, ranked by best call by default |
 | `/alerts` | Alert subscriptions |
 | `/alerttest` | Test alert delivery (owner only) |
+
+### Retired commands
+
+| Command | Now |
+| --- | --- |
+| `/check` | Alias for `/ca`. Still answers; not documented in `/help`. |
+| `/short` `/detail` `/standard` `/compact` | Reply "Standard card is now the default view." There is one card layout. |
 
 ### Settings & general
 | Command | What it does |
@@ -170,11 +183,41 @@ live registry, so it cannot drift from what is actually registered.
 
 ---
 
+## Custom PnL background
+
+`/pnlbg` in a **direct message** makes the next image you send the background of your PnL cards.
+`/pnlreset` returns to the default gradient.
+
+- Accepted: JPEG, PNG or WebP up to 5 MB. Anything else is rejected with the limit stated.
+- Stored per user as a Telegram `file_id`, not as a downloaded file — the PnL image is
+  shareable, and a background that embedded a token-bearing download URL would leak it into
+  every shared card.
+- The image is dimmed behind the text. That is deliberate: an undimmed photo made the
+  secondary figures unreadable, and a legible card matters more than an unobstructed picture.
+- A background that cannot be fetched falls back to the default gradient; it never blocks the
+  card.
+- Persisted to `data/pnl-backgrounds.json` (override with `PNL_BG_STORE`).
+
+---
+
 ## Custom animated emoji setup
 
 Custom emoji are attached by **sticker pack** or by **ID map**. Three input paths are supported.
 Send the message in the bot's **DM as the bot owner**; the owner account needs Telegram Premium
 so it can *send* custom emoji. Viewers do not need Premium.
+
+**Custom emoji are OFF by default.** A bot may only send `<tg-emoji>` if it owns a Fragment
+username; from an ordinary bot the tag is rejected or shown as literal text, which would break
+every message rather than merely look wrong. Turn it on explicitly, after the assets are
+registered:
+
+```bat
+set CUSTOM_EMOJI=1
+```
+
+With it unset, `src/icons.mjs` emits the standard glyph for every key, so the UI is complete and
+readable either way. The registry is the single source of truth: changing an ID there upgrades
+every surface at once, and no caller needs editing.
 
 **Option A — from a sticker pack.** Send the pack's link or short name. The bot reads the set via
 `getStickerSet`, lists every custom emoji with its numeric ID, and previews the theme:
@@ -221,7 +264,7 @@ Notes:
 | --- | --- |
 | JSON sent but no preview appears | You must be in the bot's DM, as the owner, sending one intact JSON line |
 | New card still shows plain emoji | Confirm the bot replied ✅, the owner account has Premium, and you are testing the right process |
-| `/check` works but pasting a CA in a group is silent | Check Group Privacy is disabled, plus pacing and the repeat window |
+| `/ca` works but pasting a CA in a group is silent | Check Group Privacy is disabled, plus pacing and the repeat window |
 | `409 Conflict` while polling | Another process is using the same token — stop the duplicate |
 
 ---

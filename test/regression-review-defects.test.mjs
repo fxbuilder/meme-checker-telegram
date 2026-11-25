@@ -100,7 +100,7 @@ test('DEFECT 2: a valid profile link works on a COLD store (no prior query)', as
 
   const out = texts().join(' | ');
   assert.ok(!/no longer valid/i.test(out), `valid link reported as expired: ${out}`);
-  assert.ok(/Calls: <b>1<\/b>/.test(out), `profile must show the call: ${out}`);
+  assert.ok(/Calls <b>1<\/b>/.test(out), `profile must show the call: ${out}`);
 });
 
 // ---- defect 3 -----------------------------------------------------------
@@ -114,7 +114,7 @@ test('DEFECT 3: a period button changes the period', async () => {
   await bot.handleUpdate(callbackUpdate(`cp:${token}:1d`));
   const edited = stub.sent.filter((s) => s.method === 'editMessageText').map((s) => String(s.payload.text ?? ''));
   assert.ok(edited.length >= 1, 'the profile must edit in place');
-  assert.match(edited.join(' '), /Period: <b>1D<\/b>/, `period did not change: ${edited.join(' | ')}`);
+  assert.match(edited.join(' '), /Period <b>1D<\/b>/, `period did not change: ${edited.join(' | ')}`);
 });
 
 test('DEFECT 3b: pagination carries its page number', async () => {

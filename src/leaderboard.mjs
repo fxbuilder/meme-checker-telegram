@@ -153,28 +153,85 @@ export function summariseCaller(calls, { now = Date.now(), hitThreshold = HIT_TH
 }
 
 /**
+ * Minimum sample before HIT RATE is allowed to decide a ranking.
+ *
+ * One lucky call gives a 100% hit rate and would top the board ahead of someone with a real
+ * record. Below this threshold a caller still APPEARS with their figures — they are simply not
+ * ranked by rate, because the rate is not yet meaningful. Documented here so the rule is
+ * inspectable rather than implied by a magic number.
+ *
+ * The floor is 2, not 3: the misleading case the brief names is a SINGLE call, and setting the
+ * bar higher silently disqualified callers with a short but real two-call record.
+ */
+export const MIN_CALLS_FOR_HIT_RATE = 2;
+
+/**
+ * Ranking modes.
+ *   best  highest single Best Call multiple — the DEFAULT (owner brief)
+ *   hit   hit rate, for callers with at least MIN_CALLS_FOR_HIT_RATE measured calls
+ *   avg   average peak multiple
+ */
+export const RANK_MODES = [
+  { id: 'best', label: 'Best Call' },
+  { id: 'hit', label: 'Hit Rate', minSample: MIN_CALLS_FOR_HIT_RATE },
+  { id: 'avg', label: 'Average Peak' },
+];
+export const DEFAULT_RANK = 'best';
+
+export function rankModeById(id) {
+  return RANK_MODES.find((m) => m.id === String(id).toLowerCase()) ?? RANK_MODES[0];
+}
+
+/**
  * Rank rows deterministically.
  *
- * A caller with NO measured calls sorts last regardless of how many calls they made:
- * they have no performance evidence, and floating them above a caller with real results
- * would misrepresent both.
+ * A caller with NO measured calls sorts last regardless of how many calls they made: they have
+ * no performance evidence, and floating them above a caller with real results would
+ * misrepresent both.
+ *
+ * Ties are broken all the way down (measured sample, then key) so the board cannot reshuffle
+ * between two identical renders.
  */
-export function rankCallers(rows) {
+export function rankCallers(rows, { mode = DEFAULT_RANK } = {}) {
+  const m = rankModeById(mode);
+  // A row's value in the CURRENT mode. null when the row has no evidence for that mode.
+  const valueOf = (r) => {
+    if (r.measuredCalls === 0) return null;
+    if (m.id === 'hit') {
+      // Below the sample floor the rate is not comparable, so it contributes no value and the
+      // row falls back to the other tiebreaks rather than ranking on an unstable number.
+      if (r.measuredCalls < (m.minSample ?? 1)) return null;
+      return Number.isFinite(r.hitRate) ? r.hitRate : null;
+    }
+    if (m.id === 'avg') return Number.isFinite(r.averagePeak) ? r.averagePeak : null;
+    return Number.isFinite(r.best) ? r.best : null;
+  };
+
   return [...rows].sort((a, b) => {
     const aMeasured = a.measuredCalls > 0;
     const bMeasured = b.measuredCalls > 0;
     if (aMeasured !== bMeasured) return aMeasured ? -1 : 1;
 
-    const aRate = a.hitRate ?? -1;
-    const bRate = b.hitRate ?? -1;
-    if (aRate !== bRate) return bRate - aRate;
+    const av = valueOf(a);
+    const bv = valueOf(b);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    // A row with no comparable value in this mode sorts below every row that has one. Never
+    // treated as 0, which would rank an unknown beneath a genuine poor result.
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    if (aOk && bOk && av !== bv) return bv - av;
 
-    const aBest = a.best ?? -1;
-    const bBest = b.best ?? -1;
+    // Fallbacks make the order total: best call, then hit rate, then sample size, then key.
+    const aBest = Number.isFinite(a.best) ? a.best : -1;
+    const bBest = Number.isFinite(b.best) ? b.best : -1;
     if (aBest !== bBest) return bBest - aBest;
 
+    const aRate = Number.isFinite(a.hitRate) ? a.hitRate : -1;
+    const bRate = Number.isFinite(b.hitRate) ? b.hitRate : -1;
+    if (aRate !== bRate) return bRate - aRate;
+
     if (a.measuredCalls !== b.measuredCalls) return b.measuredCalls - a.measuredCalls;
-    return a.sortKey.localeCompare(b.sortKey);
+    return String(a.sortKey).localeCompare(String(b.sortKey));
   });
 }
 
@@ -190,7 +247,7 @@ function inPeriodCalls(calls, period, now) {
  *
  * @param {Array} calls  already group-scoped and eligibility-filtered by the store
  */
-export function buildLeaderboard(calls, { period = '7d', now = Date.now() } = {}) {
+export function buildLeaderboard(calls, { period = '7d', now = Date.now(), rank = DEFAULT_RANK } = {}) {
   const p = periodById(period);
   const inPeriod = inPeriodCalls(calls, period, now);
 
@@ -206,7 +263,8 @@ export function buildLeaderboard(calls, { period = '7d', now = Date.now() } = {}
     const s = summariseCaller(group, { now });
     if (s) rows.push(s);
   }
-  return { period: p, rows: rankCallers(rows), totalCalls: inPeriod.length, calls: inPeriod };
+  const mode = rankModeById(rank);
+  return { period: p, rank: mode.id, rows: rankCallers(rows, { mode: mode.id }), totalCalls: inPeriod.length, calls: inPeriod };
 }
 
 /** Group-level performance summary - shares the same eligible sample as the board. */

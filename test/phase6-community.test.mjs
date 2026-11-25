@@ -113,12 +113,29 @@ test('ties break on best peak, then volume, then key — never randomly', () => 
   assert.deepEqual(rows.slice(1).map((r) => r.callerKey), ['u:a', 'u:c']);
 });
 
-test('hit rate outranks best peak', () => {
-  const rows = rankCallers([
+test('BEST CALL is the default ranking, and hit rate is selectable', () => {
+  // OWNER changed the default: the single biggest call leads the board. The old assertion
+  // encoded the opposite default, so it is replaced rather than deleted.
+  const rows = [
     summariseCaller([call('u:streaky', 'A', 1, 20), call('u:streaky', 'B', 2, 0.5), call('u:streaky', 'C', 3, 0.5)], { now: NOW }),
     summariseCaller([call('u:steady', 'D', 1, 3), call('u:steady', 'E', 2, 3)], { now: NOW }),
-  ]);
-  assert.equal(rows[0].callerKey, 'u:steady', '67% consistent beats 33% with one outlier');
+  ];
+  const byBest = rankCallers(rows);
+  assert.equal(byBest[0].callerKey, 'u:streaky', 'a 20x call leads the default board');
+
+  // Hit rate is still a first-class mode; on it the consistent caller wins.
+  const byHit = rankCallers(rows, { mode: 'hit' });
+  assert.equal(byHit[0].callerKey, 'u:steady', '67% consistent beats 33% with one outlier');
+});
+
+test('a one-call sample cannot take the top spot on hit rate', () => {
+  // Without a floor, a single lucky call is a 100% hit rate and outranks a real record.
+  const rows = [
+    summariseCaller([call('u:lucky', 'A', 1, 5)], { now: NOW }),
+    summariseCaller([call('u:real', 'B', 1, 3), call('u:real', 'C', 2, 3), call('u:real', 'D', 2, 4)], { now: NOW }),
+  ];
+  const byHit = rankCallers(rows, { mode: 'hit' });
+  assert.equal(byHit[0].callerKey, 'u:real', 'the minimum sample is enforced before ranking on rate');
 });
 
 // ---- rendering -----------------------------------------------------------

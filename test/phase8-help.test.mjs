@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { renderStart } from '../src/start-message.mjs';
 import { renderHelp, renderHelpShort, documentedCommands, marketChains, HELP_SECTIONS } from '../src/help.mjs';
 
 const BOT = fs.readFileSync(path.join(process.cwd(), 'src', 'bot.mjs'), 'utf8');
@@ -39,15 +40,17 @@ test('/help is a registered command, not just an advertisement', () => {
   assert.ok(/bot\.command\('help'/.test(BOT), '/help must be registered');
 });
 
-test('the chain list comes from the registry and is complete', () => {
-  const chains = marketChains();
-  assert.ok(chains.length >= 15, 'at least 15 market chains');
+test('the chain list leads with the seven priority networks and never states a count', () => {
   const { text } = renderHelp();
-  for (const c of chains) {
-    assert.ok(text.includes(c.name), `${c.name} must be listed`);
+  // Every priority network must be named.
+  for (const name of ['Solana', 'BNB Chain', 'Ethereum', 'Base', 'Robinhood Chain', 'HyperEVM', 'Elysium']) {
+    assert.ok(text.includes(name), `${name} must be listed`);
   }
-  // It must state the COUNT, so a reader can see it is not a two-chain bot.
-  assert.match(text, new RegExp(`Supported chains \\(${chains.length}\\)`));
+  // OWNER forbade a headline chain count, so no "15 chains" / "Supported chains (N)" claim.
+  assert.doesNotMatch(text, /\b15 chains\b/i, 'must not advertise 15 chains');
+  assert.doesNotMatch(text, /supported chains \\(\d+\\)/i, 'must not state a chain count');
+  // Non-priority networks are demoted, not headlined.
+  assert.match(text, /reduced data|additional/i, 'non-priority networks are described as reduced');
 });
 
 test('the bot is never described as Solana/BSC only', () => {
@@ -62,9 +65,10 @@ test('the bot is never described as Solana/BSC only', () => {
 test('automatic EVM chain detection is explained, and so is the override', () => {
   const { text } = renderHelp();
   assert.match(text, /resolved automatically/i);
-  assert.match(text, /only those chains|short list/i);
-  assert.match(text, /\/check base 0x/i, 'the explicit override is documented');
-  assert.match(text, /Solana addresses.*detected directly/i);
+  assert.match(text, /only those (chains|choices)/i);
+  assert.match(text, /\/ca &lt;chain&gt; &lt;address&gt;/i, 'the explicit override is documented');
+  assert.doesNotMatch(text, /\/check/i, '/check is no longer a public command');
+  assert.match(text, /Solana.{0,80}(detected|no chain needed|directly)/i);
 });
 
 test('the help does not promise a picker for every EVM address', () => {
@@ -76,14 +80,18 @@ test('the help does not promise a picker for every EVM address', () => {
 
 test('free vs premium is stated, including that scans make no paid X request', () => {
   const { text } = renderHelp();
-  assert.match(text, /Free in Telegram/i);
-  assert.match(text, /Premium preview/i);
-  assert.match(text, /never make a paid X request/i);
+  // The redesigned /help is compact, so the promise is made where it is actionable: a scan
+  // never spends money, and deeper X work belongs to the website.
+  assert.match(text, /unmeasured|dash means/i, 'the unknown-vs-safe promise is stated');
+  const { text: startText } = renderStart({ websiteUrl: null, premiumUrl: null });
+  assert.match(startText, /Deeper analysis/i, 'the deeper-analysis tier is described');
+  // Neither surface may imply a per-scan paid X call.
+  assert.doesNotMatch(text, /paid X request per scan/i);
 });
 
 test('every required section is present', () => {
   const { text } = renderHelp();
-  for (const needed of ['Token Scanner', 'Call Tracking', 'Narrative & Intelligence', 'Security', 'Community & Leaderboard', 'Settings', 'General']) {
+  for (const needed of ['Token Scan', 'Call Tracking', 'Narrative', 'Security', 'Community', 'Settings']) {
     assert.ok(text.includes(needed), `missing section: ${needed}`);
   }
 });
@@ -91,9 +99,12 @@ test('every required section is present', () => {
 test('help is English and carries no raw HTML', () => {
   const { text } = renderHelp();
   // Only the tags Telegram accepts.
-  const tags = text.match(/<\/?([a-z]+)[^>]*>/g) ?? [];
+  // With custom emoji DISABLED (the default), only the plain Telegram tags may appear. This is
+  // the state an ordinary bot runs in, and it is what makes the output safe to send.
+  const tags = text.match(/<\/?([a-z-]+)[^>]*>/g) ?? [];
   for (const t of tags) {
     assert.match(t, /^<\/?(b|i|code|a)(\s[^>]*)?>$/i, `unexpected tag: ${t}`);
+    assert.doesNotMatch(t, /^<tg-emoji/i, 'custom emoji must be opt-in only');
   }
 });
 

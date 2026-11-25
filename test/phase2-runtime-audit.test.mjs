@@ -57,12 +57,12 @@ test('real /start and profile callbacks keep group scope, switch period and real
   assert.equal(callStore.callsForChat(OWNER).length, 0);
   const token = mintCallerToken(GROUP, `u:${OWNER}`, '7d');
   await bot.handleUpdate(textUpdate(`/start ${token}`, { chatId: OWNER, chatType: 'private' }));
-  assert.match(texts().at(-1), /Calls: <b>12<\/b>/);
+  assert.match(texts().at(-1), /Calls <b>12<\/b>/);
   stub.sent.length = 0;
   await bot.handleUpdate(dmCallback(`cp:${token}:1d`));
   const oneDay = texts().at(-1);
-  assert.match(oneDay, /Period: <b>1D<\/b>/);
-  assert.match(oneDay, /Calls: <b>11<\/b>/);
+  assert.match(oneDay, /Period <b>1D<\/b>/);
+  assert.match(oneDay, /Calls <b>11<\/b>/);
   assert.match(oneDay, /Runtime Audit Group/);
   const keyboard = stub.sent.find((s) => s.method === 'editMessageText').payload.reply_markup.inline_keyboard;
   const switchedToken = keyboard.flat()[0].callback_data.split(':')[1];
@@ -71,12 +71,14 @@ test('real /start and profile callbacks keep group scope, switch period and real
   stub.sent.length = 0;
   await bot.handleUpdate(dmCallback(`cg:${token}:7d:1`));
   const pageTwo = texts().at(-1);
-  assert.match(pageTwo, /Period: <b>1W<\/b>/);
+  assert.match(pageTwo, /Period <b>1W<\/b>/);
   assert.match(pageTwo, /\$AUDIT_11/);
   assert.match(pageTwo, /\$AUDIT_12/);
   assert.doesNotMatch(pageTwo, /\$AUDIT_01/);
   assert.equal(stub.sent.filter((s) => s.method === 'answerCallbackQuery').length, 1);
-  console.log('PROFILE', JSON.stringify({ oneDay: oneDay.match(/Period:.*\nCalls:.*/)[0], pageTwoRows: pageTwo.split('\n').filter((line) => line.includes('AUDIT_')), groupScope: true }));
+  // Debug print kept, but it must not depend on the old single-line layout: the redesigned
+  // header carries the period and the figures now sit on their own lines.
+  console.log('PROFILE', JSON.stringify({ oneDay: oneDay.split('\n').slice(0, 5), pageTwoRows: pageTwo.split('\n').filter((line) => line.includes('AUDIT_')), groupScope: true }));
 });
 
 test('real /pnl renders an actual PNG and sends image only', async () => {

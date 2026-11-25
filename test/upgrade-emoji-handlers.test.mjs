@@ -220,25 +220,28 @@ test('an unknown chain in callback data is rejected without scanning', async () 
   assert.ok(!out.some((o) => o.text?.includes('QUICK CHECKS')));
 });
 
-test('/standard, /short and /detail switch the render mode', async () => {
-  const a = await dispatch('short', { chatType: 'private', chatId: 403 });
-  assert.ok(a[0].text.includes('short'), `expected short confirmation, got: ${a[0].text}`);
-  const b = await dispatch('detail', { chatType: 'private', chatId: 404 });
-  assert.ok(b[0].text.includes('detailed'));
-  const c = await dispatch('standard', { chatType: 'private', chatId: 405 });
-  assert.ok(c[0].text.includes('standard'));
-  // 'compact' remains a working alias for the short card.
-  const d = await dispatch('compact', { chatType: 'private', chatId: 406 });
-  assert.ok(d[0].text.includes('short'), 'legacy /compact should map to short');
-  // Leave the bot in the product default for any later test.
-  await dispatch('standard', { chatType: 'private', chatId: 407 });
+test('/short, /detail and /standard no longer switch a view', async () => {
+  // OWNER removed multi-view cards. These commands are now compatibility stubs: they must
+  // answer clearly instead of silently doing nothing, and none of them may re-introduce a
+  // second card layout.
+  const MESSAGE = /Standard card is now the default view/i;
+  for (const cmd of ['short', 'detail', 'standard', 'compact']) {
+    const out = await dispatch(cmd, { chatType: 'private', chatId: 403 });
+    assert.match(out[0].text, MESSAGE, `/${cmd} must explain the single view, got: ${out[0].text}`);
+  }
 });
 
 test('/chains lists capabilities without overclaiming', async () => {
   const out = await dispatch('chains', { chatType: 'private', chatId: 408 });
   const t = out[0].text;
   assert.ok(t.includes('Story'), 'story listed');
-  assert.ok(/Story<\/b> — scan unavailable/.test(t), 'story marked unavailable, not silently omitted');
-  // Solana has no tax concept and must not be advertised as having one.
-  assert.ok(/Solana<\/b> — holders, LP lock, dex paid/.test(t), `unexpected solana line:\n${t}`);
+  assert.ok(/Story/i.test(t), 'story named even though it is not scannable');
+  assert.match(t, /not scannable|unavailable/i, 'a chain without market data is marked unavailable');
+  // Solana has no tax concept and must not be advertised as having one. The redesigned line
+  // lists only the capabilities the chain actually has.
+  const solanaLine = t.split('\n').find((l) => l.includes('Solana')) ?? '';
+  assert.ok(solanaLine, 'solana line present');
+  assert.doesNotMatch(solanaLine, /tax/i, `solana must not claim tax: ${solanaLine}`);
+  // The seven priority networks lead; the rest are demoted.
+  assert.ok(t.indexOf('Primary') < t.indexOf('Additional'), 'priority networks come first');
 });

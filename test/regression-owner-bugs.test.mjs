@@ -101,7 +101,7 @@ test('1. a real auto call persists and its link resolves into a NON-EMPTY profil
   });
   assert.ok(profile, 'profile must render');
   assert.ok(!/No tracked calls in this period/.test(profile.text), `empty profile: ${profile.text}`);
-  assert.match(profile.text, /Calls: <b>1<\/b>/);
+  assert.match(profile.text, /Calls <b>1<\/b>/);
   assert.ok(profile.text.includes('Foxy'), 'caller name must appear');
 });
 
@@ -148,8 +148,8 @@ test('3. all four periods are queryable and include eligible recent calls', asyn
     const profile = await handleCallerProfile(ctx, {
       store, callerKey: `u:${OWNER}`, chatId: GROUP, groupTitle: 'sissooo1', period,
     });
-    assert.match(profile.text, /Calls: <b>1<\/b>/, `${period} must include a 1h-old call`);
-    assert.ok(profile.keyboard[0].some((b) => b.callback_data.endsWith(period)), `${period} button present`);
+    assert.match(profile.text, /Calls <b>1<\/b>/, `${period} must include a 1h-old call`);
+    assert.ok(profile.keyboard.some((row) => row.some((b) => b.callback_data.includes(`:${period}:`))), `${period} button present`);
   }
 });
 
@@ -163,7 +163,7 @@ test('3b. a 20-day-old call appears in 30D only', () => {
   for (const [p, n] of [['1d', 0], ['7d', 0], ['14d', 0], ['30d', 1]]) {
     const { text } = renderCallerProfile({ callerKey: `u:${OWNER}`, calls: [old], groupTitle: 'g', period: p });
     if (n === 0) assert.match(text, /No tracked calls in this period/, p);
-    else assert.match(text, /Calls: <b>1<\/b>/, p);
+    else assert.match(text, /Calls <b>1<\/b>/, p);
   }
 });
 
@@ -191,7 +191,7 @@ test('4. real records show; synthetic and cancelled are excluded', async () => {
   const profile = await handleCallerProfile(ctx, {
     store, callerKey: `u:${OWNER}`, chatId: GROUP, groupTitle: 'sissooo1', period: '7d',
   });
-  assert.match(profile.text, /Calls: <b>1<\/b>/, `only the live real call counts: ${profile.text}`);
+  assert.match(profile.text, /Calls <b>1<\/b>/, `only the live real call counts: ${profile.text}`);
   assert.ok(!/SIMULATION/.test(profile.text), 'synthetic token must not be listed');
 });
 

@@ -23,7 +23,7 @@ import { getChain } from './chains.mjs';
 import { renderPnlPng } from './pnl-render.mjs';
 import { canChangeSettings } from './access.mjs';
 import { verifyExtremeObservation } from './extreme-verify.mjs';
-import { renderCallerProfile, profileKeyboard } from './caller-profile.mjs';
+import { renderCallerProfile, profileKeyboard, DEFAULT_RANK } from './caller-profile.mjs';
 import { mintCallerToken, resolveCallerToken } from './deep-link.mjs';
 import { callerLabel } from './caller-identity.mjs';
 
@@ -248,7 +248,7 @@ export async function handleFirstCall(ctx, deps) {
  *      image had been delivered
  */
 export async function handlePnl(ctx, deps) {
-  const { store, scan, defaultEvmChain = DEFAULT_EVM_CHAIN, renderPng, sendPhoto, groupTitle = null } = deps;
+  const { store, scan, defaultEvmChain = DEFAULT_EVM_CHAIN, renderPng, sendPhoto, groupTitle = null, pnlBackgroundUrl = null } = deps;
   if (ctx.from?.is_bot) return;
   if (!isGroupChat(ctx)) {
     await ctx.reply('ℹ️ PnL cards are per group. Run /pnl in the group that made the call.');
@@ -311,7 +311,7 @@ export async function handlePnl(ctx, deps) {
   }
 
   await sendPnlFor(ctx, {
-    call: scoped[0], store, scan, renderPng, sendPhoto,
+    call: scoped[0], store, scan, renderPng, sendPhoto, pnlBackgroundUrl,
     groupTitle: groupTitle ?? store.doc.groups?.[String(ctx.chat.id)]?.title ?? ctx.chat.title ?? null,
   });
 }
@@ -320,7 +320,7 @@ export async function handlePnl(ctx, deps) {
  * Render and send the PnL card for one already-resolved call.
  * Image only: no caption, no keyboard, no follow-up text.
  */
-export async function sendPnlFor(ctx, { call, store, scan, renderPng, sendPhoto, groupTitle = null }) {
+export async function sendPnlFor(ctx, { call, store, scan, renderPng, sendPhoto, groupTitle = null, pnlBackgroundUrl = null }) {
   // Refresh the observation so current/peak are as fresh as the data allows. A
   // failed refresh keeps the stored values; it never blocks the card.
   let logoUrl = null;
@@ -339,7 +339,11 @@ export async function sendPnlFor(ctx, { call, store, scan, renderPng, sendPhoto,
 
   let png = null;
   try {
-    png = await renderPng(call, { tokenName: call.name, groupTitle, logoUrl });
+    // The background is the CALLER-REQUESTING user's preference, resolved at call time. A
+    // failure here returns null and the default gradient renders, so a broken background can
+    // never prevent the card from being generated.
+    const backgroundUrl = pnlBackgroundUrl ? await pnlBackgroundUrl(ctx.from?.id) : null;
+    png = await renderPng(call, { tokenName: call.name, groupTitle, logoUrl, backgroundUrl });
   } catch (err) {
     console.warn('[pnl] render failed:', err?.message ?? err);
     png = null;
@@ -458,7 +462,7 @@ export async function handleCallerProfile(ctx, deps) {
   // `chatId` is the ORIGINATING GROUP the profile is about — never ctx.chat.id.
   // A profile link is opened in the bot DM, so ctx.chat.id there is the owner's
   // private chat. Querying it returned zero calls and produced an empty profile.
-  const { store, callerKey, chatId, groupTitle, period = '1d', page = 0, policy, isOwnerCheck } = deps;
+  const { store, callerKey, chatId, groupTitle, period = '1d', rank = DEFAULT_RANK, page = 0, policy, isOwnerCheck } = deps;
   if (!callerKey) {
     await ctx.reply('No caller specified.');
     return;
@@ -489,15 +493,15 @@ export async function handleCallerProfile(ctx, deps) {
   // `superseded` is a duplicate that lost to the canonical call; neither may be
   // listed or counted, or the same contract appears more than once.
   const visible = all.filter((c) => c.status === 'active' && !isSynthetic(c));
-  const { text, page: safePage, pages } = renderCallerProfile({
-    callerKey, calls: visible, groupTitle, period, page,
+  const { text, page: safePage, pages, rank: safeRank } = renderCallerProfile({
+    callerKey, calls: visible, groupTitle, period, rank, page,
   });
 
   // The token is minted for the GROUP scope, so the period buttons keep working
   // from the DM without ever touching another group's records.
   const token = mintCallerToken(scopeId, callerKey, period);
-  const keyboard = profileKeyboard({ callerToken: token, period, page: safePage, pages });
-  return { text, keyboard, callerKey, period, chatId: scopeId };
+  const keyboard = profileKeyboard({ callerToken: token, period, rank: safeRank, page: safePage, pages });
+  return { text, keyboard, callerKey, period, rank: safeRank, chatId: scopeId };
 }
 
 /** Resolve a start payload to { chatId, callerKey, period } for the DM profile. */

@@ -24,6 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 # Logo fetching is deliberately narrow: https only, hard size cap, short timeout,
 # and a quiet fallback. A missing or hostile image must never break the card.
 LOGO_TIMEOUT = 6
+BG_MAX_BYTES = 6 * 1024 * 1024  # a user background may be larger than a logo
 LOGO_MAX_BYTES = 2 * 1024 * 1024
 LOGO_MAX_PX = 512
 
@@ -146,6 +147,42 @@ def tone_for(mult):
     return RED
 
 
+def fetch_background(url):
+    """Return a PIL image sized to cover (W, H), or None. Never raises.
+
+    Deliberately separate from fetch_logo():
+      - the logo is pasted at a fixed square size and thumbnailed to fit;
+      - a background must COVER the full canvas, so it is scaled by the larger ratio and
+        centre-cropped. Letterboxing a user photo would leave bands of gradient behind it.
+    """
+    if not url or not isinstance(url, str):
+        return None
+    if not url.lower().startswith('https://'):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'MemeChecker/1.0'})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=LOGO_TIMEOUT, context=ctx) as resp:
+            ctype = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if ctype and not ctype.startswith('image/'):
+                return None
+            data = resp.read(BG_MAX_BYTES + 1)
+        if len(data) > BG_MAX_BYTES:
+            return None
+        bg = Image.open(io.BytesIO(data))
+        bg.load()
+        if bg.mode != 'RGB':
+            bg = bg.convert('RGB')
+        # Scale by the larger ratio, then centre-crop to the exact canvas.
+        ratio = max(W / bg.width, H / bg.height)
+        bg = bg.resize((max(1, int(bg.width * ratio)), max(1, int(bg.height * ratio))), Image.LANCZOS)
+        left = (bg.width - W) // 2
+        top = (bg.height - H) // 2
+        return bg.crop((left, top, left + W, top + H))
+    except Exception:
+        return None
+
+
 def vertical_gradient(w, h, top, bottom):
     img = Image.new("RGB", (1, h))
     px = img.load()
@@ -190,6 +227,25 @@ def main():
     )
 
     img = vertical_gradient(W, H, BG_TOP, BG_BOT)
+
+    # ---- optional user background -----------------------------------------
+    # Drawn BEFORE any text so nothing is ever covered by it. If the image cannot be fetched
+    # the gradient simply remains, so a dead URL degrades to the default card, not a blank one.
+    #
+    # SCRIM STRENGTH IS A READABILITY DECISION, verified by eye on a real upload: at 0.55 the
+    # primary figures were legible but the secondary labels, the footnote and the row values
+    # were not — they sit in MUTED/DIM greys that vanish against a busy photo. 0.78 keeps enough
+    # of the image to feel personal while restoring contrast for every tier of text. Erring
+    # toward a visible background at the cost of legibility would defeat the card's purpose,
+    # which is to state performance clearly.
+    bg_url = payload.get("backgroundUrl")
+    if bg_url:
+        user_bg = fetch_background(bg_url)
+        if user_bg is not None:
+            img.paste(user_bg, (0, 0))
+            scrim = Image.new("RGB", (W, H), (11, 17, 24))
+            img = Image.blend(img, scrim, 0.78)
+
     draw = ImageDraw.Draw(img)
 
     # Top accent bar

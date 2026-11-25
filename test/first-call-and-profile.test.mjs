@@ -162,9 +162,11 @@ test('the profile states its hit threshold and distinguishes current from peak',
   const calls = [mkCall({ peakMarketCapUsd: 3_000_000, currentMarketCapUsd: 1_500_000 }, 0)];
   const { text } = renderCallerProfile({ callerKey: 'u:42', calls, groupTitle: 'sissooo1', period: '7d' });
   assert.ok(text.includes('≥2x'), 'threshold stated');
-  // One metric per token row: the observed peak only.
-  assert.ok(text.includes('[3.0x]'), `peak multiple shown: ${text}`);
-  assert.ok(!/now 1.5x/.test(text), 'no redundant current value per row');
+  // Rows now carry BOTH facts: the historical peak and the current mark-to-market. They answer
+  // different questions ("how far did it run" vs "where is it now") and the brief requires both.
+  assert.match(text, /peak[^\n]*3\.0x/, `peak multiple shown: ${text}`);
+  assert.match(text, /peak[^\n]*\$T0|\$T0[^\n]*peak/, `token row present: ${text}`);
+  assert.match(text, /Now: /, 'current performance bucket shown, not merged into peak');
 });
 
 test('the profile includes caller, group and period', () => {

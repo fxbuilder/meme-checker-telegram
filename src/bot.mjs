@@ -47,6 +47,13 @@ import {
 import { getChain, chainLabel, resolveChainAlias, capabilitySummary, CHAINS } from './chains.mjs';
 import { chainResolver } from './chain-resolver.mjs';
 import { renderHelp, documentedCommands } from './help.mjs';
+import { renderStart } from './start-message.mjs';
+import { RANK_MODES as PROFILE_RANK_MODES, DEFAULT_RANK as PROFILE_DEFAULT_RANK } from './caller-profile.mjs';
+import { icon, chainIcon, PRIORITY_CHAINS, CHAIN_LABELS } from './icons.mjs';
+import {
+  PnlBackgroundStore, pickLargestPhoto, pickDocumentImage,
+  setConfirmation, rejectionMessage, PNL_BG_LIMITS,
+} from './pnl-background.mjs';
 import {
   loadEnvTheme, previewTheme, buildEmojiTheme, buildPendingMap, buildDirectMap,
   extractCustomEmojiIds, detectPackLink, listPackStickers, CARD_EMOJI_SLOTS,
@@ -410,31 +417,21 @@ bot.start(async ctx => {
   }
 
   if (ctx.from?.is_bot) return;
-  const text = [
-    '👋 <b>Welcome to MEME CHECKER</b>',
-    '',
-    'Your quick Meme Coin research assistant.',
-    '',
-    '🔎 <b>What you can do:</b>',
-    '• Post any contract address in the chat — 15 chains supported',
-    '• Use <code>/check &lt;address&gt;</code> to check manually',
-    '• Use <code>/help</code> to see all commands',
-    '',
-    'Want deeper intelligence?',
-    '• Bubble Map',
-    '• Dev Wallet Analysis',
-    '• Bundle Wallet Tracking',
-    '• KOL Intelligence',
-    '• Smart Alerts',
-    '',
-    '👉 Open <b>Meme Checker Website</b> for the full analysis.',
-  ].join('\n');
 
-  const kb = WEBSITE_BASE
-    ? Markup.inlineKeyboard([[Markup.button.url('🌐 Open Meme Checker', `${WEBSITE_BASE}?utm_source=telegram&utm_medium=dm&utm_campaign=start`)]])
+  // Rendered by start-message.mjs so the copy is testable and cannot drift from the command
+  // list. The previous inline text claimed "15 chains supported" and advertised /check as the
+  // manual flow — both superseded by the priority-network strategy and by /ca.
+  const view = renderStart({
+    websiteUrl: WEBSITE_BASE || null,
+    premiumUrl: PREMIUM_URL || null,
+    theme: activeEmojiTheme,
+  });
+
+  const kb = view.keyboard.length
+    ? Markup.inlineKeyboard(view.keyboard.map((row) => row.map((b) => Markup.button.url(b.text, b.url))))
     : {};
 
-  await ctx.reply(text, { parse_mode: 'HTML', ...kb });
+  await ctx.reply(view.text, { parse_mode: 'HTML', disable_web_page_preview: true, ...kb });
 });
 
 bot.command('help', handleHelp);
@@ -513,17 +510,24 @@ bot.command('resettheme', async ctx => {
   await ctx.reply('↩️ Emoji theme reset to default (standard emoji or EMOJI_THEME env if set).');
 });
 
-bot.command('check', async ctx => {
+/**
+ * /ca — the documented manual scan command.
+ *
+ * Round 6 makes this the public form. Pasting a bare contract still works and remains the
+ * PRIMARY flow; /ca exists for people who prefer an explicit command, and for forcing a chain.
+ */
+async function handleScanCommand(ctx, commandName) {
   if (ctx.from?.is_bot) return;
 
-  const raw = (ctx.message?.text ?? '').replace(/^\/check(@\w+)?\s*/i, '').trim();
+  const raw = (ctx.message?.text ?? '').replace(new RegExp(`^\\/${commandName}(@\\w+)?\\s*`, 'i'), '').trim();
   if (!raw) {
     await ctx.reply(
       'Usage:\n' +
-      '<code>/check &lt;address&gt;</code>\n' +
-      '<code>/check &lt;chain&gt; &lt;address&gt;</code>\n\n' +
-      'Example: <code>/check base 0x4200…0006</code>\n' +
-      'See <code>/chains</code> for supported networks.',
+      '<code>/ca &lt;address&gt;</code>\n' +
+      '<code>/ca &lt;chain&gt; &lt;address&gt;</code>\n\n' +
+      'Example: <code>/ca base 0x4200…0006</code>\n' +
+      'You can also just paste the address — the chain is detected for you.\n' +
+      'See <code>/chains</code> for coverage.',
       { parse_mode: 'HTML' },
     );
     return;
@@ -548,57 +552,80 @@ bot.command('check', async ctx => {
 
   const { chain, address } = det.candidates[0];
   await runScan(ctx, chain, address);
-});
+}
 
-// ---- Card view toggle ------------------------------------------------------
+bot.command('ca', async ctx => handleScanCommand(ctx, 'ca'));
 
-bot.command('standard', async ctx => {
-  if (ctx.from?.is_bot) return;
-  CARD_VIEW = 'standard';
-  await ctx.reply('📋 Card view set to <b>standard</b> (default).', { parse_mode: 'HTML' });
-});
+/**
+ * /check — COMPATIBILITY ALIAS, not part of the public surface.
+ *
+ * It behaves identically to /ca. The brief allowed removal only if trivially safe; it is not,
+ * because existing groups have saved messages and pinned help text that contain /check, and a
+ * dead command there reads as a broken bot. So it works and stays quiet: no deprecation nag on
+ * every call, just one short tip appended to the usage text when someone invokes it bare.
+ */
+bot.command('check', async ctx => handleScanCommand(ctx, 'check'));
 
-bot.command('short', async ctx => {
-  if (ctx.from?.is_bot) return;
-  CARD_VIEW = 'short';
-  await ctx.reply('⚡ Card view set to <b>short</b>.', { parse_mode: 'HTML' });
-});
+// ---- Card view -------------------------------------------------------------
+// The standard card is the ONLY public view (Round 6). These commands are retained as
+// compatibility stubs so a saved /short or /detail press does not throw, but they no longer
+// change anything and they say so plainly instead of implying a mode switch happened.
 
-// 'compact' is kept as an alias so any existing saved workflow still works.
-bot.command('compact', async ctx => {
-  if (ctx.from?.is_bot) return;
-  CARD_VIEW = 'short';
-  await ctx.reply('⚡ Card view set to <b>short</b>.', { parse_mode: 'HTML' });
-});
+const CARD_MODE_RETIRED = 'Standard card is now the default view.';
 
-bot.command('detail', async ctx => {
-  if (ctx.from?.is_bot) return;
-  CARD_VIEW = 'detailed';
-  await ctx.reply('📄 Card view set to <b>detailed</b>.', { parse_mode: 'HTML' });
-});
+for (const name of ['standard', 'short', 'compact', 'detail']) {
+  bot.command(name, async ctx => {
+    if (ctx.from?.is_bot) return;
+    await ctx.reply(`📋 ${CARD_MODE_RETIRED}`, { parse_mode: 'HTML' });
+  });
+}
 
 // ---- Chain support reference ----------------------------------------------
 
 bot.command('chains', async ctx => {
   if (ctx.from?.is_bot) return;
   const rows = capabilitySummary();
-  const lines = ['🌐 <b>Supported Chains</b>', ''];
-  for (const r of rows) {
-    if (!r.market) {
-      lines.push(`${getChain(r.id).emoji} <b>${r.name}</b> — scan unavailable`);
-      continue;
-    }
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  const lines = [`${icon('chain.default')} <b>Coverage</b>`, ''];
+
+  // ---- primary networks first, in the owner's stated order ---------------
+  // The seven priority networks ARE the product. They lead, in a fixed order, so the answer to
+  // "what does this bot actually cover" is the first thing read.
+  lines.push(`${icon('brand.rocket')} <b>Primary</b>`);
+  for (const id of PRIORITY_CHAINS) {
+    const r = byId.get(id);
+    if (!r || !r.market) continue;
     const bits = [];
-    // Only claim a capability the data source actually provides.
-    bits.push(r.holders ? 'holders' : null);
-    bits.push(r.tax ? 'tax' : null);
-    bits.push(r.lpLock ? 'LP lock' : null);
-    bits.push(r.dexPaid ? 'dex paid' : null);
-    lines.push(`${getChain(r.id).emoji} <b>${r.name}</b> — ${bits.filter(Boolean).join(', ')}`);
+    // Only claim a capability the data source actually provides for THIS chain.
+    if (r.holders) bits.push('holders');
+    if (r.tax) bits.push('tax');
+    if (r.lpLock) bits.push('LP');
+    if (r.dexPaid) bits.push('dex paid');
+    lines.push(`${chainIcon(id)} <b>${CHAIN_LABELS[id] ?? r.name}</b> — ${bits.length ? bits.join(' · ') : 'market only'}`);
   }
+
+  // ---- everything else, explicitly demoted ------------------------------
+  const others = rows.filter((r) => r.market && !PRIORITY_CHAINS.includes(r.id));
+  if (others.length) {
+    lines.push('');
+    lines.push('<b>Additional</b> <i>(reduced data)</i>');
+    lines.push(others.map((r) => CHAIN_LABELS[r.id] ?? r.name).join(' · '));
+  }
+
+  const unavailable = rows.filter((r) => !r.market);
+  if (unavailable.length) {
+    lines.push('');
+    lines.push(`<i>Not scannable: ${unavailable.map((r) => CHAIN_LABELS[r.id] ?? r.name).join(', ')}</i>`);
+  }
+
   lines.push('');
-  lines.push('<i>Bare 0x addresses default to ' + chainLabel(DEFAULT_EVM) + '. Prefix another chain to switch, e.g.</i>');
-  lines.push('<code>/check base 0x…</code>');
+  // The old text claimed bare 0x addresses "default to" a chain. That has not been true since
+  // automatic resolution landed, and it contradicted the resolver: the bot asks rather than
+  // silently picking. Stating a default here taught users the wrong behaviour.
+  lines.push('<i>EVM addresses are resolved automatically. If one contract exists on several chains you get only those choices.</i>');
+  lines.push('To force a chain: <code>/ca &lt;chain&gt; &lt;address&gt;</code>');
+
   await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', disable_web_page_preview: true });
 });
 
@@ -607,6 +634,17 @@ bot.command('chains', async ctx => {
 // Pending emoji theme: set while awaiting owner approval of a preview.
 // { map: {std: id, ...}, approvalChatId: number }
 let pendingTheme = null;
+
+/**
+ * Per-user PnL background. Keyed by Telegram user id, stored as a file_id (never a
+ * downloaded byte blob, and never a URL containing the bot token — the PnL image is
+ * shareable, so nothing sensitive may travel inside it).
+ */
+const pnlBackgrounds = new PnlBackgroundStore({ file: process.env.PNL_BG_STORE || 'data/pnl-backgrounds.json' });
+pnlBackgrounds.load();
+
+/** Users who have asked to send a background next (DM only). */
+const awaitingPnlBg = new Set();
 // Runtime-mutable active theme (starts from env, can be updated by owner DM).
 let activeEmojiTheme = EMOJI_THEME;
 
@@ -670,6 +708,42 @@ bot.on('message', async (ctx, next) => {
   const msg = ctx.message;
   const msgText = msg?.text ?? msg?.caption ?? '';
   const isPrivate = ctx.chat?.type === 'private';
+
+  // ---- PnL background upload (private DM only) ---------------------------
+  // This MUST run before CA detection: the catch-all listener below treats any message it does
+  // not answer as a potential contract paste, so an image would otherwise fall through to the
+  // scanner and be silently ignored.
+  if (isPrivate && awaitingPnlBg.has(ctx.from?.id)) {
+    const photo = pickLargestPhoto(msg);
+    const doc = photo ? null : pickDocumentImage(msg);
+
+    if (photo || (doc && !doc.rejected)) {
+      const chosen = photo ?? doc;
+      const res = pnlBackgrounds.set(ctx.from.id, {
+        fileId: chosen.file_id,
+        uniqueId: chosen.file_unique_id ?? null,
+      });
+      awaitingPnlBg.delete(ctx.from.id);
+      await ctx.reply(setConfirmation({ changed: res.changed !== false }), { parse_mode: 'HTML' });
+      return;
+    }
+
+    if (doc?.rejected) {
+      // Keep the expectation open: the user almost certainly sent the wrong file, and making
+      // them type /pnlbg again to retry is friction for no reason.
+      await ctx.reply(rejectionMessage(doc.rejected), { parse_mode: 'HTML' });
+      return;
+    }
+
+    if (msgText.trim()) {
+      // They typed something instead of sending an image. Answer rather than leaving the
+      // expectation hanging forever.
+      awaitingPnlBg.delete(ctx.from.id);
+      await ctx.reply(rejectionMessage('That was not an image'), { parse_mode: 'HTML' });
+      return;
+    }
+    // Any other message type: let normal handling continue.
+  }
 
   // ---- Owner emoji-selection flow (private DM only) -----------------------
   if (isPrivate) {
@@ -1061,12 +1135,21 @@ bot.command('profile', async ctx => {
 });
 
 /** Period buttons + pagination on a caller profile. */
-bot.action(/^c[pg]:cp_/, async ctx => {
+bot.action(/^c[pgr]:cp_/, async ctx => {
   // Read the WHOLE callback payload. Matching only the token prefix meant the
   // period and page suffixes were never parsed, so every period button re-rendered
   // the original period and Next kept showing page one.
   const data = String(ctx.callbackQuery?.data ?? ctx.match?.[0] ?? '');
-  const [, token, period, pageRaw] = data.split(':');
+  // Two payload shapes exist and BOTH must work:
+  //   new  <prefix>:<token>:<period>:<rank>:<page>
+  //   old  <prefix>:<token>:<period>:<page>        (keyboards already in chat history)
+  // Detecting the shape by field count — rather than assuming the new one — is what stops an
+  // old "Next" button from having its page number read as a ranking mode.
+  const parts = data.split(':');
+  const [, token, period] = parts;
+  const isNewShape = parts.length >= 5 && PROFILE_RANK_MODES.some((m) => m.id === parts[3]);
+  const rank = isNewShape ? parts[3] : PROFILE_DEFAULT_RANK;
+  const pageRaw = isNewShape ? parts[4] : parts[3];
   const owner = isOwner(accessPolicy, ctx.from?.id);
   if (!owner) {
     await ctx.answerCbQuery('Owner-only during staging');
@@ -1085,6 +1168,7 @@ bot.action(/^c[pg]:cp_/, async ctx => {
     chatId: resolved.chatId,
     groupTitle: callStore.doc.groups?.[resolved.chatId]?.title ?? resolved.chatId,
     period: period ?? resolved.period,
+    rank,
     page: Number(pageRaw ?? 0) || 0,
     policy: accessPolicy,
     isOwnerCheck: (id) => isOwner(accessPolicy, id),
@@ -1209,9 +1293,68 @@ bot.action(/^al:/, async ctx => {
   }
 });
 
+/**
+ * /pnlbg — set a custom PnL background.
+ *
+ * DM-only: the background is a USER preference, and a group upload would be ambiguous (whose
+ * background?). Opens a one-shot expectation, then the next photo/document from that user is
+ * validated and stored.
+ */
+bot.command('pnlbg', async ctx => {
+  if (ctx.from?.is_bot) return;
+  if (ctx.chat?.type !== 'private') {
+    await ctx.reply('Send <code>/pnlbg</code> in a direct message with me — backgrounds are per-user.', { parse_mode: 'HTML' });
+    return;
+  }
+  awaitingPnlBg.add(ctx.from.id);
+  await ctx.reply(
+    '🖼 <b>PnL background</b>\n\n'
+    + `Send me an image to use behind your PnL card. ${PNL_BG_LIMITS.helpText}\n`
+    + 'Send <code>/pnlreset</code> at any time to go back to the default.',
+    { parse_mode: 'HTML' },
+  );
+});
+
+/** /pnlreset — forget the stored background. */
+bot.command('pnlreset', async ctx => {
+  if (ctx.from?.is_bot) return;
+  if (ctx.chat?.type !== 'private') {
+    await ctx.reply('Send <code>/pnlreset</code> in a direct message with me.', { parse_mode: 'HTML' });
+    return;
+  }
+  awaitingPnlBg.delete(ctx.from.id);
+  const had = pnlBackgrounds.reset(ctx.from.id);
+  await ctx.reply(
+    had
+      ? '✅ <b>PnL background reset.</b>\nYour <code>/pnl</code> cards use the default again.'
+      : 'ℹ️ You had no custom PnL background saved.',
+    { parse_mode: 'HTML' },
+  );
+});
+
 bot.command('pnl', async ctx => {
   // sendPhoto needs the ctx-scoped telegram client, so bind it per invocation.
   const deps = callDeps();
+
+  // ---- the caller's custom background, resolved to a fetchable URL ----------
+  // The store keeps a file_id, which the renderer cannot fetch. It is resolved HERE, inside an
+  // authenticated Telegram API call, so the resulting URL is a short-lived api.telegram.org path
+  // that never contains the bot token in the rendered image or in any log.
+  //
+  // A failure at any step returns null and the default gradient is used. The background is
+  // cosmetic, so it must never stop a PnL card from rendering.
+  deps.pnlBackgroundUrl = async (userId) => {
+    try {
+      const entry = pnlBackgrounds.get(userId);
+      if (!entry?.fileId) return null;
+      const link = await ctx.telegram.getFileLink(entry.fileId);
+      const href = typeof link === 'string' ? link : link?.href;
+      return href && href.startsWith('https://') ? href : null;
+    } catch {
+      return null;
+    }
+  };
+
   deps.sendPhoto = async (chatId, filePath, opts) => {
     try {
       return await ctx.telegram.sendPhoto(chatId, { source: filePath }, opts);
@@ -1638,15 +1781,14 @@ if (SHOULD_LAUNCH) Promise.resolve(bot.telegram?.getMe?.())
       await bot.telegram.setMyCommands([
         { command: 'start',   description: 'Welcome and introduction' },
         { command: 'help',    description: 'Show all commands' },
-        { command: 'check',   description: 'Check a token: /check <address>' },
-        { command: 'standard', description: 'Standard card view (default)' },
-        { command: 'short',   description: 'Short summary card' },
-        { command: 'detail',  description: 'Detailed card view' },
+        { command: 'ca',      description: 'Scan a token: /ca <address>' },
         { command: 'chains',  description: 'Supported chains and data coverage' },
         { command: 'call',    description: 'Record a call: /call <address>' },
         { command: 'calls',   description: 'Recent calls in this group' },
         { command: 'fc',      description: 'Who called a token first' },
         { command: 'pnl',     description: 'Shareable PnL card' },
+        { command: 'pnlbg',   description: 'Custom PnL background' },
+        { command: 'pnlreset', description: 'Reset PnL background' },
         { command: 'callsettings', description: 'Auto-call and minimum MC' },
         { command: 'alerts', description: 'Smart alert settings' },
         { command: 'narrative', description: 'Evidence-based token narrative' },
